@@ -2,10 +2,14 @@
 
 import gzip
 import shutil
+import sqlite3
+import tempfile
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
-import json
+
+import boto3
+from botocore.config import Config
 
 from invoicely.config import get_settings
 
@@ -79,9 +83,6 @@ class BackupService:
 
     def _upload_to_s3(self, local_path: Path, filename: str):
         """Upload backup to S3-compatible storage."""
-        import boto3
-        from botocore.config import Config
-
         config = self.s3_config
         if not config:
             raise ValueError("S3 configuration not provided")
@@ -145,9 +146,6 @@ class BackupService:
 
     def _cleanup_s3_backups(self, cutoff: datetime) -> int:
         """Delete old backups from S3."""
-        import boto3
-        from botocore.config import Config
-
         config = self.s3_config
         if not config:
             return 0
@@ -181,9 +179,6 @@ class BackupService:
 
         Returns True if valid, raises exception if not.
         """
-        import sqlite3
-        import tempfile
-
         # If compressed, decompress to temp file for validation
         if backup_path.suffix == ".gz":
             with tempfile.NamedTemporaryFile(delete=False, suffix=".db") as tmp:
@@ -271,9 +266,6 @@ class BackupService:
 
     def download_from_s3(self, filename: str) -> Path:
         """Download a backup from S3 to local backup directory."""
-        import boto3
-        from botocore.config import Config
-
         config = self.s3_config
         if not config or not config.get("enabled"):
             raise ValueError("S3 is not configured")
@@ -298,9 +290,6 @@ class BackupService:
 
     def list_s3_backups(self) -> list[dict]:
         """List backups stored in S3."""
-        import boto3
-        from botocore.config import Config
-
         config = self.s3_config
         if not config or not config.get("enabled"):
             return []
