@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from invoicely.database import BusinessProfile, get_session
-from invoicely.services.backup import BackupService
+from invoicely.services import BackupService
 
 router = APIRouter(prefix="/api/backups", tags=["backups"])
 

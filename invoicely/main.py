@@ -37,7 +37,7 @@ async def scheduled_backup_task():
     """Background task to run daily backups at midnight UTC."""
     from datetime import datetime, timedelta
     from invoicely.database import async_session_maker, BusinessProfile
-    from invoicely.services.backup import BackupService
+    from invoicely.services import BackupService
     import json
 
     while True:
