@@ -5,10 +5,17 @@
   import { toast } from '$lib/stores';
   import Header from '$lib/components/Header.svelte';
   import Icon from '$lib/components/Icons.svelte';
+  import ConfirmModal from '$lib/components/ConfirmModal.svelte';
 
   let clients = [];
   let loading = true;
   let searchQuery = '';
+
+  // Delete modal state
+  let showDeleteModal = false;
+  let deleteTargetId = null;
+  let deleteTargetName = '';
+  let deleting = false;
 
   onMount(async () => {
     await loadClients();
@@ -27,17 +34,34 @@
     }
   }
 
-  async function deleteClient(e, id, name) {
+  function openDeleteModal(e, id, name) {
     e.stopPropagation();
-    if (!confirm(`Move "${name}" to trash?`)) return;
+    deleteTargetId = id;
+    deleteTargetName = name;
+    showDeleteModal = true;
+  }
 
+  async function confirmDelete() {
+    if (!deleteTargetId) return;
+    deleting = true;
     try {
-      await clientsApi.delete(id);
+      await clientsApi.delete(deleteTargetId);
       toast.success('Client moved to trash');
+      showDeleteModal = false;
       await loadClients();
     } catch (error) {
       toast.error('Failed to delete client');
+    } finally {
+      deleting = false;
+      deleteTargetId = null;
+      deleteTargetName = '';
     }
+  }
+
+  function cancelDelete() {
+    showDeleteModal = false;
+    deleteTargetId = null;
+    deleteTargetName = '';
   }
 </script>
 
@@ -108,7 +132,7 @@
               </button>
               <button
                 class="btn btn-ghost btn-icon btn-sm"
-                on:click={(e) => deleteClient(e, client.id, client.business_name || client.name)}
+                on:click={(e) => openDeleteModal(e, client.id, client.business_name || client.name)}
                 title="Delete"
               >
                 <Icon name="trash" size="sm" />
@@ -167,6 +191,19 @@
     </div>
   {/if}
 </div>
+
+<ConfirmModal
+  show={showDeleteModal}
+  title="Delete Client"
+  message="Move &quot;{deleteTargetName}&quot; to trash? You can restore them later from the Trash."
+  confirmText="Delete"
+  cancelText="Cancel"
+  variant="danger"
+  icon="trash"
+  loading={deleting}
+  onConfirm={confirmDelete}
+  onCancel={cancelDelete}
+/>
 
 <style>
   .page-content {

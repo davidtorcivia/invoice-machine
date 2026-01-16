@@ -6,12 +6,17 @@
   import { formatDate, formatCurrency, toast } from '$lib/stores';
   import Header from '$lib/components/Header.svelte';
   import Icon from '$lib/components/Icons.svelte';
+  import ConfirmModal from '$lib/components/ConfirmModal.svelte';
 
   $: id = $page.params.id;
 
   let client = null;
   let invoices = [];
   let loading = true;
+
+  // Delete modal state
+  let showDeleteModal = false;
+  let deleting = false;
 
   const statusConfig = {
     draft: { class: 'badge-draft', label: 'Draft' },
@@ -42,16 +47,25 @@
     }
   }
 
-  async function deleteClient() {
-    if (!confirm(`Move "${client.business_name || client.name}" to trash?`)) return;
+  function openDeleteModal() {
+    showDeleteModal = true;
+  }
 
+  async function confirmDelete() {
+    deleting = true;
     try {
       await clientsApi.delete(id);
       toast.success('Client moved to trash');
       goto('/clients');
     } catch (error) {
       toast.error('Failed to delete client');
+    } finally {
+      deleting = false;
     }
+  }
+
+  function cancelDelete() {
+    showDeleteModal = false;
   }
 
   function getTotalBilled() {
@@ -249,7 +263,7 @@
               <Icon name="pencil" size="sm" />
               Edit Client
             </button>
-            <button class="btn btn-ghost btn-block text-danger" on:click={deleteClient}>
+            <button class="btn btn-ghost btn-block text-danger" on:click={openDeleteModal}>
               <Icon name="trash" size="sm" />
               Delete Client
             </button>
@@ -259,6 +273,19 @@
     </div>
   {/if}
 </div>
+
+<ConfirmModal
+  show={showDeleteModal}
+  title="Delete Client"
+  message="Move &quot;{client?.business_name || client?.name}&quot; to trash? You can restore them later from the Trash."
+  confirmText="Delete"
+  cancelText="Cancel"
+  variant="danger"
+  icon="trash"
+  loading={deleting}
+  onConfirm={confirmDelete}
+  onCancel={cancelDelete}
+/>
 
 <style>
   .page-content {

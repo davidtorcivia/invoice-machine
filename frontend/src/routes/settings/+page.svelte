@@ -5,6 +5,7 @@
   import { countries } from '$lib/data/countries';
   import Header from '$lib/components/Header.svelte';
   import Icon from '$lib/components/Icons.svelte';
+  import ConfirmModal from '$lib/components/ConfirmModal.svelte';
 
   let profile = null;
   let loading = true;
@@ -67,6 +68,15 @@
   let testingS3 = false;
   let showRestoreModal = false;
   let restoreTarget = null;
+
+  // Backup delete modal state
+  let showDeleteBackupModal = false;
+  let deleteBackupTarget = null;
+  let deletingBackup = false;
+
+  // MCP key delete modal state
+  let showDeleteMcpModal = false;
+  let deletingMcpKey = false;
 
   onMount(async () => {
     await loadProfile();
@@ -290,17 +300,26 @@
     }
   }
 
-  async function deleteMcpKey() {
-    if (!confirm('Are you sure you want to disable remote MCP access? You will need to generate a new key to reconnect.')) {
-      return;
-    }
+  function openDeleteMcpModal() {
+    showDeleteMcpModal = true;
+  }
+
+  async function confirmDeleteMcpKey() {
+    deletingMcpKey = true;
     try {
       await profileApi.deleteMcpKey();
       mcpApiKey = '';
       toast.success('MCP API key deleted');
+      showDeleteMcpModal = false;
     } catch (error) {
       toast.error('Failed to delete API key');
+    } finally {
+      deletingMcpKey = false;
     }
+  }
+
+  function cancelDeleteMcpKey() {
+    showDeleteMcpModal = false;
   }
 
   function copyMcpKey() {
@@ -408,16 +427,30 @@
     }
   }
 
-  async function deleteBackup(filename) {
-    if (!confirm(`Delete backup ${filename}?`)) return;
+  function openDeleteBackupModal(backup) {
+    deleteBackupTarget = backup;
+    showDeleteBackupModal = true;
+  }
 
+  async function confirmDeleteBackup() {
+    if (!deleteBackupTarget) return;
+    deletingBackup = true;
     try {
-      await backupsApi.delete(filename);
+      await backupsApi.delete(deleteBackupTarget.filename);
       toast.success('Backup deleted');
+      showDeleteBackupModal = false;
       await loadBackups();
     } catch (error) {
       toast.error('Failed to delete backup');
+    } finally {
+      deletingBackup = false;
+      deleteBackupTarget = null;
     }
+  }
+
+  function cancelDeleteBackup() {
+    showDeleteBackupModal = false;
+    deleteBackupTarget = null;
   }
 
   async function testS3Connection() {
@@ -812,7 +845,7 @@
               <Icon name="refresh" size="sm" />
               Regenerate Key
             </button>
-            <button class="btn btn-ghost btn-danger-text" on:click={deleteMcpKey}>
+            <button class="btn btn-ghost btn-danger-text" on:click={openDeleteMcpModal}>
               <Icon name="trash" size="sm" />
               Disable Remote Access
             </button>
@@ -1038,7 +1071,7 @@
                     {#if backup.location === 'local'}
                       <button
                         class="btn btn-ghost btn-icon btn-sm"
-                        on:click={() => deleteBackup(backup.filename)}
+                        on:click={() => openDeleteBackupModal(backup)}
                         title="Delete"
                       >
                         <Icon name="trash" size="sm" />
@@ -1156,6 +1189,34 @@
     </div>
   </div>
 {/if}
+
+<!-- Delete MCP Key Modal -->
+<ConfirmModal
+  show={showDeleteMcpModal}
+  title="Disable Remote Access"
+  message="This will delete your MCP API key and disable remote Claude Desktop connections. You'll need to generate a new key to reconnect."
+  confirmText="Disable"
+  cancelText="Cancel"
+  variant="danger"
+  icon="trash"
+  loading={deletingMcpKey}
+  onConfirm={confirmDeleteMcpKey}
+  onCancel={cancelDeleteMcpKey}
+/>
+
+<!-- Delete Backup Modal -->
+<ConfirmModal
+  show={showDeleteBackupModal}
+  title="Delete Backup"
+  message="Delete backup {deleteBackupTarget?.filename}? This action cannot be undone."
+  confirmText="Delete"
+  cancelText="Cancel"
+  variant="danger"
+  icon="trash"
+  loading={deletingBackup}
+  onConfirm={confirmDeleteBackup}
+  onCancel={cancelDeleteBackup}
+/>
 
 <style>
   .page-content {

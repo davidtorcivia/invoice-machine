@@ -7,8 +7,10 @@ A self-hosted invoicing application for freelancers and small businesses. Create
 - Create and track invoices and quotes with automatic numbering
 - Client database with address and payment terms
 - PDF generation with customizable branding and logo
-- Built-in authentication
+- Built-in authentication with rate limiting
+- Automatic daily backups with optional S3 storage
 - Dark mode with system preference detection
+- Overdue invoice highlighting
 - MCP integration for Claude Desktop
 - SQLite storage, runs anywhere
 
@@ -178,7 +180,29 @@ pytest tests/ -v
 
 ## Backup
 
-All data lives in the `data/` directory. Copy it to back up everything.
+### Automatic Backups
+
+Invoice Machine can automatically back up your database daily at midnight UTC.
+
+1. Go to Settings > Backup & Restore
+2. Enable "Automatic daily backups"
+3. Set retention period (default: 30 days)
+
+### S3 Storage
+
+Optionally upload backups to S3-compatible storage (AWS S3, Backblaze B2, MinIO):
+
+1. Enable "Upload backups to S3-compatible storage"
+2. Enter your endpoint URL, credentials, bucket, and region
+3. Click "Test S3 Connection" to verify
+
+### Manual Backup
+
+All data lives in the `data/` directory. Copy it to back up everything. You can also create manual backups from the Settings page and download them directly.
+
+### Restore
+
+Click the restore button on any backup to restore. A pre-restore backup is created automatically. The application needs to be restarted after restore.
 
 ## Deployment
 

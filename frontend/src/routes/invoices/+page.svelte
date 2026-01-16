@@ -5,12 +5,19 @@
   import { formatDate, formatCurrency, toast } from '$lib/stores';
   import Header from '$lib/components/Header.svelte';
   import Icon from '$lib/components/Icons.svelte';
+  import ConfirmModal from '$lib/components/ConfirmModal.svelte';
 
   let invoices = [];
   let clients = [];
   let loading = true;
   let filterStatus = '';
   let filterClient = '';
+
+  // Delete modal state
+  let showDeleteModal = false;
+  let deleteTargetId = null;
+  let deleteTargetNumber = '';
+  let deleting = false;
 
   const statusConfig = {
     draft: { class: 'badge-draft', label: 'Draft' },
@@ -60,17 +67,34 @@
     }
   }
 
-  async function deleteInvoice(e, id) {
+  function openDeleteModal(e, invoice) {
     e.stopPropagation();
-    if (!confirm('Move this invoice to trash?')) return;
+    deleteTargetId = invoice.id;
+    deleteTargetNumber = invoice.invoice_number;
+    showDeleteModal = true;
+  }
 
+  async function confirmDelete() {
+    if (!deleteTargetId) return;
+    deleting = true;
     try {
-      await invoicesApi.delete(id);
+      await invoicesApi.delete(deleteTargetId);
       toast.success('Invoice moved to trash');
+      showDeleteModal = false;
       await loadData();
     } catch (error) {
       toast.error('Failed to delete invoice');
+    } finally {
+      deleting = false;
+      deleteTargetId = null;
+      deleteTargetNumber = '';
     }
+  }
+
+  function cancelDelete() {
+    showDeleteModal = false;
+    deleteTargetId = null;
+    deleteTargetNumber = '';
   }
 
   async function markAsPaid(e, id) {
@@ -201,7 +225,7 @@
                   {/if}
                   <button
                     class="btn btn-ghost btn-icon btn-sm"
-                    on:click={(e) => deleteInvoice(e, invoice.id)}
+                    on:click={(e) => openDeleteModal(e, invoice)}
                     title="Delete"
                   >
                     <Icon name="trash" size="sm" />
@@ -233,6 +257,19 @@
     </div>
   {/if}
 </div>
+
+<ConfirmModal
+  show={showDeleteModal}
+  title="Delete Invoice"
+  message="Move invoice #{deleteTargetNumber} to trash? You can restore it later from the Trash."
+  confirmText="Delete"
+  cancelText="Cancel"
+  variant="danger"
+  icon="trash"
+  loading={deleting}
+  onConfirm={confirmDelete}
+  onCancel={cancelDelete}
+/>
 
 <style>
   .page-content {
