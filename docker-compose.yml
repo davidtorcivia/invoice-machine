@@ -4,17 +4,18 @@ services:
   invoicely:
     build: .
     ports:
-      - "8080:8080"
+      - "${PORT:-8080}:8080"
     volumes:
-      - ./data:/app/data        # SQLite DB + PDFs + logos
+      - ${DATA_DIR:-./data}:/app/data
     environment:
       - DATABASE_URL=sqlite+aiosqlite:////app/data/invoicely.db
-      - APP_BASE_URL=http://localhost:8080  # Override for LAN/tunnel access
-      - TRASH_RETENTION_DAYS=90
+      - DATA_DIR=/app/data
+      - APP_BASE_URL=${APP_BASE_URL:-http://localhost:8080}
+      - TRASH_RETENTION_DAYS=${TRASH_RETENTION_DAYS:-90}
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"]
       interval: 30s
       timeout: 3s
       retries: 3
-      start_period: 5s
+      start_period: 10s

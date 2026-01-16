@@ -24,8 +24,6 @@ class Settings(BaseSettings):
 
     # Security
     cors_origins: str = "http://localhost:3000,http://localhost:8080"
-    api_key: str | None = None  # Optional API key for protection
-    mcp_api_key: str | None = None  # API key for remote MCP access (SSE transport)
 
     # Paths
     data_dir: Path = Path("./data")

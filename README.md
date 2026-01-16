@@ -26,6 +26,30 @@ docker-compose up -d
 
 Open http://localhost:8080 and create your admin account.
 
+### Production Deployment
+
+For production, set environment variables to configure the port and data directory:
+
+```bash
+# Set your production values
+export PORT=8085
+export DATA_DIR=/nvme-mirror/apps/invoice-machine/data
+export APP_BASE_URL=https://invoices.yourdomain.com
+
+# Start the container
+docker-compose up -d
+```
+
+Or create a `.env` file in the project directory:
+
+```env
+PORT=8085
+DATA_DIR=/nvme-mirror/apps/invoice-machine/data
+APP_BASE_URL=https://invoices.yourdomain.com
+```
+
+The container always listens on port 8080 internally. The `PORT` variable maps it to your desired external port.
+
 ### First Run
 
 1. Create your admin account on the setup screen
@@ -35,13 +59,14 @@ Open http://localhost:8080 and create your admin account.
 
 ## Configuration
 
-Set these in a `.env` file:
+Set these in a `.env` file or as environment variables:
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `DATABASE_URL` | SQLite database path | `sqlite+aiosqlite:///./data/invoicely.db` |
+| `PORT` | External port mapping | `8080` |
 | `DATA_DIR` | Directory for data storage | `./data` |
 | `APP_BASE_URL` | Base URL for the application | `http://localhost:8080` |
+| `TRASH_RETENTION_DAYS` | Days before auto-purge from trash | `90` |
 
 ## Usage
 
