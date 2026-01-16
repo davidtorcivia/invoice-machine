@@ -1,0 +1,528 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>{{ 'Quote' if invoice.document_type == 'quote' else 'Invoice' }} {{ invoice.invoice_number }}</title>
+    <style>
+        @page {
+            size: letter;
+            margin: 0.5in 0.6in;
+        }
+
+        :root {
+            --accent: {{ business.accent_color or '#16a34a' }};
+            --text-dark: #1a1a1a;
+            --text-medium: #4a4a4a;
+            --text-light: #717171;
+            --text-muted: #9a9a9a;
+            --border-light: #e8e8e8;
+            --border-medium: #d0d0d0;
+            --bg-subtle: #f9f9f9;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+            font-size: 9pt;
+            line-height: 1.5;
+            color: var(--text-dark);
+            background: #fff;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        .invoice {
+            max-width: 7.5in;
+            margin: 0 auto;
+        }
+
+        /* ============================================
+           HEADER - Logo, Business, Invoice Title
+           ============================================ */
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 0.3in;
+        }
+
+        .brand {
+            flex: 1;
+        }
+
+        .logo {
+            max-height: 0.6in;
+            max-width: 2in;
+            margin-bottom: 0.1in;
+            object-fit: contain;
+        }
+
+        .business-name {
+            font-size: 12pt;
+            font-weight: 600;
+            color: var(--text-dark);
+            letter-spacing: -0.01em;
+            margin-bottom: 0.04in;
+        }
+
+        .business-details {
+            font-size: 8.5pt;
+            color: var(--text-light);
+            line-height: 1.5;
+        }
+
+        .business-details span {
+            display: block;
+        }
+
+        .doc-header {
+            text-align: right;
+            padding-top: 0.05in;
+        }
+
+        .doc-type {
+            font-size: 10pt;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.15em;
+            color: var(--accent);
+            margin-bottom: 0.03in;
+        }
+
+        .doc-number {
+            font-size: 16pt;
+            font-weight: 700;
+            color: var(--text-dark);
+            letter-spacing: -0.02em;
+            line-height: 1.2;
+        }
+
+        /* ============================================
+           META - Dates and Reference
+           ============================================ */
+        .meta-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-end;
+            padding: 0.15in 0;
+            border-top: 1px solid var(--border-light);
+            border-bottom: 1px solid var(--border-light);
+            margin-bottom: 0.2in;
+        }
+
+        .client-block {
+            flex: 1;
+        }
+
+        .block-label {
+            font-size: 7pt;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.12em;
+            color: var(--text-muted);
+            margin-bottom: 0.05in;
+        }
+
+        .client-name {
+            font-size: 11pt;
+            font-weight: 600;
+            color: var(--text-dark);
+            margin-bottom: 0.02in;
+        }
+
+        .client-contact {
+            font-size: 9pt;
+            color: var(--text-medium);
+            margin-bottom: 0.02in;
+        }
+
+        .client-address {
+            font-size: 8.5pt;
+            color: var(--text-light);
+            line-height: 1.45;
+            white-space: pre-line;
+        }
+
+        .dates-block {
+            text-align: right;
+        }
+
+        .date-row {
+            display: flex;
+            justify-content: flex-end;
+            gap: 0.15in;
+            margin-bottom: 0.04in;
+        }
+
+        .date-label {
+            font-size: 8pt;
+            color: var(--text-muted);
+        }
+
+        .date-value {
+            font-size: 9pt;
+            font-weight: 500;
+            color: var(--text-dark);
+            min-width: 0.9in;
+            text-align: right;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .ref-row .date-value {
+            font-family: 'SF Mono', 'Monaco', 'Consolas', monospace;
+            font-size: 8.5pt;
+            letter-spacing: 0.02em;
+        }
+
+        /* ============================================
+           LINE ITEMS TABLE
+           ============================================ */
+        .items-section {
+            margin-bottom: 0.25in;
+        }
+
+        .items-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .items-table thead th {
+            font-size: 7pt;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            color: var(--text-muted);
+            padding: 0.1in 0.08in;
+            border-bottom: 2px solid var(--border-medium);
+            text-align: left;
+        }
+
+        .items-table thead th.align-right {
+            text-align: right;
+        }
+
+        .items-table thead th.align-center {
+            text-align: center;
+        }
+
+        .items-table tbody td {
+            padding: 0.08in 0.06in;
+            border-bottom: 1px solid var(--border-light);
+            vertical-align: top;
+        }
+
+        .items-table tbody tr:last-child td {
+            border-bottom: 2px solid var(--border-medium);
+        }
+
+        .col-num {
+            width: 0.35in;
+            text-align: center;
+            color: var(--text-muted);
+            font-size: 8pt;
+            font-weight: 500;
+        }
+
+        .col-desc {
+            color: var(--text-dark);
+            font-size: 9.5pt;
+            line-height: 1.4;
+        }
+
+        .col-qty, .col-rate {
+            text-align: right;
+            color: var(--text-medium);
+            font-size: 9pt;
+            font-variant-numeric: tabular-nums;
+            width: 0.7in;
+        }
+
+        .col-amount {
+            text-align: right;
+            font-weight: 600;
+            color: var(--text-dark);
+            font-size: 9.5pt;
+            font-variant-numeric: tabular-nums;
+            width: 1in;
+        }
+
+        /* ============================================
+           TOTALS
+           ============================================ */
+        .totals-section {
+            display: flex;
+            justify-content: flex-end;
+            margin-bottom: 0.25in;
+        }
+
+        .totals-table {
+            width: 2.4in;
+        }
+
+        .totals-table tr td {
+            padding: 0.06in 0;
+        }
+
+        .totals-label {
+            font-size: 9pt;
+            color: var(--text-light);
+            text-align: left;
+        }
+
+        .totals-value {
+            font-size: 9.5pt;
+            color: var(--text-dark);
+            text-align: right;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .total-final {
+            border-top: 2px solid var(--accent);
+            margin-top: 0.06in;
+        }
+
+        .total-final td {
+            padding-top: 0.12in !important;
+        }
+
+        .total-final .totals-label {
+            font-size: 10pt;
+            font-weight: 600;
+            color: var(--accent);
+        }
+
+        .total-final .totals-value {
+            font-size: 14pt;
+            font-weight: 700;
+            color: var(--accent);
+            letter-spacing: -0.01em;
+        }
+
+        /* ============================================
+           PAYMENT & NOTES SECTIONS
+           ============================================ */
+        .info-sections {
+            display: flex;
+            gap: 0.4in;
+        }
+
+        .info-block {
+            flex: 1;
+        }
+
+        .info-block.payment {
+            flex: 1.2;
+            padding: 0.12in;
+            background: var(--bg-subtle);
+            border-radius: 0.06in;
+            border-left: 3px solid var(--accent);
+        }
+
+        .info-title {
+            font-size: 7.5pt;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            color: var(--text-muted);
+            margin-bottom: 0.08in;
+        }
+
+        .info-block.payment .info-title {
+            color: var(--accent);
+        }
+
+        .info-text {
+            font-size: 8.5pt;
+            color: var(--text-medium);
+            line-height: 1.55;
+            white-space: pre-line;
+        }
+
+        .info-block.payment .info-text {
+            font-family: 'SF Mono', 'Monaco', 'Consolas', monospace;
+            font-size: 8pt;
+            line-height: 1.7;
+        }
+
+        /* ============================================
+           FOOTER
+           ============================================ */
+        .footer {
+            margin-top: 0.3in;
+            padding-top: 0.12in;
+            border-top: 1px solid var(--border-light);
+            text-align: center;
+        }
+
+        .footer-text {
+            font-size: 8pt;
+            color: var(--text-muted);
+        }
+
+        .footer-contact {
+            font-size: 8.5pt;
+            color: var(--text-light);
+            margin-top: 0.03in;
+        }
+
+        /* ============================================
+           STATUS BADGE (for paid/overdue)
+           ============================================ */
+        .status-badge {
+            display: inline-block;
+            padding: 0.03in 0.12in;
+            font-size: 7pt;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            border-radius: 0.03in;
+            margin-left: 0.1in;
+        }
+
+        .status-paid {
+            background: #dcfce7;
+            color: #15803d;
+        }
+
+        .status-overdue {
+            background: #fee2e2;
+            color: #dc2626;
+        }
+    </style>
+</head>
+<body>
+    <div class="invoice">
+        <!-- Header -->
+        <div class="header">
+            <div class="brand">
+                {% if logo_data %}
+                <img src="data:image/png;base64,{{ logo_data }}" alt="Logo" class="logo">
+                {% endif %}
+                <div class="business-name">{{ business.business_name or business.name }}</div>
+                <div class="business-details">
+                    {% if business.address_line1 %}
+                    <span>{{ business.address_line1 }}{% if business.address_line2 %}, {{ business.address_line2 }}{% endif %}</span>
+                    {% endif %}
+                    {% if business.city %}
+                    <span>{{ business.city }}{% if business.state %}, {{ business.state }}{% endif %}{% if business.postal_code %} {{ business.postal_code }}{% endif %}</span>
+                    {% endif %}
+                    {% if business.ein %}
+                    <span>Tax ID: {{ business.ein }}</span>
+                    {% endif %}
+                </div>
+            </div>
+            <div class="doc-header">
+                <div class="doc-type">{{ 'Quote' if invoice.document_type == 'quote' else 'Invoice' }}</div>
+                <div class="doc-number">{{ invoice.invoice_number }}{% if invoice.status == 'paid' %}<span class="status-badge status-paid">Paid</span>{% elif invoice.status == 'overdue' %}<span class="status-badge status-overdue">Overdue</span>{% endif %}</div>
+            </div>
+        </div>
+
+        <!-- Meta Row: Client + Dates -->
+        <div class="meta-row">
+            <div class="client-block">
+                <div class="block-label">{{ 'Quote For' if invoice.document_type == 'quote' else 'Bill To' }}</div>
+                {% if invoice.client_business %}
+                <div class="client-name">{{ invoice.client_business }}</div>
+                {% endif %}
+                {% if invoice.client_name %}
+                <div class="client-contact">{{ invoice.client_name }}</div>
+                {% endif %}
+                {% if invoice.client_address %}
+                <div class="client-address">{{ invoice.client_address }}</div>
+                {% endif %}
+                {% if invoice.client_email %}
+                <div class="client-address">{{ invoice.client_email }}</div>
+                {% endif %}
+            </div>
+            <div class="dates-block">
+                <div class="date-row">
+                    <span class="date-label">{{ 'Quote Date' if invoice.document_type == 'quote' else 'Issue Date' }}</span>
+                    <span class="date-value">{{ invoice.issue_date|strftime('%B %d, %Y') }}</span>
+                </div>
+                {% if invoice.due_date %}
+                <div class="date-row">
+                    <span class="date-label">{{ 'Valid Until' if invoice.document_type == 'quote' else 'Due Date' }}</span>
+                    <span class="date-value">{{ invoice.due_date|strftime('%B %d, %Y') }}</span>
+                </div>
+                {% endif %}
+                {% if invoice.client_reference %}
+                <div class="date-row ref-row">
+                    <span class="date-label">Reference</span>
+                    <span class="date-value">{{ invoice.client_reference }}</span>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Line Items -->
+        <div class="items-section">
+            <table class="items-table">
+                <thead>
+                    <tr>
+                        <th class="col-num align-center">#</th>
+                        <th class="col-desc">Description</th>
+                        <th class="col-qty align-right">{{ 'Hours' if has_hours else 'Qty' }}</th>
+                        <th class="col-rate align-right">Rate</th>
+                        <th class="col-amount align-right">Amount</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in items %}
+                    <tr>
+                        <td class="col-num">{{ loop.index }}</td>
+                        <td class="col-desc">{{ item.description }}</td>
+                        <td class="col-qty">{{ item.quantity }}</td>
+                        <td class="col-rate">{{ format_money(item.unit_price, invoice.currency_code) }}</td>
+                        <td class="col-amount">{{ format_money(item.total, invoice.currency_code) }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Totals -->
+        <div class="totals-section">
+            <table class="totals-table">
+                <tr>
+                    <td class="totals-label">Subtotal</td>
+                    <td class="totals-value">{{ format_money(invoice.subtotal, invoice.currency_code) }}</td>
+                </tr>
+                <tr class="total-final">
+                    <td class="totals-label">Total Due</td>
+                    <td class="totals-value">{{ format_money(invoice.total, invoice.currency_code) }}</td>
+                </tr>
+            </table>
+        </div>
+
+        <!-- Payment Instructions & Notes -->
+        <div class="info-sections">
+            {% if show_payment_instructions and payment_instructions %}
+            <div class="info-block payment">
+                <div class="info-title">Payment Details</div>
+                <div class="info-text">{{ payment_instructions }}</div>
+            </div>
+            {% endif %}
+            {% if invoice.notes or business.default_notes %}
+            <div class="info-block">
+                <div class="info-title">Notes</div>
+                <div class="info-text">{{ invoice.notes or business.default_notes }}</div>
+            </div>
+            {% endif %}
+        </div>
+
+        <!-- Footer -->
+        <div class="footer">
+            <div class="footer-text">Thank you for your business!</div>
+            {% if business.email or business.phone %}
+            <div class="footer-contact">
+                {% if business.email %}{{ business.email }}{% endif %}{% if business.email and business.phone %} · {% endif %}{% if business.phone %}{{ business.phone }}{% endif %}
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</body>
+</html>

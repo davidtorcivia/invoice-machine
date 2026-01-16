@@ -1,0 +1,146 @@
+"""Clients API endpoints."""
+
+from datetime import datetime
+from typing import Optional, List
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel, Field
+from pydantic.types import PositiveInt
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from invoicely.database import Client, get_session
+from invoicely.services import ClientService
+
+router = APIRouter(prefix="/api/clients", tags=["clients"])
+
+
+class ClientSchema(BaseModel):
+    """Client schema."""
+
+    id: int
+    name: Optional[str] = None
+    business_name: Optional[str] = None
+    address_line1: Optional[str] = None
+    address_line2: Optional[str] = None
+    city: Optional[str] = None
+    state: Optional[str] = None
+    postal_code: Optional[str] = None
+    country: Optional[str] = None
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    payment_terms_days: int = 30
+    notes: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
+    deleted_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+class ClientCreate(BaseModel):
+    """Client creation schema."""
+
+    name: Optional[str] = Field(None, max_length=255)
+    business_name: Optional[str] = Field(None, max_length=255)
+    address_line1: Optional[str] = Field(None, max_length=500)
+    address_line2: Optional[str] = Field(None, max_length=500)
+    city: Optional[str] = Field(None, max_length=100)
+    state: Optional[str] = Field(None, max_length=100)
+    postal_code: Optional[str] = Field(None, max_length=20)
+    country: Optional[str] = Field(None, max_length=100)
+    email: Optional[str] = Field(None, max_length=255)
+    phone: Optional[str] = Field(None, max_length=50)
+    payment_terms_days: int = Field(30, ge=0, le=365)
+    notes: Optional[str] = Field(None, max_length=10000)
+
+
+class ClientUpdate(BaseModel):
+    """Client update schema."""
+
+    name: Optional[str] = Field(None, max_length=255)
+    business_name: Optional[str] = Field(None, max_length=255)
+    address_line1: Optional[str] = Field(None, max_length=500)
+    address_line2: Optional[str] = Field(None, max_length=500)
+    city: Optional[str] = Field(None, max_length=100)
+    state: Optional[str] = Field(None, max_length=100)
+    postal_code: Optional[str] = Field(None, max_length=20)
+    country: Optional[str] = Field(None, max_length=100)
+    email: Optional[str] = Field(None, max_length=255)
+    phone: Optional[str] = Field(None, max_length=50)
+    payment_terms_days: Optional[int] = Field(None, ge=0, le=365)
+    notes: Optional[str] = Field(None, max_length=10000)
+
+
+@router.get("", response_model=List[ClientSchema])
+async def list_clients(
+    search: Optional[str] = Query(None, description="Search by name or business name"),
+    include_deleted: bool = Query(False, description="Include soft-deleted clients"),
+    session: AsyncSession = Depends(get_session),
+) -> List[Client]:
+    """List all clients."""
+    return await ClientService.list_clients(
+        session, search=search, include_deleted=include_deleted
+    )
+
+
+@router.post("", response_model=ClientSchema, status_code=201)
+async def create_client(
+    client_data: ClientCreate,
+    session: AsyncSession = Depends(get_session),
+) -> Client:
+    """Create new client."""
+    return await ClientService.create_client(session, **client_data.model_dump())
+
+
+@router.get("/{client_id}", response_model=ClientSchema)
+async def get_client(
+    client_id: int,
+    session: AsyncSession = Depends(get_session),
+) -> Client:
+    """Get client by ID."""
+    client = await ClientService.get_client(session, client_id)
+    if not client:
+        raise HTTPException(status_code=404, detail="Client not found")
+    return client
+
+
+@router.put("/{client_id}", response_model=ClientSchema)
+async def update_client(
+    client_id: int,
+    updates: ClientUpdate,
+    session: AsyncSession = Depends(get_session),
+) -> Client:
+    """Update client."""
+    client = await ClientService.update_client(
+        session, client_id, **updates.model_dump(exclude_unset=True)
+    )
+    if not client:
+        raise HTTPException(status_code=404, detail="Client not found")
+    return client
+
+
+@router.delete("/{client_id}", status_code=204)
+async def delete_client(
+    client_id: int,
+    session: AsyncSession = Depends(get_session),
+):
+    """Delete client (soft delete)."""
+    success = await ClientService.delete_client(session, client_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Client not found")
+
+
+@router.post("/{client_id}/restore", response_model=ClientSchema)
+async def restore_client(
+    client_id: int,
+    session: AsyncSession = Depends(get_session),
+) -> Client:
+    """Restore deleted client."""
+    success = await ClientService.restore_client(session, client_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Client not found or not deleted")
+
+    # Get the restored client
+    client = await ClientService.get_client(session, client_id)
+    return client
