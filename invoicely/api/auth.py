@@ -5,12 +5,13 @@ import hashlib
 from datetime import datetime, timedelta
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Response, Cookie
+from fastapi import APIRouter, Depends, HTTPException, Response, Cookie, Request
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from invoicely.database import User, get_session
 from invoicely.config import get_settings
+from invoicely.rate_limit import limiter
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 settings = get_settings()
@@ -157,7 +158,9 @@ async def auth_status(
 
 
 @router.post("/setup")
+@limiter.limit("5/minute")
 async def setup(
+    request: Request,
     data: SetupRequest,
     response: Response,
     session: AsyncSession = Depends(get_session),
@@ -199,7 +202,9 @@ async def setup(
 
 
 @router.post("/login")
+@limiter.limit("5/minute")
 async def login(
+    request: Request,
     data: LoginRequest,
     response: Response,
     session: AsyncSession = Depends(get_session),

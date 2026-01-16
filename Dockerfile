@@ -39,7 +39,9 @@ RUN pip install --no-cache-dir \
     "pydantic>=2.5.0" \
     "python-multipart>=0.0.6" \
     "jinja2>=3.1.3" \
-    "pydantic-settings>=2.1.0"
+    "pydantic-settings>=2.1.0" \
+    "boto3>=1.34.0" \
+    "slowapi>=0.1.9"
 
 # Copy backend code
 COPY invoicely/ ./invoicely/

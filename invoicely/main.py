@@ -7,8 +7,11 @@ from pathlib import Path
 from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, FileResponse
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
 
 from invoicely.config import get_settings
+from invoicely.rate_limit import limiter
 from invoicely.database import init_db, close_db
 from invoicely.api import profile, clients, invoices, trash, auth, mcp, backup
 from invoicely.api.auth import get_session_user_id, SESSION_COOKIE_NAME, cleanup_expired_sessions
@@ -108,6 +111,10 @@ app = FastAPI(
     version="0.1.0",
     lifespan=lifespan,
 )
+
+# Rate limiting
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # CORS middleware - configured from settings
 app.add_middleware(

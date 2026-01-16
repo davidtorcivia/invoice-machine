@@ -20,6 +20,24 @@
     cancelled: { class: 'badge-cancelled', label: 'Cancelled' },
   };
 
+  function isOverdue(invoice) {
+    if (invoice.status === 'paid' || invoice.status === 'cancelled' || invoice.status === 'draft') {
+      return false;
+    }
+    if (!invoice.due_date) return false;
+    const dueDate = new Date(invoice.due_date);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return dueDate < today;
+  }
+
+  function getEffectiveStatus(invoice) {
+    if (isOverdue(invoice) && invoice.status !== 'overdue') {
+      return 'overdue';
+    }
+    return invoice.status;
+  }
+
   onMount(async () => {
     await loadData();
   });
@@ -146,7 +164,9 @@
         </thead>
         <tbody>
           {#each invoices as invoice}
-            <tr on:click={() => goto(`/invoices/${invoice.id}`)} class="clickable-row">
+            {@const effectiveStatus = getEffectiveStatus(invoice)}
+            {@const overdue = isOverdue(invoice)}
+            <tr on:click={() => goto(`/invoices/${invoice.id}`)} class="clickable-row" class:row-overdue={overdue}>
               <td>
                 <span class="invoice-number font-mono">#{invoice.invoice_number}</span>
               </td>
@@ -154,10 +174,15 @@
                 <span class="client-name">{invoice.client_business || invoice.client_name || '---'}</span>
               </td>
               <td class="text-secondary">{formatDate(invoice.issue_date)}</td>
-              <td class="text-secondary">{invoice.due_date ? formatDate(invoice.due_date) : '---'}</td>
+              <td class:text-overdue={overdue} class:text-secondary={!overdue}>
+                {invoice.due_date ? formatDate(invoice.due_date) : '---'}
+                {#if overdue}
+                  <span class="overdue-indicator">overdue</span>
+                {/if}
+              </td>
               <td>
-                <span class="badge {statusConfig[invoice.status]?.class || 'badge-draft'}">
-                  {statusConfig[invoice.status]?.label || invoice.status}
+                <span class="badge {statusConfig[effectiveStatus]?.class || 'badge-draft'}">
+                  {statusConfig[effectiveStatus]?.label || effectiveStatus}
                 </span>
               </td>
               <td class="text-right">
@@ -273,6 +298,32 @@
 
   .clickable-row {
     cursor: pointer;
+  }
+
+  .row-overdue {
+    background-color: rgba(239, 68, 68, 0.08);
+  }
+
+  .row-overdue:hover {
+    background-color: rgba(239, 68, 68, 0.12);
+  }
+
+  .text-overdue {
+    color: var(--color-danger, #dc2626);
+    font-weight: 500;
+  }
+
+  .overdue-indicator {
+    display: inline-block;
+    margin-left: var(--space-2);
+    padding: 0.125rem 0.375rem;
+    font-size: 0.625rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.025em;
+    color: #dc2626;
+    background-color: rgba(239, 68, 68, 0.15);
+    border-radius: var(--radius-sm);
   }
 
   .invoice-number {
