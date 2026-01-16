@@ -1,6 +1,6 @@
 <script>
   import { onMount } from 'svelte';
-  import { profileApi } from '$lib/api';
+  import { profileApi, backupsApi } from '$lib/api';
   import { toast } from '$lib/stores';
   import { countries } from '$lib/data/countries';
   import Header from '$lib/components/Header.svelte';
@@ -50,8 +50,28 @@
   // Computed MCP endpoint URL
   $: mcpEndpointUrl = appBaseUrl || (typeof window !== 'undefined' ? window.location.origin : '');
 
+  // Backup settings
+  let backupEnabled = true;
+  let backupRetentionDays = 30;
+  let backupS3Enabled = false;
+  let backupS3EndpointUrl = '';
+  let backupS3AccessKeyId = '';
+  let backupS3SecretAccessKey = '';
+  let backupS3Bucket = '';
+  let backupS3Region = '';
+  let backupS3Prefix = 'invoice-machine-backups';
+  let backups = [];
+  let loadingBackups = false;
+  let creatingBackup = false;
+  let restoringBackup = null;
+  let testingS3 = false;
+  let showRestoreModal = false;
+  let restoreTarget = null;
+
   onMount(async () => {
     await loadProfile();
+    await loadBackupSettings();
+    await loadBackups();
   });
 
   async function loadProfile() {
@@ -290,6 +310,140 @@
 
   function closeMcpKeyModal() {
     showMcpKeyModal = false;
+  }
+
+  // Backup functions
+  async function loadBackupSettings() {
+    try {
+      const settings = await backupsApi.getSettings();
+      backupEnabled = settings.backup_enabled;
+      backupRetentionDays = settings.backup_retention_days;
+      backupS3Enabled = settings.backup_s3_enabled;
+      backupS3EndpointUrl = settings.backup_s3_endpoint_url || '';
+      backupS3Bucket = settings.backup_s3_bucket || '';
+      backupS3Region = settings.backup_s3_region || '';
+      backupS3Prefix = settings.backup_s3_prefix || 'invoice-machine-backups';
+    } catch (error) {
+      // Settings might not exist yet, use defaults
+    }
+  }
+
+  async function loadBackups() {
+    loadingBackups = true;
+    try {
+      backups = await backupsApi.list(backupS3Enabled);
+    } catch (error) {
+      backups = [];
+    } finally {
+      loadingBackups = false;
+    }
+  }
+
+  async function saveBackupSettings() {
+    try {
+      const data = {
+        backup_enabled: backupEnabled,
+        backup_retention_days: parseInt(backupRetentionDays) || 30,
+        backup_s3_enabled: backupS3Enabled,
+      };
+
+      if (backupS3Enabled) {
+        data.backup_s3_endpoint_url = backupS3EndpointUrl || null;
+        data.backup_s3_bucket = backupS3Bucket || null;
+        data.backup_s3_region = backupS3Region || null;
+        data.backup_s3_prefix = backupS3Prefix || null;
+
+        // Only send credentials if they're provided (not masked)
+        if (backupS3AccessKeyId && !backupS3AccessKeyId.includes('*')) {
+          data.backup_s3_access_key_id = backupS3AccessKeyId;
+        }
+        if (backupS3SecretAccessKey && !backupS3SecretAccessKey.includes('*')) {
+          data.backup_s3_secret_access_key = backupS3SecretAccessKey;
+        }
+      }
+
+      await backupsApi.updateSettings(data);
+      toast.success('Backup settings saved');
+    } catch (error) {
+      toast.error('Failed to save backup settings');
+    }
+  }
+
+  async function createBackup() {
+    creatingBackup = true;
+    try {
+      const result = await backupsApi.create(true);
+      toast.success(`Backup created: ${result.filename}`);
+      await loadBackups();
+    } catch (error) {
+      toast.error(error.message || 'Failed to create backup');
+    } finally {
+      creatingBackup = false;
+    }
+  }
+
+  function openRestoreModal(backup) {
+    restoreTarget = backup;
+    showRestoreModal = true;
+  }
+
+  function closeRestoreModal() {
+    showRestoreModal = false;
+    restoreTarget = null;
+  }
+
+  async function restoreBackup() {
+    if (!restoreTarget) return;
+
+    restoringBackup = restoreTarget.filename;
+    try {
+      const downloadFromS3 = restoreTarget.location === 's3';
+      const result = await backupsApi.restore(restoreTarget.filename, downloadFromS3);
+      toast.success(result.message);
+      closeRestoreModal();
+    } catch (error) {
+      toast.error(error.message || 'Failed to restore backup');
+    } finally {
+      restoringBackup = null;
+    }
+  }
+
+  async function deleteBackup(filename) {
+    if (!confirm(`Delete backup ${filename}?`)) return;
+
+    try {
+      await backupsApi.delete(filename);
+      toast.success('Backup deleted');
+      await loadBackups();
+    } catch (error) {
+      toast.error('Failed to delete backup');
+    }
+  }
+
+  async function testS3Connection() {
+    testingS3 = true;
+    try {
+      // Save settings first
+      await saveBackupSettings();
+      const result = await backupsApi.testS3();
+      toast.success(result.message);
+    } catch (error) {
+      toast.error(error.message || 'S3 connection failed');
+    } finally {
+      testingS3 = false;
+    }
+  }
+
+  function formatBytes(bytes) {
+    if (bytes === 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+  }
+
+  function formatDate(isoString) {
+    return new Date(isoString).toLocaleString();
   }
 </script>
 
@@ -706,6 +860,198 @@
         </div>
       </div>
 
+      <!-- Backup & Restore -->
+      <div class="card">
+        <div class="card-header">
+          <h3 class="card-title">Backup & Restore</h3>
+          <button
+            class="btn btn-secondary btn-sm"
+            on:click={createBackup}
+            disabled={creatingBackup}
+          >
+            <Icon name="plus" size="sm" />
+            {creatingBackup ? 'Creating...' : 'Create Backup'}
+          </button>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label class="checkbox-label">
+              <input type="checkbox" bind:checked={backupEnabled} />
+              <span>Enable automatic daily backups</span>
+            </label>
+          </div>
+
+          <div class="form-group">
+            <label for="backup-retention" class="label">Retention (days)</label>
+            <input
+              id="backup-retention"
+              type="number"
+              class="input"
+              min="1"
+              max="365"
+              bind:value={backupRetentionDays}
+            />
+          </div>
+        </div>
+
+        <!-- S3 Configuration -->
+        <div class="s3-section">
+          <label class="checkbox-label mb-3">
+            <input type="checkbox" bind:checked={backupS3Enabled} />
+            <span>Upload backups to S3-compatible storage</span>
+          </label>
+
+          {#if backupS3Enabled}
+            <div class="s3-fields">
+              <div class="form-group">
+                <label for="s3-endpoint" class="label">Endpoint URL (optional)</label>
+                <input
+                  id="s3-endpoint"
+                  type="url"
+                  class="input"
+                  placeholder="https://s3.amazonaws.com or Backblaze/MinIO URL"
+                  bind:value={backupS3EndpointUrl}
+                />
+                <p class="form-hint">Leave empty for AWS S3, or enter custom endpoint for Backblaze B2, MinIO, etc.</p>
+              </div>
+
+              <div class="form-row">
+                <div class="form-group">
+                  <label for="s3-access-key" class="label">Access Key ID</label>
+                  <input
+                    id="s3-access-key"
+                    type="text"
+                    class="input"
+                    placeholder="AKIAIOSFODNN7EXAMPLE"
+                    bind:value={backupS3AccessKeyId}
+                  />
+                </div>
+
+                <div class="form-group">
+                  <label for="s3-secret-key" class="label">Secret Access Key</label>
+                  <input
+                    id="s3-secret-key"
+                    type="password"
+                    class="input"
+                    placeholder="Enter secret key"
+                    bind:value={backupS3SecretAccessKey}
+                  />
+                </div>
+              </div>
+
+              <div class="form-row">
+                <div class="form-group">
+                  <label for="s3-bucket" class="label">Bucket Name</label>
+                  <input
+                    id="s3-bucket"
+                    type="text"
+                    class="input"
+                    placeholder="my-backup-bucket"
+                    bind:value={backupS3Bucket}
+                  />
+                </div>
+
+                <div class="form-group">
+                  <label for="s3-region" class="label">Region</label>
+                  <input
+                    id="s3-region"
+                    type="text"
+                    class="input"
+                    placeholder="us-east-1"
+                    bind:value={backupS3Region}
+                  />
+                </div>
+              </div>
+
+              <div class="form-group">
+                <label for="s3-prefix" class="label">Path Prefix</label>
+                <input
+                  id="s3-prefix"
+                  type="text"
+                  class="input"
+                  placeholder="invoice-machine-backups"
+                  bind:value={backupS3Prefix}
+                />
+              </div>
+
+              <button
+                class="btn btn-secondary btn-sm"
+                on:click={testS3Connection}
+                disabled={testingS3}
+              >
+                {testingS3 ? 'Testing...' : 'Test S3 Connection'}
+              </button>
+            </div>
+          {/if}
+        </div>
+
+        <div class="backup-actions mt-4">
+          <button class="btn btn-secondary" on:click={saveBackupSettings}>
+            <Icon name="check" size="sm" />
+            Save Backup Settings
+          </button>
+        </div>
+
+        <!-- Backup List -->
+        <div class="backup-list mt-4">
+          <h4 class="backup-list-title">Available Backups</h4>
+
+          {#if loadingBackups}
+            <div class="loading-container">
+              <div class="spinner"></div>
+            </div>
+          {:else if backups.length === 0}
+            <p class="text-secondary">No backups yet. Create one using the button above.</p>
+          {:else}
+            <div class="backup-items">
+              {#each backups as backup}
+                <div class="backup-item">
+                  <div class="backup-info">
+                    <span class="backup-filename">{backup.filename}</span>
+                    <span class="backup-meta">
+                      {formatBytes(backup.size_bytes)} | {formatDate(backup.created_at)}
+                      {#if backup.location === 's3'}
+                        <span class="backup-location">S3</span>
+                      {/if}
+                    </span>
+                  </div>
+                  <div class="backup-item-actions">
+                    {#if backup.location === 'local'}
+                      <a
+                        href={backupsApi.download(backup.filename)}
+                        class="btn btn-ghost btn-icon btn-sm"
+                        title="Download"
+                        download
+                      >
+                        <Icon name="download" size="sm" />
+                      </a>
+                    {/if}
+                    <button
+                      class="btn btn-ghost btn-icon btn-sm"
+                      on:click={() => openRestoreModal(backup)}
+                      title="Restore"
+                      disabled={restoringBackup === backup.filename}
+                    >
+                      <Icon name="refresh" size="sm" />
+                    </button>
+                    {#if backup.location === 'local'}
+                      <button
+                        class="btn btn-ghost btn-icon btn-sm"
+                        on:click={() => deleteBackup(backup.filename)}
+                        title="Delete"
+                      >
+                        <Icon name="trash" size="sm" />
+                      </button>
+                    {/if}
+                  </div>
+                </div>
+              {/each}
+            </div>
+          {/if}
+        </div>
+      </div>
+
       <!-- Save Button -->
       <div class="form-actions">
         <button
@@ -737,6 +1083,32 @@
         </button>
         <button class="btn btn-danger" on:click={deleteLogo} disabled={deletingLogo}>
           {deletingLogo ? 'Deleting...' : 'Delete Logo'}
+        </button>
+      </div>
+    </div>
+  </div>
+{/if}
+
+<!-- Restore Backup Confirmation Modal -->
+{#if showRestoreModal && restoreTarget}
+  <div class="modal-overlay" on:click={closeRestoreModal} on:keydown={(e) => e.key === 'Escape' && closeRestoreModal()}>
+    <div class="modal modal-sm" on:click|stopPropagation role="dialog" aria-modal="true">
+      <div class="modal-icon modal-icon-warning">
+        <Icon name="refresh" size="lg" />
+      </div>
+      <h2 class="modal-title">Restore Backup?</h2>
+      <p class="modal-message">
+        This will overwrite your current database with <strong>{restoreTarget.filename}</strong>.
+        A pre-restore backup will be created automatically.
+        <br /><br />
+        <strong>The application will need to be restarted after restore.</strong>
+      </p>
+      <div class="modal-actions">
+        <button class="btn btn-secondary" on:click={closeRestoreModal} disabled={restoringBackup}>
+          Cancel
+        </button>
+        <button class="btn btn-primary" on:click={restoreBackup} disabled={restoringBackup}>
+          {restoringBackup ? 'Restoring...' : 'Restore Backup'}
         </button>
       </div>
     </div>
@@ -1240,5 +1612,122 @@
     border-radius: var(--radius-sm);
     font-family: var(--font-mono);
     font-size: 0.875em;
+  }
+
+  /* Backup Section */
+  .checkbox-label {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    cursor: pointer;
+    font-weight: 500;
+  }
+
+  .checkbox-label input[type="checkbox"] {
+    width: 18px;
+    height: 18px;
+    cursor: pointer;
+  }
+
+  .s3-section {
+    margin-top: var(--space-4);
+    padding-top: var(--space-4);
+    border-top: 1px solid var(--color-border-light);
+  }
+
+  .s3-fields {
+    margin-top: var(--space-3);
+    padding: var(--space-4);
+    background: var(--color-bg-sunken);
+    border-radius: var(--radius-md);
+  }
+
+  .mb-3 {
+    margin-bottom: var(--space-3);
+  }
+
+  .backup-actions {
+    display: flex;
+    gap: var(--space-2);
+  }
+
+  .backup-list {
+    border-top: 1px solid var(--color-border-light);
+    padding-top: var(--space-4);
+  }
+
+  .backup-list-title {
+    font-size: 0.9375rem;
+    font-weight: 600;
+    margin-bottom: var(--space-3);
+    color: var(--color-text);
+  }
+
+  .backup-items {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+  }
+
+  .backup-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: var(--space-3);
+    background: var(--color-bg-sunken);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    gap: var(--space-3);
+  }
+
+  .backup-info {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    min-width: 0;
+    flex: 1;
+  }
+
+  .backup-filename {
+    font-family: var(--font-mono);
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: var(--color-text);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .backup-meta {
+    font-size: 0.75rem;
+    color: var(--color-text-tertiary);
+  }
+
+  .backup-location {
+    display: inline-block;
+    padding: 0.1em 0.4em;
+    background: var(--color-primary-light);
+    color: var(--color-primary);
+    border-radius: var(--radius-sm);
+    font-weight: 500;
+    font-size: 0.6875rem;
+    text-transform: uppercase;
+    margin-left: var(--space-2);
+  }
+
+  .backup-item-actions {
+    display: flex;
+    gap: var(--space-1);
+    flex-shrink: 0;
+  }
+
+  .modal-icon-warning {
+    background: var(--color-warning-light);
+    color: var(--color-warning);
+  }
+
+  .text-secondary {
+    color: var(--color-text-secondary);
+    font-size: 0.875rem;
   }
 </style>

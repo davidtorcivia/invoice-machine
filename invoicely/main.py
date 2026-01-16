@@ -10,7 +10,7 @@ from fastapi.responses import JSONResponse, FileResponse
 
 from invoicely.config import get_settings
 from invoicely.database import init_db, close_db
-from invoicely.api import profile, clients, invoices, trash, auth, mcp
+from invoicely.api import profile, clients, invoices, trash, auth, mcp, backup
 from invoicely.api.auth import get_session_user_id, SESSION_COOKIE_NAME, cleanup_expired_sessions
 
 settings = get_settings()
@@ -30,6 +30,49 @@ async def session_cleanup_task():
         cleanup_expired_sessions()
 
 
+async def scheduled_backup_task():
+    """Background task to run daily backups at midnight UTC."""
+    from datetime import datetime, timedelta
+    from invoicely.database import async_session_maker, BusinessProfile
+    from invoicely.services.backup import BackupService
+    import json
+
+    while True:
+        # Calculate seconds until next midnight UTC
+        now = datetime.utcnow()
+        next_midnight = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+        seconds_until_midnight = (next_midnight - now).total_seconds()
+
+        await asyncio.sleep(seconds_until_midnight)
+
+        # Check if backups are enabled and run backup
+        try:
+            async with async_session_maker() as session:
+                profile = await BusinessProfile.get(session)
+                if profile and profile.backup_enabled:
+                    # Get S3 config if enabled
+                    s3_config = None
+                    if profile.backup_s3_enabled and profile.backup_s3_config:
+                        try:
+                            s3_config = json.loads(profile.backup_s3_config)
+                            s3_config["enabled"] = True
+                        except json.JSONDecodeError:
+                            pass
+
+                    backup_service = BackupService(
+                        retention_days=profile.backup_retention_days or 30,
+                        s3_config=s3_config,
+                    )
+
+                    # Create backup
+                    backup_service.create_backup(compress=True)
+
+                    # Cleanup old backups
+                    backup_service.cleanup_old_backups()
+        except Exception:
+            pass  # Don't crash on backup failures
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Lifespan context manager."""
@@ -39,15 +82,21 @@ async def lifespan(app: FastAPI):
 
     await init_db()
 
-    # Start background session cleanup task
+    # Start background tasks
     cleanup_task = asyncio.create_task(session_cleanup_task())
+    backup_task = asyncio.create_task(scheduled_backup_task())
 
     yield
 
     # Shutdown
     cleanup_task.cancel()
+    backup_task.cancel()
     try:
         await cleanup_task
+    except asyncio.CancelledError:
+        pass
+    try:
+        await backup_task
     except asyncio.CancelledError:
         pass
     await close_db()
@@ -107,6 +156,7 @@ app.include_router(profile.router)
 app.include_router(clients.router)
 app.include_router(invoices.router)
 app.include_router(trash.router)
+app.include_router(backup.router)
 app.include_router(mcp.router)
 
 

@@ -93,6 +93,12 @@ class BusinessProfile(Base):
     mcp_api_key: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     # App base URL for links and MCP configuration
     app_base_url: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    # Backup settings
+    backup_enabled: Mapped[int] = mapped_column(Integer, default=1)  # Daily auto-backup
+    backup_retention_days: Mapped[int] = mapped_column(Integer, default=30)
+    backup_s3_enabled: Mapped[int] = mapped_column(Integer, default=0)
+    # JSON: {endpoint_url, access_key_id, secret_access_key, bucket, region, prefix}
+    backup_s3_config: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow

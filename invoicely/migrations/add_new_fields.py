@@ -34,6 +34,11 @@ def migrate(db_path: Path = DEFAULT_DB_PATH):
         ("business_profile", "theme_preference", "VARCHAR(20) DEFAULT 'system'"),
         ("business_profile", "mcp_api_key", "VARCHAR(64)"),
         ("business_profile", "app_base_url", "VARCHAR(500)"),
+        # Backup settings
+        ("business_profile", "backup_enabled", "INTEGER DEFAULT 1"),
+        ("business_profile", "backup_retention_days", "INTEGER DEFAULT 30"),
+        ("business_profile", "backup_s3_enabled", "INTEGER DEFAULT 0"),
+        ("business_profile", "backup_s3_config", "TEXT"),
         # Invoice fields
         ("invoices", "document_type", "VARCHAR(20) DEFAULT 'invoice'"),
         ("invoices", "client_reference", "VARCHAR(100)"),
