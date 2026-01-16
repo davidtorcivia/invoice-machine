@@ -51,7 +51,7 @@ coverage.xml
 *.sublime-project
 
 # Data directory (database, PDFs, logos)
-data/
+/data/
 *.db
 *.db-journal
 *.db-shm
