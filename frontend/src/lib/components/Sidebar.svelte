@@ -176,20 +176,20 @@
     align-items: center;
     gap: var(--space-2);
     width: 100%;
-    padding: var(--space-2) var(--space-3);
+    padding: var(--space-3) var(--space-3);
     background: none;
-    border: 1px solid var(--color-border);
+    border: 1px solid color-mix(in srgb, var(--color-danger) 30%, var(--color-border));
     border-radius: var(--radius-md);
-    color: var(--color-text-secondary);
+    color: color-mix(in srgb, var(--color-danger) 70%, var(--color-text-secondary));
     font-size: 0.875rem;
     cursor: pointer;
     transition: all var(--transition-fast);
   }
 
   .logout-btn:hover {
-    color: var(--color-text);
-    border-color: var(--color-border-dark);
-    background: var(--color-bg-hover);
+    color: var(--color-danger);
+    border-color: var(--color-danger);
+    background: var(--color-danger-light);
   }
 
   @media (max-width: 768px) {
