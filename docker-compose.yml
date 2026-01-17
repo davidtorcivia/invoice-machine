@@ -1,5 +1,5 @@
 services:
-  invoicely:
+  invoice-machine:
     build: .
     container_name: invoice-machine
     ports:
