@@ -496,6 +496,12 @@
                     <td class="totals-label">Subtotal</td>
                     <td class="totals-value">{{ format_money(invoice.subtotal, invoice.currency_code) }}</td>
                 </tr>
+                {% if invoice.tax_enabled and invoice.tax_amount and invoice.tax_amount > 0 %}
+                <tr>
+                    <td class="totals-label">{{ invoice.tax_name }} ({{ invoice.tax_rate }}%)</td>
+                    <td class="totals-value">{{ format_money(invoice.tax_amount, invoice.currency_code) }}</td>
+                </tr>
+                {% endif %}
                 <tr class="total-final">
                     <td class="totals-label">Total Due</td>
                     <td class="totals-value">{{ format_money(invoice.total, invoice.currency_code) }}</td>

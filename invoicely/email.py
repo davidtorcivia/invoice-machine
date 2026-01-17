@@ -1,0 +1,317 @@
+"""Email service for sending invoices via SMTP."""
+
+import re
+import smtplib
+import ssl
+from email.mime.multipart import MIMEMultipart
+from email.mime.base import MIMEBase
+from email.mime.text import MIMEText
+from email import encoders
+from pathlib import Path
+from typing import Optional
+
+from starlette.concurrency import run_in_threadpool
+
+from invoicely.database import Invoice, BusinessProfile
+from invoicely.services import format_currency
+from invoicely.config import get_settings
+
+settings = get_settings()
+
+
+# Email validation regex (RFC 5322 simplified)
+EMAIL_REGEX = re.compile(
+    r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$"
+)
+
+
+def _sanitize_email(email: str) -> str:
+    """
+    Validate and sanitize email address to prevent header injection.
+
+    Args:
+        email: Email address to validate
+
+    Returns:
+        Sanitized email address
+
+    Raises:
+        ValueError: If email is invalid or contains injection attempts
+    """
+    if not email:
+        raise ValueError("Email address is required")
+
+    # Remove any whitespace
+    email = email.strip()
+
+    # Check for header injection attempts (newlines, carriage returns)
+    if "\n" in email or "\r" in email:
+        raise ValueError("Invalid email address: contains newline characters")
+
+    # Validate email format
+    if not EMAIL_REGEX.match(email):
+        raise ValueError(f"Invalid email address format: {email}")
+
+    return email
+
+
+def _sanitize_header(value: str, field_name: str = "Header") -> str:
+    """
+    Sanitize header value to prevent header injection.
+
+    Args:
+        value: Header value to sanitize
+        field_name: Name of the field for error messages
+
+    Returns:
+        Sanitized header value
+
+    Raises:
+        ValueError: If value contains injection attempts
+    """
+    if not value:
+        return ""
+
+    # Check for header injection attempts
+    if "\n" in value or "\r" in value:
+        raise ValueError(f"Invalid {field_name}: contains newline characters")
+
+    # Remove any control characters
+    sanitized = "".join(c for c in value if ord(c) >= 32 or c == "\t")
+
+    return sanitized
+
+
+class EmailService:
+    """Service for sending invoice emails via SMTP."""
+
+    def __init__(self, profile: BusinessProfile):
+        """
+        Initialize with business profile containing SMTP settings.
+
+        Args:
+            profile: BusinessProfile with SMTP configuration
+        """
+        self.profile = profile
+
+    def _validate_config(self) -> None:
+        """Validate SMTP configuration is complete."""
+        if not self.profile.smtp_enabled:
+            raise ValueError("SMTP is not enabled. Configure SMTP settings first.")
+
+        if not self.profile.smtp_host:
+            raise ValueError("SMTP host is not configured.")
+
+        if not self.profile.smtp_from_email:
+            raise ValueError("SMTP from email is not configured.")
+
+    def _send_email_sync(
+        self,
+        to_email: str,
+        subject: str,
+        body: str,
+        attachment_path: Optional[Path] = None,
+        attachment_filename: Optional[str] = None,
+    ) -> bool:
+        """
+        Synchronous email sending (runs in thread pool).
+
+        Args:
+            to_email: Recipient email address
+            subject: Email subject
+            body: Email body text
+            attachment_path: Path to file to attach (optional)
+            attachment_filename: Filename for attachment (optional)
+
+        Returns:
+            True if email sent successfully
+        """
+        self._validate_config()
+
+        # Sanitize inputs to prevent header injection
+        to_email = _sanitize_email(to_email)
+        subject = _sanitize_header(subject, "Subject")
+
+        # Create message
+        msg = MIMEMultipart()
+        from_name = _sanitize_header(self.profile.smtp_from_name or "", "From name")
+        from_email = _sanitize_email(self.profile.smtp_from_email)
+        msg["From"] = (
+            f"{from_name} <{from_email}>"
+            if from_name
+            else from_email
+        )
+        msg["To"] = to_email
+        msg["Subject"] = subject
+
+        # Add body
+        msg.attach(MIMEText(body, "plain"))
+
+        # Add attachment if provided
+        if attachment_path and attachment_path.exists():
+            with open(attachment_path, "rb") as f:
+                part = MIMEBase("application", "pdf")
+                part.set_payload(f.read())
+                encoders.encode_base64(part)
+                filename = attachment_filename or attachment_path.name
+                part.add_header(
+                    "Content-Disposition",
+                    f'attachment; filename="{filename}"',
+                )
+                msg.attach(part)
+
+        # Connect and send
+        use_tls = bool(self.profile.smtp_use_tls)
+        port = self.profile.smtp_port or 587
+
+        if use_tls and port == 465:
+            # SSL connection (port 465)
+            context = ssl.create_default_context()
+            with smtplib.SMTP_SSL(
+                self.profile.smtp_host, port, context=context
+            ) as server:
+                if self.profile.smtp_username and self.profile.smtp_password:
+                    server.login(self.profile.smtp_username, self.profile.smtp_password)
+                server.send_message(msg)
+        else:
+            # STARTTLS connection (port 587 or other)
+            with smtplib.SMTP(self.profile.smtp_host, port) as server:
+                if use_tls:
+                    server.starttls()
+                if self.profile.smtp_username and self.profile.smtp_password:
+                    server.login(self.profile.smtp_username, self.profile.smtp_password)
+                server.send_message(msg)
+
+        return True
+
+    async def send_invoice(
+        self,
+        invoice: Invoice,
+        recipient_email: Optional[str] = None,
+        subject: Optional[str] = None,
+        body: Optional[str] = None,
+    ) -> dict:
+        """
+        Send invoice PDF via email.
+
+        Args:
+            invoice: Invoice to send
+            recipient_email: Override recipient (defaults to client email)
+            subject: Override subject (defaults to "Invoice {number}")
+            body: Override body (defaults to friendly message with details)
+
+        Returns:
+            Dict with success status and details
+        """
+        # Determine recipient
+        to_email = recipient_email or invoice.client_email
+        if not to_email:
+            return {
+                "success": False,
+                "error": "No recipient email. Provide recipient_email or set client email.",
+            }
+
+        # Determine subject
+        doc_type = "Quote" if getattr(invoice, "document_type", "invoice") == "quote" else "Invoice"
+        email_subject = subject or f"{doc_type} {invoice.invoice_number}"
+
+        # Determine body
+        if body:
+            email_body = body
+        else:
+            total_formatted = format_currency(invoice.total, invoice.currency_code)
+            due_date_str = (
+                invoice.due_date.strftime("%B %d, %Y") if invoice.due_date else "Upon receipt"
+            )
+
+            email_body = f"""Dear {invoice.client_name or 'Client'},
+
+Please find attached {doc_type.lower()} {invoice.invoice_number}.
+
+Amount: {total_formatted}
+Due Date: {due_date_str}
+
+Thank you for your business!
+
+Best regards,
+{self.profile.name or self.profile.business_name or 'Invoice Machine'}
+"""
+
+        # Get PDF path
+        if not invoice.pdf_path:
+            return {
+                "success": False,
+                "error": "Invoice PDF not generated. Generate PDF first.",
+            }
+
+        pdf_path = settings.data_dir / invoice.pdf_path
+        if not pdf_path.exists():
+            return {
+                "success": False,
+                "error": f"Invoice PDF not found at {invoice.pdf_path}",
+            }
+
+        # Send email in thread pool
+        try:
+            await run_in_threadpool(
+                self._send_email_sync,
+                to_email,
+                email_subject,
+                email_body,
+                pdf_path,
+                f"{invoice.invoice_number}.pdf",
+            )
+            return {
+                "success": True,
+                "recipient": to_email,
+                "subject": email_subject,
+                "invoice_number": invoice.invoice_number,
+            }
+        except Exception as e:
+            return {
+                "success": False,
+                "error": str(e),
+            }
+
+    async def test_connection(self) -> dict:
+        """
+        Test SMTP connection without sending an email.
+
+        Returns:
+            Dict with success status and details
+        """
+        try:
+            self._validate_config()
+
+            def _test_sync():
+                use_tls = bool(self.profile.smtp_use_tls)
+                port = self.profile.smtp_port or 587
+
+                if use_tls and port == 465:
+                    context = ssl.create_default_context()
+                    with smtplib.SMTP_SSL(
+                        self.profile.smtp_host, port, context=context
+                    ) as server:
+                        if self.profile.smtp_username and self.profile.smtp_password:
+                            server.login(
+                                self.profile.smtp_username, self.profile.smtp_password
+                            )
+                else:
+                    with smtplib.SMTP(self.profile.smtp_host, port) as server:
+                        if use_tls:
+                            server.starttls()
+                        if self.profile.smtp_username and self.profile.smtp_password:
+                            server.login(
+                                self.profile.smtp_username, self.profile.smtp_password
+                            )
+
+            await run_in_threadpool(_test_sync)
+            return {
+                "success": True,
+                "message": f"Successfully connected to {self.profile.smtp_host}:{self.profile.smtp_port}",
+            }
+        except Exception as e:
+            return {
+                "success": False,
+                "error": str(e),
+            }

@@ -1,6 +1,7 @@
 """Backup API endpoints."""
 
 import json
+import logging
 from datetime import datetime
 from typing import Optional, List
 
@@ -11,6 +12,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from invoicely.database import BusinessProfile, get_session
 from invoicely.services import BackupService
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/backups", tags=["backups"])
 
@@ -214,10 +217,11 @@ async def create_backup(
     try:
         result = backup_service.create_backup(compress=compress)
         return BackupResult(**result)
-    except FileNotFoundError as e:
-        raise HTTPException(status_code=404, detail=str(e))
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="Database not found")
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Backup failed: {e}")
+        logger.error(f"Backup creation failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Backup failed. Check server logs for details.")
 
 
 @router.post("/restore/{filename}", response_model=RestoreResult)
@@ -242,12 +246,18 @@ async def restore_backup(
 
         result = backup_service.restore_backup(filename)
         return RestoreResult(**result)
-    except FileNotFoundError as e:
-        raise HTTPException(status_code=404, detail=str(e))
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="Backup file not found")
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        # ValueError contains user-facing validation messages (e.g., path traversal)
+        error_msg = str(e)
+        # Only expose safe validation messages
+        if "Invalid backup filename" in error_msg or "Invalid SQLite database" in error_msg:
+            raise HTTPException(status_code=400, detail=error_msg)
+        raise HTTPException(status_code=400, detail="Invalid backup file")
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Restore failed: {e}")
+        logger.error(f"Restore failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Restore failed. Check server logs for details.")
 
 
 @router.get("/download/{filename}")
@@ -337,4 +347,6 @@ async def test_s3_connection(
             detail="boto3 is not installed. Run: pip install boto3"
         )
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"S3 connection failed: {e}")
+        logger.error(f"S3 connection failed: {e}", exc_info=True)
+        # Don't expose detailed S3 error messages which may contain bucket names, regions, etc.
+        raise HTTPException(status_code=400, detail="S3 connection failed. Check your credentials and configuration.")

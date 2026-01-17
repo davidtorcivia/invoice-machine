@@ -298,9 +298,12 @@ async def update_invoice_item(
     session: AsyncSession = Depends(get_session),
 ) -> dict:
     """Update line item."""
-    item = await InvoiceService.update_item(
-        session, item_id, **updates.model_dump(exclude_unset=True)
-    )
+    try:
+        item = await InvoiceService.update_item(
+            session, item_id, invoice_id=invoice_id, **updates.model_dump(exclude_unset=True)
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=403, detail=str(e))
     if not item:
         raise HTTPException(status_code=404, detail="Item not found")
     return {
@@ -320,7 +323,10 @@ async def delete_invoice_item(
     session: AsyncSession = Depends(get_session),
 ):
     """Remove line item."""
-    success = await InvoiceService.remove_item(session, item_id)
+    try:
+        success = await InvoiceService.remove_item(session, item_id, invoice_id=invoice_id)
+    except ValueError as e:
+        raise HTTPException(status_code=403, detail=str(e))
     if not success:
         raise HTTPException(status_code=404, detail="Item not found")
 

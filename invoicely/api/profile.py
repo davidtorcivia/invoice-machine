@@ -81,6 +81,40 @@ def sanitize_filename(filename: str) -> str:
     return name
 
 
+# Image magic bytes for validation
+IMAGE_SIGNATURES = {
+    b"\x89PNG\r\n\x1a\n": "png",        # PNG
+    b"\xff\xd8\xff": "jpeg",             # JPEG
+    b"GIF87a": "gif",                    # GIF87a
+    b"GIF89a": "gif",                    # GIF89a
+    b"RIFF": "webp",                     # WebP (starts with RIFF...WEBP)
+    b"<svg": "svg",                      # SVG
+    b"<?xml": "svg",                     # SVG with XML declaration
+}
+
+
+def validate_image_content(content: bytes) -> bool:
+    """
+    Validate that file content appears to be an image.
+
+    Checks magic bytes to verify file is actually an image,
+    not just a renamed malicious file.
+    """
+    if len(content) < 8:
+        return False
+
+    # Check against known image signatures
+    for signature, _ in IMAGE_SIGNATURES.items():
+        if content[:len(signature)] == signature:
+            return True
+
+    # Special check for WebP (RIFF....WEBP format)
+    if content[:4] == b"RIFF" and len(content) >= 12 and content[8:12] == b"WEBP":
+        return True
+
+    return False
+
+
 @router.get("", response_model=BusinessProfileSchema)
 async def get_profile(
     session: AsyncSession = Depends(get_session),
@@ -146,6 +180,13 @@ async def upload_logo(
     # Validate file size is not zero
     if len(contents) == 0:
         raise HTTPException(status_code=400, detail="Uploaded file is empty")
+
+    # Validate file content is actually an image (magic bytes check)
+    if not validate_image_content(contents):
+        raise HTTPException(
+            status_code=400,
+            detail="File does not appear to be a valid image"
+        )
 
     # Generate safe filename with UUID
     safe_ext = ext if ext else ".png"
