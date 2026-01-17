@@ -133,7 +133,8 @@
       </div>
 
       {#if recentInvoices.length > 0}
-        <div class="table-container">
+        <!-- Table view (hidden on small screens) -->
+        <div class="table-container table-view">
           <table class="table">
             <thead>
               <tr>
@@ -162,6 +163,25 @@
               {/each}
             </tbody>
           </table>
+        </div>
+
+        <!-- Card view (shown on small screens) -->
+        <div class="invoice-cards">
+          {#each recentInvoices as invoice}
+            <button class="invoice-card" on:click={() => goto(`/invoices/${invoice.id}`)}>
+              <div class="invoice-card-header">
+                <span class="invoice-card-number font-mono">#{invoice.invoice_number}</span>
+                <span class="badge {statusConfig[invoice.status]?.class || 'badge-draft'}">
+                  {invoice.status}
+                </span>
+              </div>
+              <div class="invoice-card-client">{invoice.client_business || invoice.client_name || '---'}</div>
+              <div class="invoice-card-footer">
+                <span class="invoice-card-date">{formatDate(invoice.issue_date)}</span>
+                <span class="invoice-card-total">{formatCurrency(invoice.total)}</span>
+              </div>
+            </button>
+          {/each}
         </div>
       {:else}
         <div class="empty-state">
@@ -328,6 +348,67 @@
     border-radius: 0;
   }
 
+  /* Invoice cards (mobile view) */
+  .invoice-cards {
+    display: none;
+    padding: var(--space-3);
+    gap: var(--space-3);
+  }
+
+  .invoice-card {
+    display: block;
+    width: 100%;
+    padding: var(--space-4);
+    background: var(--color-bg);
+    border: 1px solid var(--color-border-light);
+    border-radius: var(--radius-lg);
+    text-align: left;
+    cursor: pointer;
+    transition: all var(--transition-fast);
+  }
+
+  .invoice-card:hover {
+    border-color: var(--color-border);
+    background: var(--color-bg-hover);
+  }
+
+  .invoice-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: var(--space-2);
+  }
+
+  .invoice-card-number {
+    font-weight: 600;
+    color: var(--color-text);
+  }
+
+  .invoice-card-client {
+    font-size: 0.9375rem;
+    color: var(--color-text-secondary);
+    margin-bottom: var(--space-3);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .invoice-card-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .invoice-card-date {
+    font-size: 0.8125rem;
+    color: var(--color-text-tertiary);
+  }
+
+  .invoice-card-total {
+    font-weight: 600;
+    color: var(--color-text);
+  }
+
   /* Large screens - better use of space */
   @media (min-width: 1400px) {
     .stats-grid {
@@ -413,6 +494,30 @@
 
     .section-title {
       font-size: 1rem;
+    }
+
+    /* Switch to card view on small screens */
+    .table-view {
+      display: none;
+    }
+
+    .invoice-cards {
+      display: flex;
+      flex-direction: column;
+    }
+  }
+
+  @media (max-width: 640px) {
+    .table th:nth-child(3),
+    .table td:nth-child(3) {
+      display: none;
+    }
+  }
+
+  @media (max-width: 480px) {
+    .table th:nth-child(2),
+    .table td:nth-child(2) {
+      display: none;
     }
   }
 </style>

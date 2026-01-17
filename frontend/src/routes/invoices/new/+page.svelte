@@ -979,6 +979,7 @@
 
     .form-actions .btn {
       width: 100%;
+      min-height: 44px;
     }
   }
 </style>

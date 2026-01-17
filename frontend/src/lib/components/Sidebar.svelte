@@ -105,7 +105,6 @@
 
   .sidebar-header {
     padding: var(--space-5) var(--space-6);
-    border-bottom: 1px solid var(--color-border-light);
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -136,6 +135,8 @@
     display: flex;
     flex-direction: column;
     gap: var(--space-1);
+    overflow-y: auto;
+    min-height: 0;
   }
 
   .nav-item {
@@ -163,7 +164,6 @@
 
   .sidebar-footer {
     padding: var(--space-4) var(--space-6);
-    border-top: 1px solid var(--color-border-light);
     display: flex;
     flex-direction: column;
     gap: var(--space-3);
@@ -174,20 +174,20 @@
     align-items: center;
     gap: var(--space-2);
     width: 100%;
-    padding: var(--space-2) var(--space-3);
+    padding: var(--space-3) var(--space-3);
     background: none;
-    border: 1px solid var(--color-border);
+    border: 1px solid color-mix(in srgb, var(--color-danger) 30%, var(--color-border));
     border-radius: var(--radius-md);
-    color: var(--color-text-secondary);
+    color: color-mix(in srgb, var(--color-danger) 70%, var(--color-text-secondary));
     font-size: 0.875rem;
     cursor: pointer;
     transition: all var(--transition-fast);
   }
 
   .logout-btn:hover {
-    color: var(--color-text);
-    border-color: var(--color-border-dark);
-    background: var(--color-bg-hover);
+    color: var(--color-danger);
+    border-color: var(--color-danger);
+    background: var(--color-danger-light);
   }
 
   @media (max-width: 768px) {
@@ -205,6 +205,15 @@
 
     .mobile-close {
       display: flex;
+    }
+
+    /* Move footer right below nav on mobile */
+    .sidebar-nav {
+      flex: none;
+    }
+
+    .sidebar-footer {
+      padding-top: var(--space-6);
     }
   }
 </style>

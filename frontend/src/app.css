@@ -236,7 +236,7 @@ body {
 }
 
 .btn-danger:hover:not(:disabled) {
-  background: #dc2626;
+  background: var(--color-danger-hover);
 }
 
 .btn-ghost {
@@ -369,8 +369,8 @@ body {
 }
 
 .badge-overdue {
-  background: #fee2e2;
-  color: #dc2626;
+  background: var(--color-danger-light);
+  color: var(--color-danger);
 }
 
 .badge-cancelled {

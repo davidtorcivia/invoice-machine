@@ -43,6 +43,7 @@
         --color-warning-light: #fef3c7;
 
         --color-danger: #ef4444;
+        --color-danger-hover: #dc2626;
         --color-danger-light: #fee2e2;
 
         --color-info: #6366f1;
@@ -114,6 +115,7 @@
         --color-warning-light: #78350f;
 
         --color-danger: #f87171;
+        --color-danger-hover: #ef4444;
         --color-danger-light: #7f1d1d;
 
         --color-info: #818cf8;
@@ -154,6 +156,7 @@
           --color-warning-light: #78350f;
 
           --color-danger: #f87171;
+          --color-danger-hover: #ef4444;
           --color-danger-light: #7f1d1d;
 
           --color-info: #818cf8;
@@ -282,8 +285,8 @@
       }
 
       .btn-danger:hover:not(:disabled) {
-        background: #dc2626;
-        border-color: #dc2626;
+        background: var(--color-danger-hover);
+        border-color: var(--color-danger-hover);
         color: var(--color-text-inverse);
       }
 
@@ -777,7 +780,7 @@
         }
 
         html {
-          font-size: 15px;
+          font-size: 16px;
         }
 
         .form-row {
@@ -817,7 +820,7 @@
       /* Extra small screens (phones, 480px) */
       @media (max-width: 480px) {
         html {
-          font-size: 14px;
+          font-size: 15px;
         }
 
         h1 { font-size: 1.5rem; }
@@ -906,7 +909,7 @@
       /* Tiny screens (very small phones, 360px) */
       @media (max-width: 360px) {
         html {
-          font-size: 13px;
+          font-size: 14px;
         }
 
         .btn {

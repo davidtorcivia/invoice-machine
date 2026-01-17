@@ -22,17 +22,17 @@
     display: flex;
     align-items: center;
     gap: var(--space-2);
-    padding: var(--space-2) var(--space-3);
+    padding: var(--space-3) var(--space-3);
     background: var(--color-bg-sunken);
     border: 1px solid var(--color-border);
     border-radius: var(--radius-md);
     color: var(--color-text-secondary);
-    font-size: 0.8125rem;
+    font-size: 0.875rem;
     font-weight: 500;
     cursor: pointer;
     transition: all var(--transition-fast);
     width: 100%;
-    justify-content: center;
+    justify-content: flex-start;
   }
 
   .theme-toggle:hover {

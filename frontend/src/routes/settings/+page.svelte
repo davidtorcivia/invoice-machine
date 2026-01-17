@@ -1568,7 +1568,7 @@
 
   .mcp-enabled .mcp-status-icon {
     background: var(--color-success);
-    color: white;
+    color: var(--color-text-inverse);
   }
 
   .mcp-disabled .mcp-status-icon {
@@ -1591,6 +1591,7 @@
   .mcp-status-hint {
     font-size: 0.8125rem;
     color: var(--color-text-secondary);
+    word-break: break-all;
   }
 
   .mcp-status-endpoint code {
@@ -1599,6 +1600,7 @@
     border-radius: var(--radius-sm);
     font-family: var(--font-mono);
     font-size: 0.875em;
+    word-break: break-all;
   }
 
   .mcp-key-display {
