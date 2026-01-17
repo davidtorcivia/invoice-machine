@@ -56,49 +56,61 @@ def get_sse_transport():
     return _sse_transport, _mcp_server
 
 
-async def mcp_sse_handler(scope, receive, send):
-    """Raw ASGI handler for SSE endpoint - allows MCP transport to control response directly."""
-    request = Request(scope, receive, send)
+class MCPSseHandler:
+    """ASGI app for SSE endpoint - allows MCP transport to control response directly."""
 
-    if not await verify_mcp_auth(request):
-        response = StarletteResponse("MCP API key required", status_code=401)
-        await response(scope, receive, send)
-        return
+    async def __call__(self, scope, receive, send):
+        request = Request(scope, receive, send)
 
-    sse, mcp_server = get_sse_transport()
+        if not await verify_mcp_auth(request):
+            response = StarletteResponse("MCP API key required", status_code=401)
+            await response(scope, receive, send)
+            return
 
-    async with sse.connect_sse(scope, receive, send) as streams:
-        await mcp_server.run(
-            streams[0], streams[1], mcp_server.create_initialization_options()
+        sse, mcp_server = get_sse_transport()
+
+        async with sse.connect_sse(scope, receive, send) as streams:
+            await mcp_server.run(
+                streams[0], streams[1], mcp_server.create_initialization_options()
+            )
+
+
+class MCPMessagesHandler:
+    """ASGI app for MCP messages - allows transport to control response directly."""
+
+    async def __call__(self, scope, receive, send):
+        request = Request(scope, receive, send)
+
+        if not await verify_mcp_auth(request):
+            response = StarletteResponse("MCP API key required", status_code=401)
+            await response(scope, receive, send)
+            return
+
+        sse, _ = get_sse_transport()
+        await sse.handle_post_message(scope, receive, send)
+
+
+class MCPStatusHandler:
+    """ASGI app for MCP status endpoint."""
+
+    async def __call__(self, scope, receive, send):
+        import json
+
+        api_key = await get_mcp_api_key()
+        body = json.dumps({
+            "enabled": bool(api_key),
+            "endpoint": "/mcp/sse",
+        })
+
+        response = StarletteResponse(
+            content=body,
+            status_code=200,
+            media_type="application/json"
         )
-
-
-async def mcp_messages_handler(scope, receive, send):
-    """Raw ASGI handler for MCP messages - allows transport to control response directly."""
-    request = Request(scope, receive, send)
-
-    if not await verify_mcp_auth(request):
-        response = StarletteResponse("MCP API key required", status_code=401)
         await response(scope, receive, send)
-        return
-
-    sse, _ = get_sse_transport()
-    await sse.handle_post_message(scope, receive, send)
 
 
-async def mcp_status_handler(scope, receive, send):
-    """ASGI handler for MCP status endpoint."""
-    import json
-
-    api_key = await get_mcp_api_key()
-    body = json.dumps({
-        "enabled": bool(api_key),
-        "endpoint": "/mcp/sse",
-    })
-
-    response = StarletteResponse(
-        content=body,
-        status_code=200,
-        media_type="application/json"
-    )
-    await response(scope, receive, send)
+# Instantiate the ASGI handlers
+mcp_sse_handler = MCPSseHandler()
+mcp_messages_handler = MCPMessagesHandler()
+mcp_status_handler = MCPStatusHandler()
