@@ -112,20 +112,33 @@ async def snapshot_client_info(
     invoice.client_business = client.business_name
     invoice.client_email = client.email
 
-    # Build full address
-    address_parts = [
-        p
-        for p in [
-            client.address_line1,
-            client.address_line2,
-            client.city,
-            client.state,
-            client.postal_code,
-            client.country,
-        ]
-        if p
-    ]
-    invoice.client_address = "\n".join(address_parts) if address_parts else None
+    # Build full address in standard format
+    address_lines = []
+
+    # Line 1: Street address (address_line1, address_line2)
+    street_parts = [p for p in [client.address_line1, client.address_line2] if p]
+    if street_parts:
+        address_lines.append(", ".join(street_parts))
+
+    # Line 2: City, State Postal
+    city_line_parts = []
+    if client.city:
+        city_line_parts.append(client.city)
+    if client.state:
+        city_line_parts.append(client.state)
+    if city_line_parts:
+        city_line = ", ".join(city_line_parts)
+        if client.postal_code:
+            city_line += " " + client.postal_code
+        address_lines.append(city_line)
+    elif client.postal_code:
+        address_lines.append(client.postal_code)
+
+    # Line 3: Country (if provided)
+    if client.country:
+        address_lines.append(client.country)
+
+    invoice.client_address = "\n".join(address_lines) if address_lines else None
 
 
 def format_currency(amount: Decimal | float, currency_code: str = "USD") -> str:
