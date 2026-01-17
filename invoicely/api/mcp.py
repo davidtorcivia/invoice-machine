@@ -50,7 +50,7 @@ def get_sse_transport():
         from mcp.server.sse import SseServerTransport
         from invoicely.mcp.server import mcp
 
-        _sse_transport = SseServerTransport("/mcp/messages/")
+        _sse_transport = SseServerTransport("/messages/")
         _mcp_server = mcp._mcp_server
 
     return _sse_transport, _mcp_server
