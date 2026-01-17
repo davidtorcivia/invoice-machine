@@ -136,6 +136,8 @@
     display: flex;
     flex-direction: column;
     gap: var(--space-1);
+    overflow-y: auto;
+    min-height: 0;
   }
 
   .nav-item {
@@ -205,6 +207,10 @@
 
     .mobile-close {
       display: flex;
+    }
+
+    .sidebar-footer {
+      flex-shrink: 0;
     }
   }
 </style>

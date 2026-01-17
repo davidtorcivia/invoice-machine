@@ -358,8 +358,8 @@
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.025em;
-    color: #dc2626;
-    background-color: rgba(239, 68, 68, 0.15);
+    color: var(--color-danger);
+    background-color: var(--color-danger-light);
     border-radius: var(--radius-sm);
   }
 
@@ -396,6 +396,7 @@
     .filters-bar {
       flex-direction: column;
       align-items: stretch;
+      padding: var(--space-4);
     }
 
     .filter-group {
@@ -420,7 +421,7 @@
     }
 
     .filters-bar {
-      padding: var(--space-4);
+      padding: var(--space-3);
       gap: var(--space-3);
     }
 

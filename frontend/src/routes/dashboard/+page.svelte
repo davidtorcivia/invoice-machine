@@ -415,4 +415,18 @@
       font-size: 1rem;
     }
   }
+
+  @media (max-width: 640px) {
+    .table th:nth-child(3),
+    .table td:nth-child(3) {
+      display: none;
+    }
+  }
+
+  @media (max-width: 480px) {
+    .table th:nth-child(2),
+    .table td:nth-child(2) {
+      display: none;
+    }
+  }
 </style>

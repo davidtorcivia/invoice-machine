@@ -493,5 +493,44 @@
     .stats-row {
       grid-template-columns: 1fr;
     }
+
+    .page-header {
+      flex-direction: column;
+      align-items: stretch;
+    }
+
+    .page-actions {
+      width: 100%;
+    }
+
+    .page-actions .btn {
+      flex: 1;
+    }
+  }
+
+  @media (max-width: 640px) {
+    .table th:nth-child(3),
+    .table td:nth-child(3) {
+      display: none;
+    }
+  }
+
+  @media (max-width: 480px) {
+    .page-header h1 {
+      font-size: 1.25rem;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      max-width: 100%;
+    }
+
+    .stats-row {
+      gap: var(--space-3);
+    }
+
+    .table th:nth-child(2),
+    .table td:nth-child(2) {
+      display: none;
+    }
   }
 </style>

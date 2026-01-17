@@ -602,9 +602,34 @@
     }
   }
 
+  @media (max-width: 768px) {
+    .page-header {
+      flex-direction: column;
+      align-items: stretch;
+      gap: var(--space-3);
+    }
+
+    .page-actions {
+      flex-wrap: wrap;
+    }
+
+    .page-actions .btn {
+      flex: 1;
+      min-width: fit-content;
+    }
+  }
+
   @media (max-width: 480px) {
     .page-content {
       padding: var(--space-3);
+    }
+
+    .page-header h1 {
+      font-size: 1.25rem;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      max-width: 100%;
     }
 
     .status-banner {
