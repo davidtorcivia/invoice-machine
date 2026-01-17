@@ -35,6 +35,8 @@ RUN pip install --no-cache-dir \
     "uvicorn[standard]>=0.27.0" \
     "sqlalchemy>=2.0.25" \
     "aiosqlite>=0.19.0" \
+    "alembic>=1.13.0" \
+    "python-dateutil>=2.8.0" \
     "weasyprint>=60.1" \
     "pydantic>=2.5.0" \
     "python-multipart>=0.0.6" \
@@ -44,8 +46,9 @@ RUN pip install --no-cache-dir \
     "slowapi>=0.1.9" \
     "mcp>=1.0.0"
 
-# Copy backend code
+# Copy backend code and alembic config
 COPY invoicely/ ./invoicely/
+COPY alembic.ini ./
 
 # Copy frontend and build
 COPY frontend/package.json ./frontend/
