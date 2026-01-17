@@ -38,6 +38,9 @@
         .invoice {
             max-width: 7.5in;
             margin: 0 auto;
+            min-height: 10in; /* Fill page height (11in - 0.5in top/bottom margins) */
+            display: flex;
+            flex-direction: column;
         }
 
         /* ============================================
@@ -354,7 +357,7 @@
            FOOTER
            ============================================ */
         .footer {
-            margin-top: 0.3in;
+            margin-top: auto; /* Push to bottom of page */
             padding-top: 0.12in;
             border-top: 1px solid var(--border-light);
             text-align: center;
