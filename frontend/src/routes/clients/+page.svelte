@@ -7,6 +7,26 @@
   import Icon from '$lib/components/Icons.svelte';
   import ConfirmModal from '$lib/components/ConfirmModal.svelte';
 
+  // Avatar color palette - visually distinct colors
+  const avatarColors = [
+    { bg: '#dbeafe', fg: '#1d4ed8' }, // blue
+    { bg: '#dcfce7', fg: '#15803d' }, // green
+    { bg: '#fef3c7', fg: '#b45309' }, // amber
+    { bg: '#fce7f3', fg: '#be185d' }, // pink
+    { bg: '#e0e7ff', fg: '#4338ca' }, // indigo
+    { bg: '#fed7aa', fg: '#c2410c' }, // orange
+    { bg: '#d1fae5', fg: '#047857' }, // emerald
+    { bg: '#ede9fe', fg: '#6d28d9' }, // violet
+    { bg: '#fecaca', fg: '#b91c1c' }, // red
+    { bg: '#ccfbf1', fg: '#0f766e' }, // teal
+  ];
+
+  function getAvatarColor(clientId) {
+    // Simple hash based on client ID to get consistent color
+    const index = clientId % avatarColors.length;
+    return avatarColors[index];
+  }
+
   let clients = [];
   let loading = true;
   let searchQuery = '';
@@ -113,7 +133,10 @@
       {#each clients as client}
         <div class="client-card" on:click={() => goto(`/clients/${client.id}`)} role="button" tabindex="0" on:keydown={(e) => e.key === 'Enter' && goto(`/clients/${client.id}`)}>
           <div class="client-card-header">
-            <div class="client-avatar">
+            <div
+              class="client-avatar"
+              style="background-color: {getAvatarColor(client.id).bg}; color: {getAvatarColor(client.id).fg};"
+            >
               {(client.business_name || client.name || '?').charAt(0).toUpperCase()}
             </div>
             <div class="client-identity">
@@ -317,8 +340,6 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    background: var(--color-primary-light);
-    color: var(--color-primary);
     font-weight: 600;
     font-size: 1.125rem;
     border-radius: var(--radius-md);
