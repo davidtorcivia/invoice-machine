@@ -93,14 +93,26 @@ Set these in a `.env` file or as environment variables. See `.env.example` for a
 
 ### Production Configuration
 
-For production deployments with HTTPS:
+For production deployments behind HTTPS (Cloudflare Tunnel, nginx, etc.), these settings are **required**:
 
 ```env
+# Required for production
 APP_BASE_URL=https://invoices.yourdomain.com
 ENVIRONMENT=production
 SECURE_COOKIES=true
 CORS_ORIGINS=https://invoices.yourdomain.com
+
+# Recommended: persistent data storage
+DATA_DIR=/var/lib/invoice-machine/data
 ```
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `APP_BASE_URL` | **Yes** | Must match your public URL for PDF links and MCP to work |
+| `ENVIRONMENT` | **Yes** | Set to `production` for proper logging and defaults |
+| `SECURE_COOKIES` | **Yes** | Must be `true` when using HTTPS |
+| `CORS_ORIGINS` | **Yes** | Must match your domain to prevent CORS errors |
+| `DATA_DIR` | Recommended | Persistent storage location outside container |
 
 ## Usage
 
@@ -396,17 +408,36 @@ version: '3.8'
 services:
   invoice-machine:
     image: invoice-machine:latest
+    container_name: invoice-machine
     ports:
       - "8080:8080"
     environment:
+      # Required for production
       - APP_BASE_URL=https://invoices.yourdomain.com
       - ENVIRONMENT=production
       - SECURE_COOKIES=true
       - CORS_ORIGINS=https://invoices.yourdomain.com
+      # Database (uses container path)
+      - DATABASE_URL=sqlite+aiosqlite:////app/data/invoicely.db
+      - DATA_DIR=/app/data
+      # Optional: customize defaults
+      - DEFAULT_PAYMENT_TERMS_DAYS=30
+      - DEFAULT_CURRENCY_CODE=USD
+      - TRASH_RETENTION_DAYS=90
     volumes:
       - /var/lib/invoice-machine/data:/app/data
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
 ```
+
+**Important notes:**
+- The `DATABASE_URL` uses 4 slashes (`////app/data/`) because SQLite URLs need 3 slashes plus the absolute path
+- The volume mount (`/var/lib/invoice-machine/data:/app/data`) persists all data including the database, PDFs, logos, and backups
+- Set `container_name` to `invoice-machine` if using MCP with `docker exec`
 
 ## License
 
