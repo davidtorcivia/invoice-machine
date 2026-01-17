@@ -69,17 +69,17 @@
   }
 
   function getTotalBilled() {
-    return invoices.reduce((sum, inv) => sum + (inv.total || 0), 0);
+    return invoices.reduce((sum, inv) => sum + parseFloat(inv.total || 0), 0);
   }
 
   function getTotalPaid() {
     return invoices.filter(inv => inv.status === 'paid')
-      .reduce((sum, inv) => sum + (inv.total || 0), 0);
+      .reduce((sum, inv) => sum + parseFloat(inv.total || 0), 0);
   }
 
   function getTotalOutstanding() {
     return invoices.filter(inv => inv.status !== 'paid' && inv.status !== 'cancelled')
-      .reduce((sum, inv) => sum + (inv.total || 0), 0);
+      .reduce((sum, inv) => sum + parseFloat(inv.total || 0), 0);
   }
 </script>
 
