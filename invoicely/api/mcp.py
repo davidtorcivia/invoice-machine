@@ -60,6 +60,12 @@ class MCPSseHandler:
     """ASGI app for SSE endpoint - allows MCP transport to control response directly."""
 
     async def __call__(self, scope, receive, send):
+        # SSE only supports GET - return 405 for other methods so client falls back to SSE transport
+        if scope.get("method", "GET") != "GET":
+            response = StarletteResponse("Method Not Allowed", status_code=405)
+            await response(scope, receive, send)
+            return
+
         request = Request(scope, receive, send)
 
         if not await verify_mcp_auth(request):
