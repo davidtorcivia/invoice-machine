@@ -406,6 +406,10 @@ class InvoiceService:
             if hasattr(invoice, key) and value is not None:
                 setattr(invoice, key, value)
 
+        # Re-snapshot client info to ensure address format is current
+        if client:
+            await snapshot_client_info(session, client, invoice)
+
         invoice.updated_at = datetime.utcnow()
         await session.commit()
         await session.refresh(invoice)

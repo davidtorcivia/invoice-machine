@@ -216,6 +216,20 @@
           <li><strong>macOS:</strong> <code>~/Library/Application Support/Claude/claude_desktop_config.json</code></li>
           <li><strong>Windows:</strong> <code>%APPDATA%\Claude\claude_desktop_config.json</code></li>
         </ul>
+        <pre class="code-block">{`{
+  "mcpServers": {
+    "invoice-machine": {
+      "command": "npx",
+      "args": [
+        "mcp-remote",
+        "https://your-server.com/mcp/sse",
+        "--header",
+        "Authorization: Bearer YOUR_API_KEY"
+      ]
+    }
+  }
+}`}</pre>
+        <p>Replace <code>your-server.com</code> with your actual domain and <code>YOUR_API_KEY</code> with the key from Settings.</p>
 
         <h3>Local Setup (Docker)</h3>
         <p>If running locally with Docker, you can use stdio transport instead:</p>
