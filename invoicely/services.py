@@ -11,7 +11,7 @@ from typing import Optional
 
 import boto3
 from botocore.config import Config
-from sqlalchemy import select, and_
+from sqlalchemy import select, and_, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from invoicely.config import get_settings
@@ -93,7 +93,7 @@ def calculate_due_date(
 
 
 async def recalculate_invoice_totals(session: AsyncSession, invoice: Invoice):
-    """Recalculate subtotal and total from line items."""
+    """Recalculate subtotal, tax, and total from line items."""
     result = await session.execute(
         select(InvoiceItem.total).where(InvoiceItem.invoice_id == invoice.id)
     )
@@ -101,7 +101,16 @@ async def recalculate_invoice_totals(session: AsyncSession, invoice: Invoice):
 
     subtotal = sum(Decimal(str(t)) for t in item_totals)
     invoice.subtotal = subtotal
-    invoice.total = subtotal  # No tax in v1
+
+    # Calculate tax if enabled
+    if invoice.tax_enabled and invoice.tax_rate and invoice.tax_rate > 0:
+        invoice.tax_amount = (subtotal * invoice.tax_rate / Decimal("100")).quantize(
+            Decimal("0.01")
+        )
+    else:
+        invoice.tax_amount = Decimal("0.00")
+
+    invoice.total = subtotal + invoice.tax_amount
 
 
 async def snapshot_client_info(
@@ -291,21 +300,54 @@ class InvoiceService:
         show_payment_instructions: bool = True,
         selected_payment_methods: Optional[str] = None,
         invoice_number_override: Optional[str] = None,
+        tax_enabled: Optional[bool] = None,
+        tax_rate: Optional[Decimal] = None,
+        tax_name: Optional[str] = None,
     ) -> Invoice:
         """
         Create new invoice or quote.
 
         If client_id is provided, fetch client and snapshot info.
         Items format: [{description, quantity, unit_price, unit_type}]
+        Tax settings are snapshotted from business profile if not provided.
         """
         from invoicely.config import get_settings
         settings = get_settings()
         business = await BusinessProfile.get_or_create(session)
 
+        # Validate tax_rate if provided
+        if tax_rate is not None and (tax_rate < 0 or tax_rate > 100):
+            raise ValueError("Tax rate must be between 0 and 100")
+
         # Get client if provided
         client = None
         if client_id:
             client = await session.get(Client, client_id)
+
+        # Determine tax settings with cascade: invoice param > client setting > global default
+        # Tax enabled
+        if tax_enabled is not None:
+            use_tax_enabled = tax_enabled
+        elif client and client.tax_enabled is not None:
+            use_tax_enabled = bool(client.tax_enabled)
+        else:
+            use_tax_enabled = bool(business.default_tax_enabled)
+
+        # Tax rate
+        if tax_rate is not None:
+            use_tax_rate = tax_rate
+        elif client and client.tax_rate is not None:
+            use_tax_rate = client.tax_rate
+        else:
+            use_tax_rate = business.default_tax_rate
+
+        # Tax name
+        if tax_name is not None:
+            use_tax_name = tax_name
+        elif client and client.tax_name is not None:
+            use_tax_name = client.tax_name
+        else:
+            use_tax_name = business.default_tax_name
 
         # Generate invoice number or use override
         invoice_date = issue_date or date.today()
@@ -335,6 +377,10 @@ class InvoiceService:
             client_reference=client_reference,
             show_payment_instructions=1 if show_payment_instructions else 0,
             selected_payment_methods=selected_payment_methods,
+            # Tax settings (snapshotted at creation time)
+            tax_enabled=1 if use_tax_enabled else 0,
+            tax_rate=use_tax_rate or Decimal("0.00"),
+            tax_name=use_tax_name or "Tax",
         )
 
         # Snapshot client info
@@ -397,6 +443,9 @@ class InvoiceService:
             invoice.due_date = due_date
 
         if status:
+            valid_statuses = ["draft", "sent", "paid", "overdue", "cancelled"]
+            if status not in valid_statuses:
+                raise ValueError(f"Invalid status. Must be one of: {valid_statuses}")
             invoice.status = status
 
         if notes is not None:
@@ -455,7 +504,18 @@ class InvoiceService:
         unit_type: str = "qty",
     ) -> InvoiceItem:
         """Add line item to invoice."""
+        # Validate inputs
+        if quantity < 0:
+            raise ValueError("Quantity cannot be negative")
+
         unit_price = Decimal(str(unit_price))
+        if unit_price < 0:
+            raise ValueError("Unit price cannot be negative")
+
+        valid_unit_types = ["qty", "hours"]
+        if unit_type not in valid_unit_types:
+            raise ValueError(f"Invalid unit type. Must be one of: {valid_unit_types}")
+
         total = unit_price * Decimal(quantity)
 
         item = InvoiceItem(
@@ -488,11 +548,46 @@ class InvoiceService:
         unit_price: Optional[Decimal | float | str] = None,
         sort_order: Optional[int] = None,
         unit_type: Optional[str] = None,
+        invoice_id: Optional[int] = None,
     ) -> Optional[InvoiceItem]:
-        """Update line item."""
+        """
+        Update line item.
+
+        Args:
+            session: Database session
+            item_id: ID of the item to update
+            description: New description (optional)
+            quantity: New quantity (optional)
+            unit_price: New unit price (optional)
+            sort_order: New sort order (optional)
+            unit_type: New unit type (optional)
+            invoice_id: If provided, validates that the item belongs to this invoice
+
+        Returns:
+            Updated item or None if not found
+
+        Raises:
+            ValueError: If invoice_id is provided but item doesn't belong to that invoice
+        """
         item = await session.get(InvoiceItem, item_id)
         if not item:
             return None
+
+        # Validate item belongs to specified invoice (IDOR protection)
+        if invoice_id is not None and item.invoice_id != invoice_id:
+            raise ValueError("Item does not belong to the specified invoice")
+
+        # Validate inputs
+        if quantity is not None and quantity < 0:
+            raise ValueError("Quantity cannot be negative")
+        if unit_price is not None:
+            unit_price_decimal = Decimal(str(unit_price))
+            if unit_price_decimal < 0:
+                raise ValueError("Unit price cannot be negative")
+        if unit_type is not None:
+            valid_unit_types = ["qty", "hours"]
+            if unit_type not in valid_unit_types:
+                raise ValueError(f"Invalid unit type. Must be one of: {valid_unit_types}")
 
         if description is not None:
             item.description = description
@@ -516,22 +611,65 @@ class InvoiceService:
         return item
 
     @staticmethod
-    async def remove_item(session: AsyncSession, item_id: int) -> bool:
-        """Remove line item."""
+    async def remove_item(
+        session: AsyncSession,
+        item_id: int,
+        invoice_id: Optional[int] = None,
+    ) -> bool:
+        """
+        Remove line item.
+
+        Args:
+            session: Database session
+            item_id: ID of the item to remove
+            invoice_id: If provided, validates that the item belongs to this invoice
+
+        Returns:
+            True if item was removed, False if not found
+
+        Raises:
+            ValueError: If invoice_id is provided but item doesn't belong to that invoice
+        """
         item = await session.get(InvoiceItem, item_id)
         if not item:
             return False
 
-        invoice_id = item.invoice_id
+        # Validate item belongs to specified invoice (IDOR protection)
+        if invoice_id is not None and item.invoice_id != invoice_id:
+            raise ValueError("Item does not belong to the specified invoice")
+
+        item_invoice_id = item.invoice_id
         await session.delete(item)
 
         # Update invoice totals
-        invoice = await session.get(Invoice, invoice_id)
+        invoice = await session.get(Invoice, item_invoice_id)
         if invoice:
             await recalculate_invoice_totals(session, invoice)
 
         await session.commit()
         return True
+
+    @staticmethod
+    async def update_overdue_invoices(session: AsyncSession) -> int:
+        """
+        Mark sent invoices as overdue if due_date < today.
+
+        Returns the count of invoices updated.
+        """
+        today = date.today()
+        result = await session.execute(
+            update(Invoice)
+            .where(
+                and_(
+                    Invoice.status == "sent",
+                    Invoice.due_date < today,
+                    Invoice.deleted_at.is_(None),
+                )
+            )
+            .values(status="overdue", updated_at=datetime.utcnow())
+        )
+        await session.commit()
+        return result.rowcount
 
 
 class BackupService:
@@ -739,6 +877,42 @@ class BackupService:
             if tmp_path:
                 tmp_path.unlink(missing_ok=True)
 
+    def _validate_backup_filename(self, filename: str) -> Path:
+        """
+        Validate backup filename and return safe path.
+
+        Prevents path traversal attacks by ensuring the resolved path
+        stays within the backup directory.
+
+        Args:
+            filename: The backup filename to validate
+
+        Returns:
+            Safe Path object within backup_dir
+
+        Raises:
+            ValueError: If filename contains path traversal attempts
+        """
+        # Reject any path separators
+        if "/" in filename or "\\" in filename:
+            raise ValueError("Invalid backup filename: path separators not allowed")
+
+        # Reject parent directory references
+        if ".." in filename:
+            raise ValueError("Invalid backup filename: parent directory reference not allowed")
+
+        # Build path and verify it resolves within backup_dir
+        backup_path = self.backup_dir / filename
+        try:
+            resolved = backup_path.resolve()
+            backup_dir_resolved = self.backup_dir.resolve()
+            if not str(resolved).startswith(str(backup_dir_resolved)):
+                raise ValueError("Invalid backup filename: path traversal detected")
+        except (OSError, ValueError) as e:
+            raise ValueError(f"Invalid backup filename: {e}")
+
+        return backup_path
+
     def restore_backup(self, backup_filename: str, validate: bool = True) -> dict:
         """
         Restore database from a backup file.
@@ -753,7 +927,7 @@ class BackupService:
         The application should be restarted after restore.
         """
         settings = get_settings()
-        backup_path = self.backup_dir / backup_filename
+        backup_path = self._validate_backup_filename(backup_filename)
         if not backup_path.exists():
             raise FileNotFoundError(f"Backup not found: {backup_filename}")
 
@@ -791,6 +965,9 @@ class BackupService:
         if not config or not config.get("enabled"):
             raise ValueError("S3 is not configured")
 
+        # Validate filename to prevent path traversal
+        local_path = self._validate_backup_filename(filename)
+
         s3_client = boto3.client(
             "s3",
             endpoint_url=config.get("endpoint_url"),
@@ -804,7 +981,6 @@ class BackupService:
         prefix = config.get("prefix", "invoice-machine-backups")
         key = f"{prefix}/{filename}"
 
-        local_path = self.backup_dir / filename
         s3_client.download_file(bucket, key, str(local_path))
 
         return local_path
@@ -848,7 +1024,8 @@ class BackupService:
 
     def delete_backup(self, backup_filename: str) -> bool:
         """Delete a specific backup file."""
-        backup_path = self.backup_dir / backup_filename
+        # Validate filename to prevent path traversal
+        backup_path = self._validate_backup_filename(backup_filename)
         if backup_path.exists():
             backup_path.unlink()
             return True
@@ -864,3 +1041,522 @@ def get_backup_service(
         retention_days=retention_days or 30,
         s3_config=s3_config,
     )
+
+
+class RecurringService:
+    """Service for managing recurring invoice schedules."""
+
+    @staticmethod
+    async def create_schedule(
+        session: AsyncSession,
+        client_id: int,
+        name: str,
+        frequency: str,
+        schedule_day: int = 1,
+        currency_code: str = "USD",
+        payment_terms_days: int = 30,
+        notes: Optional[str] = None,
+        line_items: Optional[list] = None,
+        tax_enabled: Optional[int] = None,
+        tax_rate: Optional[Decimal] = None,
+        tax_name: Optional[str] = None,
+        next_invoice_date: Optional[date] = None,
+    ) -> "RecurringSchedule":
+        """Create a new recurring schedule."""
+        from invoicely.database import RecurringSchedule
+        import json
+        from dateutil.relativedelta import relativedelta
+
+        # Validate frequency
+        valid_frequencies = ["daily", "weekly", "monthly", "quarterly", "yearly"]
+        if frequency not in valid_frequencies:
+            raise ValueError(f"Invalid frequency. Must be one of: {valid_frequencies}")
+
+        # Validate schedule_day
+        if frequency == "weekly" and not (0 <= schedule_day <= 6):
+            raise ValueError("For weekly frequency, schedule_day must be 0-6 (Monday-Sunday)")
+        elif frequency in ["monthly", "quarterly", "yearly"] and not (1 <= schedule_day <= 31):
+            raise ValueError("For monthly/quarterly/yearly frequency, schedule_day must be 1-31")
+
+        # Validate payment_terms_days
+        if payment_terms_days < 0 or payment_terms_days > 365:
+            raise ValueError("Payment terms must be between 0 and 365 days")
+
+        # Validate tax_rate if provided
+        if tax_rate is not None and (tax_rate < 0 or tax_rate > 100):
+            raise ValueError("Tax rate must be between 0 and 100")
+
+        # Calculate next invoice date if not provided
+        if next_invoice_date is None:
+            today = date.today()
+            if frequency == "daily":
+                next_invoice_date = today + timedelta(days=1)
+            elif frequency == "weekly":
+                # Next occurrence of schedule_day (0=Monday, 6=Sunday)
+                days_ahead = schedule_day - today.weekday()
+                if days_ahead <= 0:
+                    days_ahead += 7
+                next_invoice_date = today + timedelta(days=days_ahead)
+            elif frequency == "monthly":
+                # Next month on schedule_day
+                next_invoice_date = (today.replace(day=1) + relativedelta(months=1)).replace(
+                    day=min(schedule_day, 28)
+                )
+            elif frequency == "quarterly":
+                # Next quarter on schedule_day
+                next_invoice_date = (today.replace(day=1) + relativedelta(months=3)).replace(
+                    day=min(schedule_day, 28)
+                )
+            elif frequency == "yearly":
+                # Next year on schedule_day (of current month)
+                next_invoice_date = (today.replace(day=1) + relativedelta(years=1)).replace(
+                    day=min(schedule_day, 28)
+                )
+
+        schedule = RecurringSchedule(
+            client_id=client_id,
+            name=name,
+            frequency=frequency,
+            schedule_day=schedule_day,
+            currency_code=currency_code,
+            payment_terms_days=payment_terms_days,
+            notes=notes,
+            line_items=json.dumps(line_items) if line_items else None,
+            tax_enabled=tax_enabled,
+            tax_rate=tax_rate,
+            tax_name=tax_name,
+            next_invoice_date=next_invoice_date,
+        )
+        session.add(schedule)
+        await session.commit()
+        await session.refresh(schedule)
+        return schedule
+
+    @staticmethod
+    async def get_schedule(
+        session: AsyncSession, schedule_id: int
+    ) -> Optional["RecurringSchedule"]:
+        """Get a recurring schedule by ID."""
+        from invoicely.database import RecurringSchedule
+        from sqlalchemy import select
+
+        result = await session.execute(
+            select(RecurringSchedule).where(RecurringSchedule.id == schedule_id)
+        )
+        return result.scalar_one_or_none()
+
+    @staticmethod
+    async def list_schedules(
+        session: AsyncSession,
+        client_id: Optional[int] = None,
+        active_only: bool = True,
+    ) -> list["RecurringSchedule"]:
+        """List recurring schedules."""
+        from invoicely.database import RecurringSchedule
+        from sqlalchemy import select
+
+        query = select(RecurringSchedule)
+        if client_id:
+            query = query.where(RecurringSchedule.client_id == client_id)
+        if active_only:
+            query = query.where(RecurringSchedule.is_active == 1)
+        query = query.order_by(RecurringSchedule.next_invoice_date)
+
+        result = await session.execute(query)
+        return list(result.scalars().all())
+
+    @staticmethod
+    async def update_schedule(
+        session: AsyncSession, schedule_id: int, **kwargs
+    ) -> Optional["RecurringSchedule"]:
+        """Update a recurring schedule."""
+        import json
+
+        schedule = await RecurringService.get_schedule(session, schedule_id)
+        if not schedule:
+            return None
+
+        # Handle line_items JSON conversion
+        if "line_items" in kwargs and kwargs["line_items"] is not None:
+            kwargs["line_items"] = json.dumps(kwargs["line_items"])
+
+        for key, value in kwargs.items():
+            if hasattr(schedule, key) and value is not None:
+                setattr(schedule, key, value)
+
+        schedule.updated_at = datetime.utcnow()
+        await session.commit()
+        await session.refresh(schedule)
+        return schedule
+
+    @staticmethod
+    async def delete_schedule(session: AsyncSession, schedule_id: int) -> bool:
+        """Delete a recurring schedule."""
+        from invoicely.database import RecurringSchedule
+
+        schedule = await RecurringService.get_schedule(session, schedule_id)
+        if not schedule:
+            return False
+
+        await session.delete(schedule)
+        await session.commit()
+        return True
+
+    @staticmethod
+    async def pause_schedule(session: AsyncSession, schedule_id: int) -> bool:
+        """Pause a recurring schedule."""
+        schedule = await RecurringService.get_schedule(session, schedule_id)
+        if not schedule:
+            return False
+
+        schedule.is_active = 0
+        schedule.updated_at = datetime.utcnow()
+        await session.commit()
+        return True
+
+    @staticmethod
+    async def resume_schedule(session: AsyncSession, schedule_id: int) -> bool:
+        """Resume a paused recurring schedule."""
+        schedule = await RecurringService.get_schedule(session, schedule_id)
+        if not schedule:
+            return False
+
+        schedule.is_active = 1
+        schedule.updated_at = datetime.utcnow()
+        await session.commit()
+        return True
+
+    @staticmethod
+    def calculate_next_date(current_date: date, frequency: str, schedule_day: int) -> date:
+        """Calculate the next invoice date based on frequency."""
+        from dateutil.relativedelta import relativedelta
+
+        if frequency == "daily":
+            return current_date + timedelta(days=1)
+        elif frequency == "weekly":
+            return current_date + timedelta(weeks=1)
+        elif frequency == "monthly":
+            next_date = current_date + relativedelta(months=1)
+            # Handle months with fewer days
+            try:
+                return next_date.replace(day=schedule_day)
+            except ValueError:
+                # Day doesn't exist in this month, use last day
+                return (next_date.replace(day=1) + relativedelta(months=1)) - timedelta(days=1)
+        elif frequency == "quarterly":
+            next_date = current_date + relativedelta(months=3)
+            try:
+                return next_date.replace(day=schedule_day)
+            except ValueError:
+                return (next_date.replace(day=1) + relativedelta(months=1)) - timedelta(days=1)
+        elif frequency == "yearly":
+            next_date = current_date + relativedelta(years=1)
+            try:
+                return next_date.replace(day=schedule_day)
+            except ValueError:
+                return (next_date.replace(day=1) + relativedelta(months=1)) - timedelta(days=1)
+        else:
+            raise ValueError(f"Unknown frequency: {frequency}")
+
+    @staticmethod
+    async def process_due_schedules(session: AsyncSession) -> list[dict]:
+        """Process all schedules due today or earlier and create invoices."""
+        from invoicely.database import RecurringSchedule
+        from sqlalchemy import select
+        import json
+
+        today = date.today()
+        results = []
+
+        # Find all active schedules where next_invoice_date <= today
+        query = select(RecurringSchedule).where(
+            RecurringSchedule.is_active == 1,
+            RecurringSchedule.next_invoice_date <= today,
+        )
+        result = await session.execute(query)
+        due_schedules = list(result.scalars().all())
+
+        for schedule in due_schedules:
+            try:
+                # Parse line items
+                line_items = json.loads(schedule.line_items) if schedule.line_items else []
+
+                # Create invoice
+                invoice = await InvoiceService.create_invoice(
+                    session,
+                    client_id=schedule.client_id,
+                    issue_date=today,
+                    currency_code=schedule.currency_code,
+                    payment_terms_days=schedule.payment_terms_days,
+                    notes=schedule.notes,
+                    items=line_items,
+                    tax_enabled=schedule.tax_enabled,
+                    tax_rate=schedule.tax_rate,
+                    tax_name=schedule.tax_name,
+                )
+
+                # Update schedule with next date and last invoice
+                schedule.last_invoice_id = invoice.id
+                schedule.next_invoice_date = RecurringService.calculate_next_date(
+                    today, schedule.frequency, schedule.schedule_day
+                )
+                schedule.updated_at = datetime.utcnow()
+
+                results.append({
+                    "schedule_id": schedule.id,
+                    "schedule_name": schedule.name,
+                    "invoice_id": invoice.id,
+                    "invoice_number": invoice.invoice_number,
+                    "success": True,
+                })
+
+            except Exception as e:
+                results.append({
+                    "schedule_id": schedule.id,
+                    "schedule_name": schedule.name,
+                    "success": False,
+                    "error": str(e),
+                })
+
+        await session.commit()
+        return results
+
+    @staticmethod
+    async def trigger_schedule(session: AsyncSession, schedule_id: int) -> dict:
+        """Manually trigger a schedule to create an invoice now."""
+        from invoicely.database import RecurringSchedule
+        import json
+
+        schedule = await RecurringService.get_schedule(session, schedule_id)
+        if not schedule:
+            return {"success": False, "error": "Schedule not found"}
+
+        today = date.today()
+
+        try:
+            # Parse line items
+            line_items = json.loads(schedule.line_items) if schedule.line_items else []
+
+            # Create invoice
+            invoice = await InvoiceService.create_invoice(
+                session,
+                client_id=schedule.client_id,
+                issue_date=today,
+                currency_code=schedule.currency_code,
+                payment_terms_days=schedule.payment_terms_days,
+                notes=schedule.notes,
+                items=line_items,
+                tax_enabled=schedule.tax_enabled,
+                tax_rate=schedule.tax_rate,
+                tax_name=schedule.tax_name,
+            )
+
+            # Update schedule with next date and last invoice
+            schedule.last_invoice_id = invoice.id
+            schedule.next_invoice_date = RecurringService.calculate_next_date(
+                today, schedule.frequency, schedule.schedule_day
+            )
+            schedule.updated_at = datetime.utcnow()
+            await session.commit()
+
+            return {
+                "success": True,
+                "invoice_id": invoice.id,
+                "invoice_number": invoice.invoice_number,
+                "next_invoice_date": schedule.next_invoice_date.isoformat(),
+            }
+
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+
+class SearchService:
+    """Service for full-text search across invoices and clients."""
+
+    @staticmethod
+    async def search(
+        session: AsyncSession,
+        query: str,
+        search_invoices: bool = True,
+        search_clients: bool = True,
+        limit: int = 20,
+    ) -> dict:
+        """
+        Search across invoices and clients using FTS5.
+
+        Args:
+            session: Database session
+            query: Search query (supports FTS5 syntax)
+            search_invoices: Include invoices in search
+            search_clients: Include clients in search
+            limit: Maximum results per category
+
+        Returns:
+            Dict with 'invoices' and 'clients' lists
+        """
+        from sqlalchemy import text
+
+        results = {"invoices": [], "clients": []}
+
+        # Validate and sanitize limit
+        limit = max(1, min(limit, 100))  # Clamp between 1 and 100
+
+        # Validate query
+        if not query or not query.strip():
+            return results
+
+        # Escape query for FTS5 - escape all special FTS5 characters
+        # FTS5 special chars: " * - ( ) : ^ AND OR NOT NEAR
+        safe_query = query.strip()
+        # Remove potentially dangerous FTS5 operators
+        for char in ['"', '*', '-', '(', ')', ':', '^']:
+            safe_query = safe_query.replace(char, ' ')
+        # Replace FTS5 boolean operators with spaces
+        for op in [' AND ', ' OR ', ' NOT ', ' NEAR ']:
+            safe_query = safe_query.replace(op, ' ')
+            safe_query = safe_query.replace(op.lower(), ' ')
+        # Collapse multiple spaces and trim
+        safe_query = ' '.join(safe_query.split())
+
+        if not safe_query:
+            return results
+
+        # Add wildcards for partial matching (safe now that special chars are removed)
+        fts_query = f'"{safe_query}"*'
+
+        if search_invoices:
+            try:
+                # Search invoices using FTS5
+                invoice_sql = text("""
+                    SELECT i.id, i.invoice_number, i.client_name, i.client_business,
+                           i.status, i.total, i.currency_code, i.issue_date, i.deleted_at,
+                           snippet(invoices_fts, 0, '<mark>', '</mark>', '...', 32) as match_snippet
+                    FROM invoices_fts
+                    JOIN invoices i ON invoices_fts.rowid = i.id
+                    WHERE invoices_fts MATCH :query
+                    ORDER BY rank
+                    LIMIT :limit
+                """)
+                result = await session.execute(invoice_sql, {"query": fts_query, "limit": limit})
+                for row in result.fetchall():
+                    results["invoices"].append({
+                        "id": row.id,
+                        "invoice_number": row.invoice_number,
+                        "client_name": row.client_name,
+                        "client_business": row.client_business,
+                        "status": row.status,
+                        "total": str(row.total),
+                        "currency_code": row.currency_code,
+                        "issue_date": row.issue_date.isoformat() if row.issue_date else None,
+                        "is_deleted": row.deleted_at is not None,
+                        "match_snippet": row.match_snippet,
+                    })
+            except Exception as e:
+                # FTS tables might not exist yet, fall back to LIKE search
+                results["invoices"] = await SearchService._fallback_invoice_search(
+                    session, query, limit
+                )
+
+        if search_clients:
+            try:
+                # Search clients using FTS5
+                client_sql = text("""
+                    SELECT c.id, c.name, c.business_name, c.email, c.phone, c.deleted_at,
+                           snippet(clients_fts, 0, '<mark>', '</mark>', '...', 32) as match_snippet
+                    FROM clients_fts
+                    JOIN clients c ON clients_fts.rowid = c.id
+                    WHERE clients_fts MATCH :query
+                    ORDER BY rank
+                    LIMIT :limit
+                """)
+                result = await session.execute(client_sql, {"query": fts_query, "limit": limit})
+                for row in result.fetchall():
+                    results["clients"].append({
+                        "id": row.id,
+                        "name": row.name,
+                        "business_name": row.business_name,
+                        "display_name": row.business_name or row.name or "Unknown",
+                        "email": row.email,
+                        "phone": row.phone,
+                        "is_deleted": row.deleted_at is not None,
+                        "match_snippet": row.match_snippet,
+                    })
+            except Exception as e:
+                # FTS tables might not exist yet, fall back to LIKE search
+                results["clients"] = await SearchService._fallback_client_search(
+                    session, query, limit
+                )
+
+        return results
+
+    @staticmethod
+    async def _fallback_invoice_search(
+        session: AsyncSession, query: str, limit: int
+    ) -> list:
+        """Fallback LIKE-based search for invoices when FTS5 is unavailable."""
+        from sqlalchemy import select, or_
+
+        search_pattern = f"%{query}%"
+        stmt = (
+            select(Invoice)
+            .where(
+                or_(
+                    Invoice.invoice_number.ilike(search_pattern),
+                    Invoice.client_name.ilike(search_pattern),
+                    Invoice.client_business.ilike(search_pattern),
+                    Invoice.notes.ilike(search_pattern),
+                )
+            )
+            .limit(limit)
+        )
+        result = await session.execute(stmt)
+        invoices = result.scalars().all()
+        return [
+            {
+                "id": inv.id,
+                "invoice_number": inv.invoice_number,
+                "client_name": inv.client_name,
+                "client_business": inv.client_business,
+                "status": inv.status,
+                "total": str(inv.total),
+                "currency_code": inv.currency_code,
+                "issue_date": inv.issue_date.isoformat() if inv.issue_date else None,
+                "is_deleted": inv.deleted_at is not None,
+            }
+            for inv in invoices
+        ]
+
+    @staticmethod
+    async def _fallback_client_search(
+        session: AsyncSession, query: str, limit: int
+    ) -> list:
+        """Fallback LIKE-based search for clients when FTS5 is unavailable."""
+        from sqlalchemy import select, or_
+
+        search_pattern = f"%{query}%"
+        stmt = (
+            select(Client)
+            .where(
+                or_(
+                    Client.name.ilike(search_pattern),
+                    Client.business_name.ilike(search_pattern),
+                    Client.email.ilike(search_pattern),
+                    Client.notes.ilike(search_pattern),
+                )
+            )
+            .limit(limit)
+        )
+        result = await session.execute(stmt)
+        clients = result.scalars().all()
+        return [
+            {
+                "id": c.id,
+                "name": c.name,
+                "business_name": c.business_name,
+                "display_name": c.business_name or c.name or "Unknown",
+                "email": c.email,
+                "phone": c.phone,
+                "is_deleted": c.deleted_at is not None,
+            }
+            for c in clients
+        ]

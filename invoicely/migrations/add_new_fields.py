@@ -39,13 +39,35 @@ def migrate(db_path: Path = DEFAULT_DB_PATH):
         ("business_profile", "backup_retention_days", "INTEGER DEFAULT 30"),
         ("business_profile", "backup_s3_enabled", "INTEGER DEFAULT 0"),
         ("business_profile", "backup_s3_config", "TEXT"),
+        # Tax settings (optional - disabled by default)
+        ("business_profile", "default_tax_enabled", "INTEGER DEFAULT 0"),
+        ("business_profile", "default_tax_rate", "DECIMAL(5,2) DEFAULT 0.00"),
+        ("business_profile", "default_tax_name", "VARCHAR(50) DEFAULT 'Tax'"),
+        # SMTP settings (optional - user must configure to enable email)
+        ("business_profile", "smtp_enabled", "INTEGER DEFAULT 0"),
+        ("business_profile", "smtp_host", "VARCHAR(255)"),
+        ("business_profile", "smtp_port", "INTEGER DEFAULT 587"),
+        ("business_profile", "smtp_username", "VARCHAR(255)"),
+        ("business_profile", "smtp_password", "VARCHAR(255)"),
+        ("business_profile", "smtp_from_email", "VARCHAR(255)"),
+        ("business_profile", "smtp_from_name", "VARCHAR(255)"),
+        ("business_profile", "smtp_use_tls", "INTEGER DEFAULT 1"),
         # Invoice fields
         ("invoices", "document_type", "VARCHAR(20) DEFAULT 'invoice'"),
         ("invoices", "client_reference", "VARCHAR(100)"),
         ("invoices", "show_payment_instructions", "INTEGER DEFAULT 1"),
         ("invoices", "selected_payment_methods", "TEXT"),
+        # Invoice tax fields (optional - disabled by default)
+        ("invoices", "tax_enabled", "INTEGER DEFAULT 0"),
+        ("invoices", "tax_rate", "DECIMAL(5,2) DEFAULT 0.00"),
+        ("invoices", "tax_name", "VARCHAR(50) DEFAULT 'Tax'"),
+        ("invoices", "tax_amount", "DECIMAL(10,2) DEFAULT 0.00"),
         # InvoiceItem fields
         ("invoice_items", "unit_type", "VARCHAR(10) DEFAULT 'qty'"),
+        # Client tax settings (per-client override, NULL = use global default)
+        ("clients", "tax_enabled", "INTEGER"),
+        ("clients", "tax_rate", "DECIMAL(5,2)"),
+        ("clients", "tax_name", "VARCHAR(50)"),
     ]
 
     for table, column, col_type in migrations:

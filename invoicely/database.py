@@ -99,6 +99,19 @@ class BusinessProfile(Base):
     backup_s3_enabled: Mapped[int] = mapped_column(Integer, default=0)
     # JSON: {endpoint_url, access_key_id, secret_access_key, bucket, region, prefix}
     backup_s3_config: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # Tax settings (optional - disabled by default)
+    default_tax_enabled: Mapped[int] = mapped_column(Integer, default=0)
+    default_tax_rate: Mapped[Decimal] = mapped_column(DECIMAL(5, 2), default=Decimal("0.00"))
+    default_tax_name: Mapped[str] = mapped_column(String(50), default="Tax")
+    # SMTP settings (optional - user must configure to enable email)
+    smtp_enabled: Mapped[int] = mapped_column(Integer, default=0)
+    smtp_host: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    smtp_port: Mapped[int] = mapped_column(Integer, default=587)
+    smtp_username: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    smtp_password: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    smtp_from_email: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    smtp_from_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    smtp_use_tls: Mapped[int] = mapped_column(Integer, default=1)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
@@ -144,6 +157,10 @@ class Client(Base):
     phone: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     payment_terms_days: Mapped[int] = mapped_column(Integer, default=30)
     notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # Per-client tax settings (None = use global default, explicit value = override)
+    tax_enabled: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    tax_rate: Mapped[Optional[Decimal]] = mapped_column(DECIMAL(5, 2), nullable=True)
+    tax_name: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
@@ -198,6 +215,11 @@ class Invoice(Base):
     payment_terms_days: Mapped[int] = mapped_column(Integer, default=30)
     currency_code: Mapped[str] = mapped_column(String(3), default="USD")
     subtotal: Mapped[Decimal] = mapped_column(DECIMAL(10, 2), default=0)
+    # Tax fields (optional - snapshot at invoice creation time)
+    tax_enabled: Mapped[int] = mapped_column(Integer, default=0)
+    tax_rate: Mapped[Decimal] = mapped_column(DECIMAL(5, 2), default=Decimal("0.00"))
+    tax_name: Mapped[str] = mapped_column(String(50), default="Tax")
+    tax_amount: Mapped[Decimal] = mapped_column(DECIMAL(10, 2), default=Decimal("0.00"))
     total: Mapped[Decimal] = mapped_column(DECIMAL(10, 2), default=0)
     notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
@@ -265,6 +287,55 @@ class InvoiceItem(Base):
     )
 
     __table_args__ = (Index("idx_items_invoice", "invoice_id"),)
+
+
+class RecurringSchedule(Base):
+    """Recurring invoice schedule."""
+
+    __tablename__ = "recurring_schedules"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    client_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("clients.id"), nullable=False
+    )
+    # Schedule name/description
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    # Frequency: daily, weekly, monthly, quarterly, yearly
+    frequency: Mapped[str] = mapped_column(String(20), nullable=False)
+    # Day of month (1-31) for monthly/quarterly/yearly, or day of week (0-6) for weekly
+    schedule_day: Mapped[int] = mapped_column(Integer, default=1)
+    # Invoice template fields
+    currency_code: Mapped[str] = mapped_column(String(3), default="USD")
+    payment_terms_days: Mapped[int] = mapped_column(Integer, default=30)
+    notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # JSON array of line items: [{description, quantity, unit_price, unit_type}]
+    line_items: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # Tax settings (inherit from client/global if not set)
+    tax_enabled: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    tax_rate: Mapped[Optional[Decimal]] = mapped_column(DECIMAL(5, 2), nullable=True)
+    tax_name: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    # Schedule status
+    is_active: Mapped[int] = mapped_column(Integer, default=1)
+    next_invoice_date: Mapped[date] = mapped_column(Date, nullable=False)
+    last_invoice_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("invoices.id"), nullable=True
+    )
+    # Timestamps
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+
+    client: Mapped["Client"] = relationship("Client", lazy="selectin")
+    last_invoice: Mapped[Optional["Invoice"]] = relationship(
+        "Invoice", foreign_keys=[last_invoice_id], lazy="selectin"
+    )
+
+    __table_args__ = (
+        Index("idx_recurring_client", "client_id"),
+        Index("idx_recurring_next_date", "next_invoice_date"),
+        Index("idx_recurring_active", "is_active"),
+    )
 
 
 # Engine and session management

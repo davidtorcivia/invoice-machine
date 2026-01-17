@@ -8,7 +8,7 @@ from mcp.server.fastmcp import FastMCP
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from invoicely.database import async_session_maker, BusinessProfile
-from invoicely.services import ClientService, InvoiceService, format_currency
+from invoicely.services import ClientService, InvoiceService, RecurringService, SearchService, format_currency
 from invoicely.config import get_settings
 
 mcp = FastMCP("invoicely")
@@ -67,6 +67,19 @@ async def get_business_profile() -> dict:
             "default_payment_instructions": profile.default_payment_instructions,
             "payment_methods": payment_methods,
             "theme_preference": profile.theme_preference,
+            # Tax settings
+            "default_tax_enabled": bool(getattr(profile, "default_tax_enabled", 0)),
+            "default_tax_rate": str(getattr(profile, "default_tax_rate", 0)),
+            "default_tax_name": getattr(profile, "default_tax_name", "Tax"),
+            # SMTP settings (password hidden)
+            "smtp_enabled": bool(getattr(profile, "smtp_enabled", 0)),
+            "smtp_host": getattr(profile, "smtp_host", None),
+            "smtp_port": getattr(profile, "smtp_port", 587),
+            "smtp_username": getattr(profile, "smtp_username", None),
+            "smtp_password_set": bool(getattr(profile, "smtp_password", None)),
+            "smtp_from_email": getattr(profile, "smtp_from_email", None),
+            "smtp_from_name": getattr(profile, "smtp_from_name", None),
+            "smtp_use_tls": bool(getattr(profile, "smtp_use_tls", 1)),
         }
 
 
@@ -88,6 +101,17 @@ async def update_business_profile(
     default_notes: Optional[str] = None,
     default_payment_instructions: Optional[str] = None,
     theme_preference: Optional[str] = None,
+    default_tax_enabled: Optional[bool] = None,
+    default_tax_rate: Optional[float] = None,
+    default_tax_name: Optional[str] = None,
+    smtp_enabled: Optional[bool] = None,
+    smtp_host: Optional[str] = None,
+    smtp_port: Optional[int] = None,
+    smtp_username: Optional[str] = None,
+    smtp_password: Optional[str] = None,
+    smtp_from_email: Optional[str] = None,
+    smtp_from_name: Optional[str] = None,
+    smtp_use_tls: Optional[bool] = None,
 ) -> dict:
     """
     Update business profile fields.
@@ -111,16 +135,41 @@ async def update_business_profile(
         default_notes: Default invoice footer notes
         default_payment_instructions: Fallback payment instructions text
         theme_preference: UI theme preference (system, light, dark)
+        default_tax_enabled: Whether to apply tax by default on new invoices
+        default_tax_rate: Default tax rate percentage (e.g. 8.25 for 8.25%)
+        default_tax_name: Default tax name (e.g. "VAT", "Sales Tax", "GST")
+        smtp_enabled: Enable SMTP email sending
+        smtp_host: SMTP server hostname
+        smtp_port: SMTP server port (default 587)
+        smtp_username: SMTP authentication username
+        smtp_password: SMTP authentication password
+        smtp_from_email: Sender email address
+        smtp_from_name: Sender display name
+        smtp_use_tls: Use TLS/STARTTLS (default True)
 
     Returns:
         Updated business profile
     """
     import json
+    from decimal import Decimal
 
     async with get_session() as session:
         profile = await BusinessProfile.get_or_create(session)
 
-        updates = {k: v for k, v in locals().items() if v is not None and k not in ("session", "json")}
+        updates = {k: v for k, v in locals().items() if v is not None and k not in ("session", "json", "Decimal")}
+
+        # Convert tax fields to proper types
+        if "default_tax_enabled" in updates:
+            updates["default_tax_enabled"] = 1 if updates["default_tax_enabled"] else 0
+        if "default_tax_rate" in updates:
+            updates["default_tax_rate"] = Decimal(str(updates["default_tax_rate"]))
+
+        # Convert SMTP boolean fields to integers
+        if "smtp_enabled" in updates:
+            updates["smtp_enabled"] = 1 if updates["smtp_enabled"] else 0
+        if "smtp_use_tls" in updates:
+            updates["smtp_use_tls"] = 1 if updates["smtp_use_tls"] else 0
+
         for key, value in updates.items():
             setattr(profile, key, value)
 
@@ -156,6 +205,19 @@ async def update_business_profile(
             "default_payment_instructions": profile.default_payment_instructions,
             "payment_methods": payment_methods,
             "theme_preference": profile.theme_preference,
+            # Tax settings
+            "default_tax_enabled": bool(getattr(profile, "default_tax_enabled", 0)),
+            "default_tax_rate": str(getattr(profile, "default_tax_rate", 0)),
+            "default_tax_name": getattr(profile, "default_tax_name", "Tax"),
+            # SMTP settings (password hidden)
+            "smtp_enabled": bool(getattr(profile, "smtp_enabled", 0)),
+            "smtp_host": getattr(profile, "smtp_host", None),
+            "smtp_port": getattr(profile, "smtp_port", 587),
+            "smtp_username": getattr(profile, "smtp_username", None),
+            "smtp_password_set": bool(getattr(profile, "smtp_password", None)),
+            "smtp_from_email": getattr(profile, "smtp_from_email", None),
+            "smtp_from_name": getattr(profile, "smtp_from_name", None),
+            "smtp_use_tls": bool(getattr(profile, "smtp_use_tls", 1)),
         }
 
 
@@ -278,6 +340,9 @@ async def list_clients(
                 "payment_terms_days": c.payment_terms_days,
                 "notes": c.notes,
                 "is_active": c.is_active,
+                "tax_enabled": c.tax_enabled,
+                "tax_rate": float(c.tax_rate) if c.tax_rate is not None else None,
+                "tax_name": c.tax_name,
             }
             for c in clients
         ]
@@ -314,6 +379,9 @@ async def get_client(client_id: int) -> Optional[dict]:
             "phone": client.phone,
             "payment_terms_days": client.payment_terms_days,
             "notes": client.notes,
+            "tax_enabled": client.tax_enabled,
+            "tax_rate": float(client.tax_rate) if client.tax_rate is not None else None,
+            "tax_name": client.tax_name,
         }
 
 
@@ -331,6 +399,9 @@ async def create_client(
     phone: Optional[str] = None,
     payment_terms_days: int = 30,
     notes: Optional[str] = None,
+    tax_enabled: Optional[int] = None,
+    tax_rate: Optional[float] = None,
+    tax_name: Optional[str] = None,
 ) -> dict:
     """
     Create a new client.
@@ -350,26 +421,36 @@ async def create_client(
         phone: Phone number
         payment_terms_days: Default payment terms for this client (default: 30)
         notes: Additional notes
+        tax_enabled: Per-client tax override (None = use global, 0 = disabled, 1 = enabled)
+        tax_rate: Per-client tax rate override (e.g. 8.25 for 8.25%)
+        tax_name: Per-client tax name override (e.g. "Sales Tax")
 
     Returns:
         Created client with ID
     """
     async with get_session() as session:
-        client = await ClientService.create_client(
-            session,
-            name=name,
-            business_name=business_name,
-            address_line1=address_line1,
-            address_line2=address_line2,
-            city=city,
-            state=state,
-            postal_code=postal_code,
-            country=country,
-            email=email,
-            phone=phone,
-            payment_terms_days=payment_terms_days,
-            notes=notes,
-        )
+        # Build kwargs, converting tax_rate to Decimal if provided
+        kwargs = {
+            "name": name,
+            "business_name": business_name,
+            "address_line1": address_line1,
+            "address_line2": address_line2,
+            "city": city,
+            "state": state,
+            "postal_code": postal_code,
+            "country": country,
+            "email": email,
+            "phone": phone,
+            "payment_terms_days": payment_terms_days,
+            "notes": notes,
+            "tax_enabled": tax_enabled,
+            "tax_name": tax_name,
+        }
+        if tax_rate is not None:
+            from decimal import Decimal
+            kwargs["tax_rate"] = Decimal(str(tax_rate))
+
+        client = await ClientService.create_client(session, **kwargs)
 
         return {
             "id": client.id,
@@ -380,6 +461,9 @@ async def create_client(
             "phone": client.phone,
             "payment_terms_days": client.payment_terms_days,
             "notes": client.notes,
+            "tax_enabled": client.tax_enabled,
+            "tax_rate": float(client.tax_rate) if client.tax_rate is not None else None,
+            "tax_name": client.tax_name,
         }
 
 
@@ -398,6 +482,9 @@ async def update_client(
     phone: Optional[str] = None,
     payment_terms_days: Optional[int] = None,
     notes: Optional[str] = None,
+    tax_enabled: Optional[int] = None,
+    tax_rate: Optional[float] = None,
+    tax_name: Optional[str] = None,
 ) -> Optional[dict]:
     """
     Update client fields.
@@ -418,12 +505,31 @@ async def update_client(
         phone: Phone number
         payment_terms_days: Default payment terms for this client
         notes: Additional notes
+        tax_enabled: Per-client tax override (None = use global, 0 = disabled, 1 = enabled)
+        tax_rate: Per-client tax rate override (e.g. 8.25 for 8.25%)
+        tax_name: Per-client tax name override (e.g. "Sales Tax")
 
     Returns:
         Updated client or null if not found
     """
     async with get_session() as session:
-        updates = {k: v for k, v in locals().items() if v is not None and k not in ("client_id", "session")}
+        # Build updates dict, handling tax_rate Decimal conversion
+        updates = {}
+        local_vars = {
+            "name": name, "business_name": business_name,
+            "address_line1": address_line1, "address_line2": address_line2,
+            "city": city, "state": state, "postal_code": postal_code, "country": country,
+            "email": email, "phone": phone, "payment_terms_days": payment_terms_days,
+            "notes": notes, "tax_enabled": tax_enabled, "tax_name": tax_name,
+        }
+        for k, v in local_vars.items():
+            if v is not None:
+                updates[k] = v
+
+        if tax_rate is not None:
+            from decimal import Decimal
+            updates["tax_rate"] = Decimal(str(tax_rate))
+
         client = await ClientService.update_client(session, client_id, **updates)
 
         if not client:
@@ -438,6 +544,9 @@ async def update_client(
             "phone": client.phone,
             "payment_terms_days": client.payment_terms_days,
             "notes": client.notes,
+            "tax_enabled": client.tax_enabled,
+            "tax_rate": float(client.tax_rate) if client.tax_rate is not None else None,
+            "tax_name": client.tax_name,
         }
 
 
@@ -608,6 +717,9 @@ async def create_invoice(
     selected_payment_methods: Optional[list[str]] = None,
     invoice_number_override: Optional[str] = None,
     items: Optional[list[dict]] = None,
+    tax_enabled: Optional[bool] = None,
+    tax_rate: Optional[float] = None,
+    tax_name: Optional[str] = None,
 ) -> dict:
     """
     Create a new invoice or quote.
@@ -626,6 +738,9 @@ async def create_invoice(
         invoice_number_override: Custom invoice/quote number (overrides auto-generation)
         items: List of line items: [{description, quantity, unit_price, unit_type}]
                unit_type can be "qty" (default) or "hours"
+        tax_enabled: Whether to apply tax (defaults to business profile setting)
+        tax_rate: Tax rate percentage (defaults to business profile setting)
+        tax_name: Tax name like "VAT" or "Sales Tax" (defaults to business profile setting)
 
     Returns:
         Created invoice/quote with generated number
@@ -641,6 +756,10 @@ async def create_invoice(
         if selected_payment_methods:
             selected_methods_json = json.dumps(selected_payment_methods)
 
+        # Convert tax_rate to Decimal if provided
+        from decimal import Decimal
+        tax_rate_decimal = Decimal(str(tax_rate)) if tax_rate is not None else None
+
         invoice = await InvoiceService.create_invoice(
             session,
             client_id=client_id,
@@ -655,6 +774,9 @@ async def create_invoice(
             selected_payment_methods=selected_methods_json,
             invoice_number_override=invoice_number_override,
             items=items,
+            tax_enabled=tax_enabled,
+            tax_rate=tax_rate_decimal,
+            tax_name=tax_name,
         )
 
         return {
@@ -668,6 +790,11 @@ async def create_invoice(
             "issue_date": invoice.issue_date.isoformat(),
             "due_date": invoice.due_date.isoformat() if invoice.due_date else None,
             "currency_code": invoice.currency_code,
+            "subtotal": str(invoice.subtotal),
+            "tax_enabled": bool(getattr(invoice, "tax_enabled", 0)),
+            "tax_rate": str(getattr(invoice, "tax_rate", 0)),
+            "tax_name": getattr(invoice, "tax_name", "Tax"),
+            "tax_amount": str(getattr(invoice, "tax_amount", 0)),
             "total": str(invoice.total),
             "total_formatted": format_currency(invoice.total, invoice.currency_code),
             "items": [
@@ -1053,6 +1180,661 @@ async def empty_trash() -> dict:
             "clients_deleted": clients_deleted,
             "invoices_deleted": invoices_deleted,
         }
+
+
+# ============================================================================
+# Analytics Tools
+# ============================================================================
+
+
+@mcp.tool()
+async def get_revenue_summary(
+    from_date: Optional[str] = None,
+    to_date: Optional[str] = None,
+    group_by: str = "month",
+) -> dict:
+    """
+    Get revenue summary for the specified period.
+
+    Args:
+        from_date: Start date (ISO format, defaults to start of current year)
+        to_date: End date (ISO format, defaults to today)
+        group_by: How to group breakdown - "month", "quarter", or "year"
+
+    Returns:
+        Total invoiced, paid, outstanding, and breakdown by period
+    """
+    from collections import defaultdict
+
+    async with get_session() as session:
+        # Parse dates
+        today = date.today()
+        from_date_parsed = date.fromisoformat(from_date) if from_date else date(today.year, 1, 1)
+        to_date_parsed = date.fromisoformat(to_date) if to_date else today
+
+        # Get all invoices in range (exclude deleted)
+        invoices = await InvoiceService.list_invoices(
+            session,
+            from_date=from_date_parsed,
+            to_date=to_date_parsed,
+            limit=10000,
+        )
+
+        # Calculate totals
+        total_invoiced = sum(inv.total for inv in invoices)
+        total_paid = sum(inv.total for inv in invoices if inv.status == "paid")
+        total_outstanding = sum(inv.total for inv in invoices if inv.status in ("sent", "overdue"))
+        total_draft = sum(inv.total for inv in invoices if inv.status == "draft")
+        total_overdue = sum(inv.total for inv in invoices if inv.status == "overdue")
+
+        # Group by period
+        by_period = defaultdict(lambda: {"invoiced": Decimal(0), "paid": Decimal(0), "count": 0})
+
+        for inv in invoices:
+            if group_by == "month":
+                period = inv.issue_date.strftime("%Y-%m")
+            elif group_by == "quarter":
+                q = (inv.issue_date.month - 1) // 3 + 1
+                period = f"{inv.issue_date.year}-Q{q}"
+            else:
+                period = str(inv.issue_date.year)
+
+            by_period[period]["invoiced"] += inv.total
+            by_period[period]["count"] += 1
+            if inv.status == "paid":
+                by_period[period]["paid"] += inv.total
+
+        return {
+            "period": f"{from_date_parsed} to {to_date_parsed}",
+            "totals": {
+                "invoiced": str(total_invoiced),
+                "invoiced_formatted": format_currency(total_invoiced, "USD"),
+                "paid": str(total_paid),
+                "paid_formatted": format_currency(total_paid, "USD"),
+                "outstanding": str(total_outstanding),
+                "outstanding_formatted": format_currency(total_outstanding, "USD"),
+                "draft": str(total_draft),
+                "overdue": str(total_overdue),
+                "invoice_count": len(invoices),
+            },
+            "by_period": {
+                k: {
+                    "invoiced": str(v["invoiced"]),
+                    "paid": str(v["paid"]),
+                    "count": v["count"],
+                }
+                for k, v in sorted(by_period.items())
+            },
+        }
+
+
+@mcp.tool()
+async def get_client_lifetime_value(
+    client_id: Optional[int] = None,
+    limit: int = 20,
+) -> list:
+    """
+    Get lifetime value for clients.
+
+    Args:
+        client_id: Specific client ID (returns single client if provided)
+        limit: Maximum clients to return (default 20, sorted by total paid)
+
+    Returns:
+        List of clients with their total invoiced, paid, and invoice counts
+    """
+    async with get_session() as session:
+        if client_id:
+            client = await ClientService.get_client(session, client_id)
+            clients = [client] if client else []
+        else:
+            clients = await ClientService.list_clients(session)
+
+        results = []
+        for client in clients:
+            if not client:
+                continue
+
+            invoices = await InvoiceService.list_invoices(
+                session, client_id=client.id, limit=10000
+            )
+
+            total_invoiced = sum(inv.total for inv in invoices)
+            total_paid = sum(inv.total for inv in invoices if inv.status == "paid")
+            paid_invoices = [inv for inv in invoices if inv.status == "paid"]
+
+            results.append({
+                "client_id": client.id,
+                "name": client.display_name,
+                "email": client.email,
+                "total_invoiced": str(total_invoiced),
+                "total_invoiced_formatted": format_currency(total_invoiced, "USD"),
+                "total_paid": str(total_paid),
+                "total_paid_formatted": format_currency(total_paid, "USD"),
+                "invoice_count": len(invoices),
+                "paid_invoice_count": len(paid_invoices),
+                "first_invoice": min(inv.issue_date for inv in invoices).isoformat() if invoices else None,
+                "last_invoice": max(inv.issue_date for inv in invoices).isoformat() if invoices else None,
+            })
+
+        # Sort by total paid (descending) and limit
+        results.sort(key=lambda x: Decimal(x["total_paid"]), reverse=True)
+        return results[:limit]
+
+
+@mcp.tool()
+async def get_client_invoice_context(
+    client_id: int,
+    limit: int = 3,
+) -> dict:
+    """
+    Get context for drafting a new invoice for a client.
+
+    This provides recent invoice history to help draft invoices that match
+    previous patterns (rates, descriptions, payment terms).
+
+    Args:
+        client_id: The client ID
+        limit: Number of recent invoices to include (default 3)
+
+    Returns:
+        Client details, recent invoices with line items, and statistics
+    """
+    async with get_session() as session:
+        client = await ClientService.get_client(session, client_id)
+        if not client:
+            return {"error": "Client not found"}
+
+        # Get recent invoices
+        invoices = await InvoiceService.list_invoices(
+            session,
+            client_id=client_id,
+            limit=limit,
+        )
+
+        # Get all invoices for stats
+        all_invoices = await InvoiceService.list_invoices(
+            session,
+            client_id=client_id,
+            limit=10000,
+        )
+
+        total_billed = sum(inv.total for inv in all_invoices if inv.status in ("sent", "paid", "overdue"))
+        paid_invoices = [inv for inv in all_invoices if inv.status == "paid"]
+        total_paid = sum(inv.total for inv in paid_invoices)
+
+        return {
+            "client": {
+                "id": client.id,
+                "name": client.name,
+                "business_name": client.business_name,
+                "display_name": client.display_name,
+                "email": client.email,
+                "payment_terms_days": client.payment_terms_days,
+            },
+            "recent_invoices": [
+                {
+                    "invoice_number": inv.invoice_number,
+                    "issue_date": inv.issue_date.isoformat(),
+                    "total": str(inv.total),
+                    "total_formatted": format_currency(inv.total, inv.currency_code),
+                    "status": inv.status,
+                    "currency_code": inv.currency_code,
+                    "items": [
+                        {
+                            "description": item.description,
+                            "quantity": item.quantity,
+                            "unit_type": getattr(item, "unit_type", "qty"),
+                            "unit_price": str(item.unit_price),
+                            "total": str(item.total),
+                        }
+                        for item in inv.items
+                    ],
+                }
+                for inv in invoices
+            ],
+            "statistics": {
+                "total_billed": str(total_billed),
+                "total_billed_formatted": format_currency(total_billed, "USD"),
+                "total_paid": str(total_paid),
+                "total_paid_formatted": format_currency(total_paid, "USD"),
+                "invoice_count": len(all_invoices),
+                "paid_count": len(paid_invoices),
+                "average_invoice": str(total_billed / len(all_invoices)) if all_invoices else "0",
+            },
+        }
+
+
+# ============================================================================
+# Email Tools
+# ============================================================================
+
+
+@mcp.tool()
+async def send_invoice_email(
+    invoice_id: int,
+    recipient_email: Optional[str] = None,
+    subject: Optional[str] = None,
+    body: Optional[str] = None,
+) -> dict:
+    """
+    Send an invoice PDF via email.
+
+    Requires SMTP to be configured in business profile settings.
+
+    Args:
+        invoice_id: The invoice ID to send
+        recipient_email: Override recipient (defaults to client's email)
+        subject: Override email subject (defaults to "Invoice {number}")
+        body: Override email body (defaults to friendly message with invoice details)
+
+    Returns:
+        Success status and details
+    """
+    from invoicely.email import EmailService
+    from invoicely.pdf.generator import generate_pdf
+
+    async with get_session() as session:
+        # Get business profile for SMTP settings
+        profile = await BusinessProfile.get_or_create(session)
+
+        if not profile.smtp_enabled:
+            return {
+                "success": False,
+                "error": "SMTP is not enabled. Configure SMTP settings in business profile first.",
+            }
+
+        # Get invoice
+        invoice = await InvoiceService.get_invoice(session, invoice_id)
+        if not invoice:
+            return {"success": False, "error": f"Invoice {invoice_id} not found"}
+
+        # Generate PDF if needed
+        if invoice.needs_pdf_regeneration:
+            pdf_path = await generate_pdf(session, invoice)
+            invoice.pdf_path = pdf_path
+            invoice.pdf_generated_at = datetime.utcnow()
+            await session.commit()
+
+        # Send email
+        email_service = EmailService(profile)
+        result = await email_service.send_invoice(
+            invoice,
+            recipient_email=recipient_email,
+            subject=subject,
+            body=body,
+        )
+
+        # Update invoice status if sent successfully
+        if result.get("success") and invoice.status == "draft":
+            invoice.status = "sent"
+            await session.commit()
+            result["status_updated"] = "sent"
+
+        return result
+
+
+@mcp.tool()
+async def test_smtp_connection() -> dict:
+    """
+    Test SMTP connection without sending an email.
+
+    Returns:
+        Success status and connection details
+    """
+    from invoicely.email import EmailService
+
+    async with get_session() as session:
+        profile = await BusinessProfile.get_or_create(session)
+
+        if not profile.smtp_enabled:
+            return {
+                "success": False,
+                "error": "SMTP is not enabled. Configure SMTP settings first.",
+            }
+
+        email_service = EmailService(profile)
+        return await email_service.test_connection()
+
+
+# ============================================================================
+# Search Tools
+# ============================================================================
+
+
+@mcp.tool()
+async def search(
+    query: str,
+    search_invoices: bool = True,
+    search_clients: bool = True,
+    limit: int = 20,
+) -> dict:
+    """
+    Search across invoices and clients using full-text search.
+
+    Supports partial matching and returns relevance-ranked results.
+
+    Args:
+        query: Search query (e.g., "acme", "consulting", "INV-2025")
+        search_invoices: Include invoices in search (default: True)
+        search_clients: Include clients in search (default: True)
+        limit: Maximum results per category (default: 20)
+
+    Returns:
+        Dict with 'invoices' and 'clients' lists containing matching results
+    """
+    async with get_session() as session:
+        return await SearchService.search(
+            session,
+            query=query,
+            search_invoices=search_invoices,
+            search_clients=search_clients,
+            limit=limit,
+        )
+
+
+# ============================================================================
+# Recurring Invoice Tools
+# ============================================================================
+
+
+@mcp.tool()
+async def list_recurring_schedules(
+    client_id: Optional[int] = None,
+    include_paused: bool = False,
+) -> list:
+    """
+    List recurring invoice schedules.
+
+    Args:
+        client_id: Filter by client ID
+        include_paused: Include paused schedules (default: False, only active)
+
+    Returns:
+        List of recurring schedules with their details
+    """
+    import json
+
+    async with get_session() as session:
+        schedules = await RecurringService.list_schedules(
+            session,
+            client_id=client_id,
+            active_only=not include_paused,
+        )
+        return [
+            {
+                "id": s.id,
+                "client_id": s.client_id,
+                "client_name": s.client.display_name if s.client else None,
+                "name": s.name,
+                "frequency": s.frequency,
+                "schedule_day": s.schedule_day,
+                "currency_code": s.currency_code,
+                "payment_terms_days": s.payment_terms_days,
+                "is_active": bool(s.is_active),
+                "next_invoice_date": s.next_invoice_date.isoformat(),
+                "last_invoice_id": s.last_invoice_id,
+                "line_items": json.loads(s.line_items) if s.line_items else [],
+                "tax_enabled": s.tax_enabled,
+                "tax_rate": float(s.tax_rate) if s.tax_rate else None,
+                "tax_name": s.tax_name,
+            }
+            for s in schedules
+        ]
+
+
+@mcp.tool()
+async def get_recurring_schedule(schedule_id: int) -> Optional[dict]:
+    """
+    Get a recurring schedule by ID.
+
+    Args:
+        schedule_id: The schedule ID
+
+    Returns:
+        Schedule details or null if not found
+    """
+    import json
+
+    async with get_session() as session:
+        schedule = await RecurringService.get_schedule(session, schedule_id)
+        if not schedule:
+            return None
+
+        return {
+            "id": schedule.id,
+            "client_id": schedule.client_id,
+            "client_name": schedule.client.display_name if schedule.client else None,
+            "name": schedule.name,
+            "frequency": schedule.frequency,
+            "schedule_day": schedule.schedule_day,
+            "currency_code": schedule.currency_code,
+            "payment_terms_days": schedule.payment_terms_days,
+            "notes": schedule.notes,
+            "is_active": bool(schedule.is_active),
+            "next_invoice_date": schedule.next_invoice_date.isoformat(),
+            "last_invoice_id": schedule.last_invoice_id,
+            "line_items": json.loads(schedule.line_items) if schedule.line_items else [],
+            "tax_enabled": schedule.tax_enabled,
+            "tax_rate": float(schedule.tax_rate) if schedule.tax_rate else None,
+            "tax_name": schedule.tax_name,
+            "created_at": schedule.created_at.isoformat() if schedule.created_at else None,
+            "updated_at": schedule.updated_at.isoformat() if schedule.updated_at else None,
+        }
+
+
+@mcp.tool()
+async def create_recurring_schedule(
+    client_id: int,
+    name: str,
+    frequency: str,
+    items: list,
+    schedule_day: int = 1,
+    currency_code: str = "USD",
+    payment_terms_days: int = 30,
+    notes: Optional[str] = None,
+    next_invoice_date: Optional[str] = None,
+    tax_enabled: Optional[int] = None,
+    tax_rate: Optional[float] = None,
+    tax_name: Optional[str] = None,
+) -> dict:
+    """
+    Create a recurring invoice schedule.
+
+    Args:
+        client_id: Client ID for the recurring invoices
+        name: Schedule name (e.g., "Monthly Retainer", "Quarterly Hosting")
+        frequency: One of: daily, weekly, monthly, quarterly, yearly
+        items: Line items: [{description, quantity, unit_price, unit_type}]
+        schedule_day: Day of month (1-31) for monthly/quarterly/yearly,
+                      or day of week (0=Mon, 6=Sun) for weekly
+        currency_code: Currency code (default: USD)
+        payment_terms_days: Payment terms in days (default: 30)
+        notes: Invoice notes
+        next_invoice_date: First invoice date (ISO format, defaults to next scheduled date)
+        tax_enabled: Override tax setting (None = use client/global default)
+        tax_rate: Override tax rate
+        tax_name: Override tax name
+
+    Returns:
+        Created schedule details
+    """
+    from decimal import Decimal
+
+    async with get_session() as session:
+        # Parse next_invoice_date if provided
+        parsed_date = None
+        if next_invoice_date:
+            parsed_date = date.fromisoformat(next_invoice_date)
+
+        # Convert tax_rate to Decimal if provided
+        tax_rate_decimal = Decimal(str(tax_rate)) if tax_rate is not None else None
+
+        schedule = await RecurringService.create_schedule(
+            session,
+            client_id=client_id,
+            name=name,
+            frequency=frequency,
+            schedule_day=schedule_day,
+            currency_code=currency_code,
+            payment_terms_days=payment_terms_days,
+            notes=notes,
+            line_items=items,
+            next_invoice_date=parsed_date,
+            tax_enabled=tax_enabled,
+            tax_rate=tax_rate_decimal,
+            tax_name=tax_name,
+        )
+
+        return {
+            "id": schedule.id,
+            "client_id": schedule.client_id,
+            "name": schedule.name,
+            "frequency": schedule.frequency,
+            "next_invoice_date": schedule.next_invoice_date.isoformat(),
+            "is_active": bool(schedule.is_active),
+        }
+
+
+@mcp.tool()
+async def update_recurring_schedule(
+    schedule_id: int,
+    name: Optional[str] = None,
+    frequency: Optional[str] = None,
+    schedule_day: Optional[int] = None,
+    currency_code: Optional[str] = None,
+    payment_terms_days: Optional[int] = None,
+    notes: Optional[str] = None,
+    items: Optional[list] = None,
+    next_invoice_date: Optional[str] = None,
+    tax_enabled: Optional[int] = None,
+    tax_rate: Optional[float] = None,
+    tax_name: Optional[str] = None,
+) -> Optional[dict]:
+    """
+    Update a recurring schedule.
+
+    Only provide the fields you want to change.
+
+    Args:
+        schedule_id: The schedule ID
+        name: Schedule name
+        frequency: One of: daily, weekly, monthly, quarterly, yearly
+        schedule_day: Day of month/week
+        currency_code: Currency code
+        payment_terms_days: Payment terms in days
+        notes: Invoice notes
+        items: Line items: [{description, quantity, unit_price, unit_type}]
+        next_invoice_date: Next invoice date (ISO format)
+        tax_enabled: Tax setting override
+        tax_rate: Tax rate override
+        tax_name: Tax name override
+
+    Returns:
+        Updated schedule or null if not found
+    """
+    from decimal import Decimal
+
+    async with get_session() as session:
+        updates = {}
+        if name is not None:
+            updates["name"] = name
+        if frequency is not None:
+            updates["frequency"] = frequency
+        if schedule_day is not None:
+            updates["schedule_day"] = schedule_day
+        if currency_code is not None:
+            updates["currency_code"] = currency_code
+        if payment_terms_days is not None:
+            updates["payment_terms_days"] = payment_terms_days
+        if notes is not None:
+            updates["notes"] = notes
+        if items is not None:
+            updates["line_items"] = items
+        if next_invoice_date is not None:
+            updates["next_invoice_date"] = date.fromisoformat(next_invoice_date)
+        if tax_enabled is not None:
+            updates["tax_enabled"] = tax_enabled
+        if tax_rate is not None:
+            updates["tax_rate"] = Decimal(str(tax_rate))
+        if tax_name is not None:
+            updates["tax_name"] = tax_name
+
+        schedule = await RecurringService.update_schedule(session, schedule_id, **updates)
+        if not schedule:
+            return None
+
+        return {
+            "id": schedule.id,
+            "name": schedule.name,
+            "frequency": schedule.frequency,
+            "next_invoice_date": schedule.next_invoice_date.isoformat(),
+            "is_active": bool(schedule.is_active),
+        }
+
+
+@mcp.tool()
+async def delete_recurring_schedule(schedule_id: int) -> bool:
+    """
+    Delete a recurring schedule.
+
+    Args:
+        schedule_id: The schedule ID
+
+    Returns:
+        True if deleted, False if not found
+    """
+    async with get_session() as session:
+        return await RecurringService.delete_schedule(session, schedule_id)
+
+
+@mcp.tool()
+async def pause_recurring_schedule(schedule_id: int) -> bool:
+    """
+    Pause a recurring schedule.
+
+    Paused schedules won't generate invoices until resumed.
+
+    Args:
+        schedule_id: The schedule ID
+
+    Returns:
+        True if paused, False if not found
+    """
+    async with get_session() as session:
+        return await RecurringService.pause_schedule(session, schedule_id)
+
+
+@mcp.tool()
+async def resume_recurring_schedule(schedule_id: int) -> bool:
+    """
+    Resume a paused recurring schedule.
+
+    Args:
+        schedule_id: The schedule ID
+
+    Returns:
+        True if resumed, False if not found
+    """
+    async with get_session() as session:
+        return await RecurringService.resume_schedule(session, schedule_id)
+
+
+@mcp.tool()
+async def trigger_recurring_schedule(schedule_id: int) -> dict:
+    """
+    Manually trigger a recurring schedule to create an invoice now.
+
+    This creates an invoice immediately and updates the next scheduled date.
+
+    Args:
+        schedule_id: The schedule ID
+
+    Returns:
+        Result with invoice details or error
+    """
+    async with get_session() as session:
+        return await RecurringService.trigger_schedule(session, schedule_id)
 
 
 # Import for type references

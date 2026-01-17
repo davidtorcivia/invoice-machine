@@ -8,6 +8,7 @@ from typing import Optional
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.concurrency import run_in_threadpool
 from weasyprint import HTML, CSS
 
 from invoicely.database import Invoice, InvoiceItem, BusinessProfile
@@ -47,12 +48,38 @@ def format_money(amount: Decimal | str | float, currency_code: str = "USD") -> s
     return f"{amount:,.2f} {currency_code}"
 
 
+def _generate_pdf_sync(html: str, pdf_path: Path) -> None:
+    """
+    Synchronous PDF generation using WeasyPrint.
+
+    This is called in a thread pool to avoid blocking the async event loop.
+    """
+    HTML(string=html).write_pdf(pdf_path)
+
+
 def get_logo_base64(business: BusinessProfile) -> Optional[str]:
     """Get logo as base64 data URL."""
     if not business.logo_path:
         return None
 
-    logo_file = settings.logo_dir / business.logo_path
+    # Validate logo path to prevent path traversal
+    logo_path = business.logo_path
+
+    # Reject any path separators or parent directory references
+    if "/" in logo_path or "\\" in logo_path or ".." in logo_path:
+        return None
+
+    logo_file = settings.logo_dir / logo_path
+
+    # Verify resolved path is within logo_dir
+    try:
+        resolved = logo_file.resolve()
+        logo_dir_resolved = settings.logo_dir.resolve()
+        if not str(resolved).startswith(str(logo_dir_resolved)):
+            return None
+    except (OSError, ValueError):
+        return None
+
     if not logo_file.exists():
         return None
 
@@ -160,8 +187,8 @@ async def generate_pdf(session: AsyncSession, invoice: Invoice) -> str:
     pdf_filename = f"{invoice.invoice_number}.pdf"
     pdf_path = settings.pdf_dir / pdf_filename
 
-    # Generate PDF using WeasyPrint
-    HTML(string=html).write_pdf(pdf_path)
+    # Generate PDF using WeasyPrint in a thread pool to avoid blocking
+    await run_in_threadpool(_generate_pdf_sync, html, pdf_path)
 
     # Return relative path for storage
     return f"pdfs/{pdf_filename}"

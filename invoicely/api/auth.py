@@ -193,8 +193,8 @@ async def setup(
         SESSION_COOKIE_NAME,
         token,
         httponly=True,
-        secure=False,  # Set to True in production with HTTPS
-        samesite="lax",
+        secure=settings.secure_cookies,
+        samesite="strict" if settings.secure_cookies else "lax",
         max_age=SESSION_DURATION_DAYS * 24 * 60 * 60,
     )
 
@@ -220,8 +220,8 @@ async def login(
         SESSION_COOKIE_NAME,
         token,
         httponly=True,
-        secure=False,  # Set to True in production with HTTPS
-        samesite="lax",
+        secure=settings.secure_cookies,
+        samesite="strict" if settings.secure_cookies else "lax",
         max_age=SESSION_DURATION_DAYS * 24 * 60 * 60,
     )
 

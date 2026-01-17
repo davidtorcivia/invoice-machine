@@ -24,6 +24,8 @@ class Settings(BaseSettings):
 
     # Security
     cors_origins: str = "http://localhost:3000,http://localhost:8080"
+    secure_cookies: bool = False  # Set to True when using HTTPS in production
+    environment: str = "development"  # development, staging, production
 
     # Paths
     data_dir: Path = Path("./data")

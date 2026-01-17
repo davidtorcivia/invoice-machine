@@ -46,6 +46,78 @@ async def scheduled_backup_task():
 
         await asyncio.sleep(seconds_until_midnight)
 
+
+async def trash_cleanup_task():
+    """Background task to auto-purge expired trash items daily at 3 AM UTC."""
+    from datetime import datetime, timedelta
+    from invoicely.tasks.cleanup_trash import cleanup_trash
+
+    while True:
+        # Calculate seconds until next 3 AM UTC
+        now = datetime.utcnow()
+        next_3am = now.replace(hour=3, minute=0, second=0, microsecond=0)
+        if now.hour >= 3:
+            next_3am = next_3am + timedelta(days=1)
+        seconds_until_3am = (next_3am - now).total_seconds()
+
+        await asyncio.sleep(seconds_until_3am)
+
+        try:
+            await cleanup_trash()
+        except Exception:
+            pass  # Don't crash on cleanup failures
+
+
+async def overdue_check_task():
+    """Background task to mark overdue invoices daily at 1 AM UTC."""
+    from datetime import datetime, timedelta
+    from invoicely.database import async_session_maker
+    from invoicely.services import InvoiceService
+
+    while True:
+        # Calculate seconds until next 1 AM UTC
+        now = datetime.utcnow()
+        next_1am = now.replace(hour=1, minute=0, second=0, microsecond=0)
+        if now.hour >= 1:
+            next_1am = next_1am + timedelta(days=1)
+        seconds_until_1am = (next_1am - now).total_seconds()
+
+        await asyncio.sleep(seconds_until_1am)
+
+        try:
+            async with async_session_maker() as session:
+                count = await InvoiceService.update_overdue_invoices(session)
+                if count > 0:
+                    print(f"Marked {count} invoices as overdue")
+        except Exception:
+            pass  # Don't crash on failures
+
+
+async def recurring_invoice_task():
+    """Background task to process recurring invoices daily at 2 AM UTC."""
+    from datetime import datetime, timedelta
+    from invoicely.database import async_session_maker
+    from invoicely.services import RecurringService
+
+    while True:
+        # Calculate seconds until next 2 AM UTC
+        now = datetime.utcnow()
+        next_2am = now.replace(hour=2, minute=0, second=0, microsecond=0)
+        if now.hour >= 2:
+            next_2am = next_2am + timedelta(days=1)
+        seconds_until_2am = (next_2am - now).total_seconds()
+
+        await asyncio.sleep(seconds_until_2am)
+
+        try:
+            async with async_session_maker() as session:
+                results = await RecurringService.process_due_schedules(session)
+                if results:
+                    success_count = sum(1 for r in results if r.get("success"))
+                    print(f"Processed {len(results)} recurring schedules, {success_count} invoices created")
+        except Exception:
+            pass  # Don't crash on failures
+
         # Check if backups are enabled and run backup
         try:
             async with async_session_maker() as session:
@@ -74,32 +146,51 @@ async def scheduled_backup_task():
             pass  # Don't crash on backup failures
 
 
+def run_alembic_migrations():
+    """Run Alembic migrations to upgrade database schema."""
+    from alembic.config import Config
+    from alembic import command
+    from pathlib import Path
+
+    # Get the alembic.ini path relative to project root
+    project_root = Path(__file__).parent.parent
+    alembic_cfg = Config(str(project_root / "alembic.ini"))
+
+    # Run upgrade to head
+    try:
+        command.upgrade(alembic_cfg, "head")
+        print("Alembic migrations completed successfully")
+    except Exception as e:
+        print(f"Alembic migration failed: {e}")
+        # Fall back to manual migration for backwards compatibility
+        from invoicely.migrations.add_new_fields import migrate
+        migrate(settings.data_dir / "invoicely.db")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Lifespan context manager."""
-    # Startup - run migrations first
-    from invoicely.migrations.add_new_fields import migrate
-    migrate(settings.data_dir / "invoicely.db")
+    # Startup - run Alembic migrations first
+    run_alembic_migrations()
 
     await init_db()
 
     # Start background tasks
     cleanup_task = asyncio.create_task(session_cleanup_task())
     backup_task = asyncio.create_task(scheduled_backup_task())
+    trash_task = asyncio.create_task(trash_cleanup_task())
+    overdue_task = asyncio.create_task(overdue_check_task())
+    recurring_task = asyncio.create_task(recurring_invoice_task())
 
     yield
 
     # Shutdown
-    cleanup_task.cancel()
-    backup_task.cancel()
-    try:
-        await cleanup_task
-    except asyncio.CancelledError:
-        pass
-    try:
-        await backup_task
-    except asyncio.CancelledError:
-        pass
+    for task in [cleanup_task, backup_task, trash_task, overdue_task, recurring_task]:
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
     await close_db()
 
 
