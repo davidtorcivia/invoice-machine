@@ -105,7 +105,6 @@
 
   .sidebar-header {
     padding: var(--space-5) var(--space-6);
-    border-bottom: 1px solid var(--color-border-light);
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -165,7 +164,6 @@
 
   .sidebar-footer {
     padding: var(--space-4) var(--space-6);
-    border-top: 1px solid var(--color-border-light);
     display: flex;
     flex-direction: column;
     gap: var(--space-3);
@@ -215,8 +213,6 @@
     }
 
     .sidebar-footer {
-      flex-shrink: 0;
-      border-top: none;
       padding-top: var(--space-6);
     }
   }
