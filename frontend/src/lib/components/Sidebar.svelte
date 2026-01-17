@@ -209,8 +209,15 @@
       display: flex;
     }
 
+    /* Move footer right below nav on mobile */
+    .sidebar-nav {
+      flex: none;
+    }
+
     .sidebar-footer {
       flex-shrink: 0;
+      border-top: none;
+      padding-top: var(--space-6);
     }
   }
 </style>

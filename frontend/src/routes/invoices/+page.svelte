@@ -173,7 +173,8 @@
       <div class="spinner"></div>
     </div>
   {:else if invoices.length > 0}
-    <div class="table-container">
+    <!-- Table view (hidden on small screens) -->
+    <div class="table-container table-view">
       <table class="table">
         <thead>
           <tr>
@@ -236,6 +237,52 @@
           {/each}
         </tbody>
       </table>
+    </div>
+
+    <!-- Card view (shown on small screens) -->
+    <div class="invoice-cards">
+      {#each invoices as invoice}
+        {@const effectiveStatus = getEffectiveStatus(invoice)}
+        {@const overdue = isOverdue(invoice)}
+        <div class="invoice-card" class:card-overdue={overdue}>
+          <button class="invoice-card-main" on:click={() => goto(`/invoices/${invoice.id}`)}>
+            <div class="invoice-card-header">
+              <span class="invoice-card-number font-mono">#{invoice.invoice_number}</span>
+              <span class="badge {statusConfig[effectiveStatus]?.class || 'badge-draft'}">
+                {statusConfig[effectiveStatus]?.label || effectiveStatus}
+              </span>
+            </div>
+            <div class="invoice-card-client">{invoice.client_business || invoice.client_name || '---'}</div>
+            <div class="invoice-card-footer">
+              <span class="invoice-card-date" class:text-overdue={overdue}>
+                {invoice.due_date ? formatDate(invoice.due_date) : formatDate(invoice.issue_date)}
+                {#if overdue}
+                  <span class="overdue-indicator">overdue</span>
+                {/if}
+              </span>
+              <span class="invoice-card-total">{formatCurrency(invoice.total)}</span>
+            </div>
+          </button>
+          <div class="invoice-card-actions">
+            {#if invoice.status === 'sent' || invoice.status === 'overdue'}
+              <button
+                class="btn btn-ghost btn-icon"
+                on:click={(e) => markAsPaid(e, invoice.id)}
+                title="Mark as paid"
+              >
+                <Icon name="check" size="sm" />
+              </button>
+            {/if}
+            <button
+              class="btn btn-ghost btn-icon"
+              on:click={(e) => openDeleteModal(e, invoice)}
+              title="Delete"
+            >
+              <Icon name="trash" size="sm" />
+            </button>
+          </div>
+        </div>
+      {/each}
     </div>
   {:else}
     <div class="empty-state">
@@ -388,6 +435,90 @@
     justify-content: flex-end;
   }
 
+  /* Invoice cards (mobile view) */
+  .invoice-cards {
+    display: none;
+    padding: var(--space-3);
+    gap: var(--space-3);
+  }
+
+  .invoice-card {
+    display: flex;
+    background: var(--color-bg-elevated);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+  }
+
+  .invoice-card.card-overdue {
+    border-color: var(--color-danger-light);
+    background: color-mix(in srgb, var(--color-danger) 5%, var(--color-bg-elevated));
+  }
+
+  .invoice-card-main {
+    flex: 1;
+    display: block;
+    padding: var(--space-4);
+    background: none;
+    border: none;
+    text-align: left;
+    cursor: pointer;
+    min-width: 0;
+  }
+
+  .invoice-card-main:hover {
+    background: var(--color-bg-hover);
+  }
+
+  .invoice-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: var(--space-2);
+    gap: var(--space-2);
+  }
+
+  .invoice-card-number {
+    font-weight: 600;
+    color: var(--color-text);
+  }
+
+  .invoice-card-client {
+    font-size: 0.9375rem;
+    color: var(--color-text-secondary);
+    margin-bottom: var(--space-3);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .invoice-card-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: var(--space-2);
+  }
+
+  .invoice-card-date {
+    font-size: 0.8125rem;
+    color: var(--color-text-tertiary);
+  }
+
+  .invoice-card-total {
+    font-weight: 600;
+    color: var(--color-text);
+    white-space: nowrap;
+  }
+
+  .invoice-card-actions {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding: var(--space-2);
+    border-left: 1px solid var(--color-border-light);
+    background: var(--color-bg);
+  }
+
   @media (max-width: 768px) {
     .page-content {
       padding: var(--space-4);
@@ -425,36 +556,14 @@
       gap: var(--space-3);
     }
 
-    .table th:nth-child(3),
-    .table td:nth-child(3),
-    .table th:nth-child(4),
-    .table td:nth-child(4) {
+    /* Switch to card view on small screens */
+    .table-view {
       display: none;
     }
 
-    .invoice-number {
-      font-size: 0.875rem;
-    }
-
-    .client-name {
-      font-size: 0.8125rem;
-      max-width: 100px;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-      display: block;
-    }
-
-    .invoice-total {
-      font-size: 0.875rem;
-    }
-
-    .actions-col {
-      width: 60px;
-    }
-
-    .action-buttons {
-      gap: 0;
+    .invoice-cards {
+      display: flex;
+      flex-direction: column;
     }
   }
 </style>
