@@ -62,8 +62,8 @@ RUN cd frontend && npm run build
 RUN mkdir -p invoicely/static && \
     cp -r frontend/dist/* invoicely/static/
 
-# Create data directory
-RUN mkdir -p /app/data/pdfs /app/data/logos
+# Create data directories
+RUN mkdir -p /app/data/pdfs /app/data/logos /app/data/backups
 
 # Expose port
 EXPOSE 8080

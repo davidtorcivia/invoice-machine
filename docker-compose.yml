@@ -1,17 +1,27 @@
 version: '3.8'
 
 services:
-  invoicely:
+  invoice-machine:
     build: .
+    container_name: invoice-machine
     ports:
       - "${PORT:-8080}:8080"
     volumes:
       - ${DATA_DIR:-./data}:/app/data
     environment:
+      # Core settings
       - DATABASE_URL=sqlite+aiosqlite:////app/data/invoicely.db
       - DATA_DIR=/app/data
       - APP_BASE_URL=${APP_BASE_URL:-http://localhost:8080}
+      - ENVIRONMENT=${ENVIRONMENT:-development}
       - TRASH_RETENTION_DAYS=${TRASH_RETENTION_DAYS:-90}
+      # Security settings
+      - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:3000,http://localhost:8080}
+      - SECURE_COOKIES=${SECURE_COOKIES:-false}
+      # Invoice defaults
+      - DEFAULT_PAYMENT_TERMS_DAYS=${DEFAULT_PAYMENT_TERMS_DAYS:-30}
+      - DEFAULT_CURRENCY_CODE=${DEFAULT_CURRENCY_CODE:-USD}
+      - DEFAULT_ACCENT_COLOR=${DEFAULT_ACCENT_COLOR:-#16a34a}
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"]
