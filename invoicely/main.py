@@ -13,6 +13,7 @@ from slowapi.errors import RateLimitExceeded
 from invoicely.config import get_settings
 from invoicely.rate_limit import limiter
 from invoicely.database import init_db, close_db
+from starlette.routing import Route
 from invoicely.api import profile, clients, invoices, trash, auth, mcp, backup
 from invoicely.api.auth import get_session_user_id, SESSION_COOKIE_NAME, cleanup_expired_sessions
 
@@ -21,9 +22,6 @@ STATIC_DIR = Path("invoicely/static")
 
 # Paths that don't require authentication
 PUBLIC_PATHS = {"/health", "/api/auth/status", "/api/auth/setup", "/api/auth/login", "/api/auth/logout"}
-
-# Paths that use MCP API key authentication instead of session
-MCP_PATHS_PREFIX = "/mcp/"
 
 
 async def session_cleanup_task():
@@ -131,12 +129,8 @@ async def auth_middleware(request: Request, call_next):
     """Protect API routes with authentication."""
     path = request.url.path
 
-    # Allow public paths and non-API routes
+    # Allow public paths and non-API routes (MCP is mounted separately and bypasses this middleware)
     if path in PUBLIC_PATHS or not path.startswith("/api/"):
-        return await call_next(request)
-
-    # MCP endpoints use their own API key authentication
-    if path.startswith(MCP_PATHS_PREFIX):
         return await call_next(request)
 
     # Check session cookie
@@ -164,7 +158,17 @@ app.include_router(clients.router)
 app.include_router(invoices.router)
 app.include_router(trash.router)
 app.include_router(backup.router)
-app.include_router(mcp.router)
+# Note: mcp.router is NOT included here - MCP routes are mounted separately below
+
+# Mount MCP as a separate Starlette app to bypass BaseHTTPMiddleware (which breaks SSE streaming)
+# The SSE transport needs raw ASGI access to control response streaming directly
+from starlette.applications import Starlette
+mcp_asgi_app = Starlette(routes=[
+    Route("/sse", endpoint=mcp.mcp_sse_handler),
+    Route("/messages/", endpoint=mcp.mcp_messages_handler, methods=["POST"]),
+    Route("/status", endpoint=mcp.mcp_status_handler),
+])
+app.mount("/mcp", mcp_asgi_app)
 
 
 @app.get("/health")
