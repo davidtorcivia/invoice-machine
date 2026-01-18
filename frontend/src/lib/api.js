@@ -194,3 +194,71 @@ export const backupsApi = {
 
   testS3: () => post('/backups/test-s3'),
 };
+
+// ===== Recurring Schedules =====
+
+export const recurringApi = {
+  list: (params = {}) => {
+    const search = new URLSearchParams();
+    if (params.client_id) search.append('client_id', params.client_id);
+    if (params.active_only !== undefined) search.append('active_only', params.active_only);
+    const query = search.toString() ? `?${search}` : '';
+    return get(`/recurring${query}`);
+  },
+
+  get: (id) => get(`/recurring/${id}`),
+
+  create: (data) => post('/recurring', data),
+
+  update: (id, data) => put(`/recurring/${id}`, data),
+
+  delete: (id) => del(`/recurring/${id}`),
+
+  trigger: (id) => post(`/recurring/${id}/trigger`),
+};
+
+// ===== Email/SMTP =====
+
+export const emailApi = {
+  getSmtpSettings: () => get('/settings/smtp'),
+
+  updateSmtpSettings: (data) => put('/settings/smtp', data),
+
+  testSmtp: () => post('/settings/smtp/test'),
+
+  sendInvoice: (invoiceId, data = {}) => post(`/invoices/${invoiceId}/send-email`, data),
+};
+
+// ===== Search =====
+
+export const searchApi = {
+  search: (query, params = {}) => {
+    const search = new URLSearchParams();
+    search.append('q', query);
+    if (params.invoices !== undefined) search.append('invoices', params.invoices);
+    if (params.clients !== undefined) search.append('clients', params.clients);
+    if (params.limit) search.append('limit', params.limit);
+    return get(`/search?${search}`);
+  },
+};
+
+// ===== Analytics =====
+
+export const analyticsApi = {
+  getRevenue: (params = {}) => {
+    const search = new URLSearchParams();
+    if (params.from_date) search.append('from_date', params.from_date);
+    if (params.to_date) search.append('to_date', params.to_date);
+    if (params.group_by) search.append('group_by', params.group_by);
+    const query = search.toString() ? `?${search}` : '';
+    return get(`/analytics/revenue${query}`);
+  },
+
+  getClientLifetimeValues: (params = {}) => {
+    const search = new URLSearchParams();
+    if (params.client_id) search.append('client_id', params.client_id);
+    if (params.limit) search.append('limit', params.limit);
+    const query = search.toString() ? `?${search}` : '';
+    return get(`/analytics/clients${query}`);
+  },
+};

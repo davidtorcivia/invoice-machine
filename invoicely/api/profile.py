@@ -6,7 +6,7 @@ import os
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi.responses import FileResponse
 
@@ -41,11 +41,22 @@ class BusinessProfileSchema(BaseModel):
     theme_preference: str = "system"
     mcp_api_key: Optional[str] = None  # MCP API key for remote access
     app_base_url: Optional[str] = None  # App base URL for links
+    # Tax settings
+    default_tax_enabled: bool = False
+    default_tax_rate: Optional[str] = None
+    default_tax_name: str = "Tax"
     created_at: datetime
     updated_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = {"from_attributes": True}
+
+    @field_validator("default_tax_rate", mode="before")
+    @classmethod
+    def convert_tax_rate(cls, v):
+        """Convert Decimal tax rate to string."""
+        if v is not None:
+            return str(v)
+        return v
 
 
 class BusinessProfileUpdate(BaseModel):
@@ -70,6 +81,10 @@ class BusinessProfileUpdate(BaseModel):
     theme_preference: Optional[str] = Field(None, pattern="^(system|light|dark)$")
     mcp_api_key: Optional[str] = Field(None, max_length=64)
     app_base_url: Optional[str] = Field(None, max_length=500)
+    # Tax settings
+    default_tax_enabled: Optional[bool] = None
+    default_tax_rate: Optional[str] = Field(None, max_length=10)
+    default_tax_name: Optional[str] = Field(None, max_length=50)
 
 
 def sanitize_filename(filename: str) -> str:
@@ -132,7 +147,13 @@ async def update_profile(
     """Update business profile."""
     profile = await BusinessProfile.get_or_create(session)
 
-    for key, value in updates.model_dump(exclude_unset=True).items():
+    update_data = updates.model_dump(exclude_unset=True)
+
+    # Convert boolean to int for SQLite
+    if "default_tax_enabled" in update_data and update_data["default_tax_enabled"] is not None:
+        update_data["default_tax_enabled"] = int(update_data["default_tax_enabled"])
+
+    for key, value in update_data.items():
         if value is not None:
             setattr(profile, key, value)
 
