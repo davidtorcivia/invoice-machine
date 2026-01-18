@@ -4,14 +4,17 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Optional, List
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from invoicely.database import Invoice, InvoiceItem, get_session
 from invoicely.services import InvoiceService
 
 router = APIRouter(prefix="/api/invoices", tags=["invoices"])
+limiter = Limiter(key_func=get_remote_address)
 
 
 class InvoiceItemSchema(BaseModel):
@@ -193,7 +196,9 @@ async def list_invoices(
 
 
 @router.post("", response_model=InvoiceSchema, status_code=201)
+@limiter.limit("60/hour")
 async def create_invoice(
+    request: Request,
     invoice_data: InvoiceCreate,
     session: AsyncSession = Depends(get_session),
 ) -> Invoice:
@@ -351,7 +356,9 @@ async def delete_invoice_item(
 
 
 @router.post("/{invoice_id}/generate-pdf")
+@limiter.limit("30/hour")
 async def generate_invoice_pdf(
+    request: Request,
     invoice_id: int,
     session: AsyncSession = Depends(get_session),
 ):

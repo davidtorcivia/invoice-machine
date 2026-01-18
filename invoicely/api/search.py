@@ -1,16 +1,21 @@
 """Search API endpoints."""
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from invoicely.database import get_session
 from invoicely.services import SearchService
 
 router = APIRouter(prefix="/api/search", tags=["search"])
+limiter = Limiter(key_func=get_remote_address)
 
 
 @router.get("")
+@limiter.limit("60/minute")
 async def search(
+    request: Request,
     q: str = Query("", max_length=200, description="Search query"),
     invoices: bool = Query(True, description="Include invoices in search"),
     clients: bool = Query(True, description="Include clients in search"),

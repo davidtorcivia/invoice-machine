@@ -5,8 +5,10 @@ from typing import Optional
 import os
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Request
 from pydantic import BaseModel, Field, field_validator
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi.responses import FileResponse
 
@@ -15,6 +17,7 @@ from invoicely.config import get_settings
 
 router = APIRouter(prefix="/api/profile", tags=["profile"])
 settings = get_settings()
+limiter = Limiter(key_func=get_remote_address)
 
 
 class BusinessProfileSchema(BaseModel):
@@ -165,7 +168,9 @@ async def update_profile(
 
 
 @router.post("/logo")
+@limiter.limit("10/minute")
 async def upload_logo(
+    request: Request,
     file: UploadFile = File(...),
     session: AsyncSession = Depends(get_session),
 ):

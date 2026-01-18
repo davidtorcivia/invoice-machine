@@ -5,9 +5,11 @@ import logging
 from datetime import datetime
 from typing import Optional, List
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from invoicely.database import BusinessProfile, get_session
@@ -16,6 +18,7 @@ from invoicely.services import BackupService
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/backups", tags=["backups"])
+limiter = Limiter(key_func=get_remote_address)
 
 
 class BackupSchema(BaseModel):
@@ -207,7 +210,9 @@ async def list_backups(
 
 
 @router.post("", response_model=BackupResult)
+@limiter.limit("10/hour")
 async def create_backup(
+    request: Request,
     compress: bool = Query(True, description="Compress backup with gzip"),
     session: AsyncSession = Depends(get_session),
 ) -> BackupResult:
@@ -309,7 +314,9 @@ async def cleanup_old_backups(
 
 
 @router.post("/test-s3")
+@limiter.limit("10/minute")
 async def test_s3_connection(
+    request: Request,
     session: AsyncSession = Depends(get_session),
 ):
     """Test S3 connection with current settings."""
