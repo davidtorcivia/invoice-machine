@@ -591,11 +591,7 @@
   {:else}
     <div class="settings-layout">
       <!-- Logo Section -->
-      <div class="card">
-        <div class="card-header">
-          <h3 class="card-title">Logo</h3>
-        </div>
-
+      <CollapsibleSection title="Logo" subtitle="Company logo for invoices" icon="image" bind:open={openSections.logo}>
         <div class="logo-section">
           <div class="logo-preview" class:has-logo={logoPreview} class:uploading={logoUploading}>
             {#if logoUploading}
@@ -642,14 +638,10 @@
             </div>
           </div>
         </div>
-      </div>
+      </CollapsibleSection>
 
       <!-- Business Info Form -->
-      <div class="card">
-        <div class="card-header">
-          <h3 class="card-title">Business Information</h3>
-        </div>
-
+      <CollapsibleSection title="Business Information" subtitle="Your company details" icon="users" bind:open={openSections.business}>
         <div class="form-row">
           <div class="form-group">
             <label for="name" class="label">Your Name *</label>
@@ -709,14 +701,10 @@
           />
           <p class="form-hint">Optional. Will appear on invoices if provided.</p>
         </div>
-      </div>
+      </CollapsibleSection>
 
       <!-- Address -->
-      <div class="card">
-        <div class="card-header">
-          <h3 class="card-title">Business Address</h3>
-        </div>
-
+      <CollapsibleSection title="Business Address" subtitle="Your mailing address" icon="home" bind:open={openSections.address}>
         <div class="form-group">
           <label for="address1" class="label">Street Address</label>
           <input
@@ -783,14 +771,10 @@
             {/each}
           </select>
         </div>
-      </div>
+      </CollapsibleSection>
 
       <!-- Invoice Defaults -->
-      <div class="card">
-        <div class="card-header">
-          <h3 class="card-title">Invoice Defaults</h3>
-        </div>
-
+      <CollapsibleSection title="Invoice Defaults" subtitle="Default settings for new invoices" icon="invoice" bind:open={openSections.invoiceDefaults}>
         <div class="form-row">
           <div class="form-group">
             <label for="default-terms" class="label">Default Payment Terms (days)</label>
@@ -847,12 +831,11 @@
           ></textarea>
           <p class="form-hint">Fallback text when no payment methods are selected below.</p>
         </div>
-      </div>
+      </CollapsibleSection>
 
       <!-- Payment Methods -->
-      <div class="card">
-        <div class="card-header">
-          <h3 class="card-title">Payment Methods</h3>
+      <CollapsibleSection title="Payment Methods" subtitle="Configure payment options" icon="invoice" bind:open={openSections.paymentMethods}>
+        <div class="section-header-actions">
           <button type="button" class="btn btn-secondary btn-sm" on:click={openAddMethodModal}>
             <Icon name="plus" size="sm" />
             Add Method
@@ -891,14 +874,10 @@
             </button>
           </div>
         {/if}
-      </div>
+      </CollapsibleSection>
 
       <!-- Tax Settings -->
-      <div class="card">
-        <div class="card-header">
-          <h3 class="card-title">Tax Settings</h3>
-        </div>
-
+      <CollapsibleSection title="Tax Settings" subtitle="Default tax configuration" icon="invoice" bind:open={openSections.taxSettings}>
         <p class="form-hint mb-4">
           Configure default tax settings for new invoices. These can be overridden on individual invoices.
         </p>
@@ -940,14 +919,10 @@
             </div>
           </div>
         {/if}
-      </div>
+      </CollapsibleSection>
 
       <!-- SMTP / Email Settings -->
-      <div class="card">
-        <div class="card-header">
-          <h3 class="card-title">Email Settings (SMTP)</h3>
-        </div>
-
+      <CollapsibleSection title="Email Settings (SMTP)" subtitle="Send invoices via email" icon="send" bind:open={openSections.smtpSettings}>
         <p class="form-hint mb-4">
           Configure SMTP to send invoices directly via email. Leave disabled if you prefer to download and send PDFs manually.
         </p>
@@ -1070,14 +1045,10 @@
             </button>
           </div>
         {/if}
-      </div>
+      </CollapsibleSection>
 
       <!-- MCP Integration -->
-      <div class="card">
-        <div class="card-header">
-          <h3 class="card-title">MCP Integration (Claude Desktop)</h3>
-        </div>
-
+      <CollapsibleSection title="MCP Integration" subtitle="Claude Desktop remote access" icon="settings" bind:open={openSections.mcpIntegration}>
         <p class="form-hint mb-4">
           Enable remote access to Invoice Machine via Claude Desktop using the Model Context Protocol (MCP).
           Generate an API key to allow secure connections from another computer.
@@ -1171,12 +1142,11 @@
             </div>
           </details>
         </div>
-      </div>
+      </CollapsibleSection>
 
       <!-- Backup & Restore -->
-      <div class="card">
-        <div class="card-header">
-          <h3 class="card-title">Backup & Restore</h3>
+      <CollapsibleSection title="Backup & Restore" subtitle="Manage your data backups" icon="download" bind:open={openSections.backup}>
+        <div class="section-header-actions">
           <button
             class="btn btn-secondary btn-sm"
             on:click={createBackup}
@@ -1363,7 +1333,7 @@
             </div>
           {/if}
         </div>
-      </div>
+      </CollapsibleSection>
 
       <!-- Save Button -->
       <div class="form-actions">
@@ -1660,6 +1630,12 @@
   .form-actions {
     display: flex;
     justify-content: flex-end;
+  }
+
+  .section-header-actions {
+    display: flex;
+    justify-content: flex-end;
+    margin-bottom: var(--space-4);
   }
 
   /* Delete Modal */

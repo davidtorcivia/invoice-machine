@@ -2,12 +2,64 @@
   import { page } from '$app/stores';
   import { goto } from '$app/navigation';
   import { sidebarOpen, toggleSidebar, auth } from '$lib/stores';
+  import { searchApi } from '$lib/api';
   import Icon from './Icons.svelte';
   import ThemeToggle from './ThemeToggle.svelte';
+
+  let searchQuery = '';
+  let searchResults = null;
+  let searching = false;
+  let showResults = false;
+  let searchInput;
 
   async function handleLogout() {
     await auth.logout();
     goto('/login');
+  }
+
+  async function handleSearch() {
+    if (!searchQuery.trim()) {
+      searchResults = null;
+      showResults = false;
+      return;
+    }
+
+    searching = true;
+    showResults = true;
+    try {
+      searchResults = await searchApi.search(searchQuery.trim(), { limit: 10 });
+    } catch (error) {
+      console.error('Search failed:', error);
+      searchResults = { invoices: [], clients: [] };
+    } finally {
+      searching = false;
+    }
+  }
+
+  function handleSearchKeydown(e) {
+    if (e.key === 'Enter') {
+      handleSearch();
+    } else if (e.key === 'Escape') {
+      closeSearch();
+    }
+  }
+
+  function closeSearch() {
+    showResults = false;
+    searchQuery = '';
+    searchResults = null;
+  }
+
+  function navigateToResult(type, id) {
+    closeSearch();
+    if (window.innerWidth < 768) {
+      sidebarOpen.set(false);
+    }
+    if (type === 'invoice') {
+      goto(`/invoices/${id}`);
+    } else {
+      goto(`/clients/${id}`);
+    }
   }
 
   const navItems = [
@@ -53,6 +105,76 @@
     <button class="btn btn-ghost btn-icon mobile-close" on:click={toggleSidebar}>
       <Icon name="x" size="md" />
     </button>
+  </div>
+
+  <!-- Search Bar -->
+  <div class="sidebar-search">
+    <div class="search-input-wrapper">
+      <Icon name="search" size="sm" />
+      <input
+        type="text"
+        class="search-input"
+        placeholder="Search..."
+        bind:value={searchQuery}
+        bind:this={searchInput}
+        on:keydown={handleSearchKeydown}
+        on:input={() => searchQuery.length >= 2 && handleSearch()}
+      />
+      {#if searchQuery}
+        <button class="search-clear" on:click={closeSearch}>
+          <Icon name="x" size="sm" />
+        </button>
+      {/if}
+    </div>
+
+    {#if showResults}
+      <div class="search-results">
+        {#if searching}
+          <div class="search-loading">Searching...</div>
+        {:else if searchResults}
+          {#if searchResults.invoices?.length === 0 && searchResults.clients?.length === 0}
+            <div class="search-empty">No results found</div>
+          {:else}
+            {#if searchResults.invoices?.length > 0}
+              <div class="search-group">
+                <div class="search-group-label">Invoices</div>
+                {#each searchResults.invoices as invoice}
+                  <button
+                    class="search-result"
+                    on:click={() => navigateToResult('invoice', invoice.id)}
+                  >
+                    <Icon name="invoice" size="sm" />
+                    <div class="search-result-info">
+                      <span class="search-result-title">{invoice.invoice_number}</span>
+                      <span class="search-result-subtitle">{invoice.client_name || invoice.client_business || 'No client'}</span>
+                    </div>
+                  </button>
+                {/each}
+              </div>
+            {/if}
+            {#if searchResults.clients?.length > 0}
+              <div class="search-group">
+                <div class="search-group-label">Clients</div>
+                {#each searchResults.clients as client}
+                  <button
+                    class="search-result"
+                    on:click={() => navigateToResult('client', client.id)}
+                  >
+                    <Icon name="users" size="sm" />
+                    <div class="search-result-info">
+                      <span class="search-result-title">{client.business_name || client.name}</span>
+                      {#if client.email}
+                        <span class="search-result-subtitle">{client.email}</span>
+                      {/if}
+                    </div>
+                  </button>
+                {/each}
+              </div>
+            {/if}
+          {/if}
+        {/if}
+      </div>
+    {/if}
   </div>
 
   <nav class="sidebar-nav">
@@ -110,6 +232,145 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
+  }
+
+  /* Search */
+  .sidebar-search {
+    padding: 0 var(--space-4) var(--space-3);
+    position: relative;
+  }
+
+  .search-input-wrapper {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    background: var(--color-bg-sunken);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    padding: var(--space-2) var(--space-3);
+    transition: border-color var(--transition-fast);
+  }
+
+  .search-input-wrapper:focus-within {
+    border-color: var(--color-primary);
+  }
+
+  .search-input-wrapper :global(.icon) {
+    color: var(--color-text-tertiary);
+    flex-shrink: 0;
+  }
+
+  .search-input {
+    flex: 1;
+    border: none;
+    background: none;
+    font-size: 0.875rem;
+    color: var(--color-text);
+    outline: none;
+    min-width: 0;
+  }
+
+  .search-input::placeholder {
+    color: var(--color-text-tertiary);
+  }
+
+  .search-clear {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: none;
+    border: none;
+    padding: var(--space-1);
+    cursor: pointer;
+    color: var(--color-text-tertiary);
+    border-radius: var(--radius-sm);
+  }
+
+  .search-clear:hover {
+    color: var(--color-text);
+    background: var(--color-bg-hover);
+  }
+
+  .search-results {
+    position: absolute;
+    top: 100%;
+    left: var(--space-4);
+    right: var(--space-4);
+    background: var(--color-bg-elevated);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-lg);
+    z-index: 100;
+    max-height: 320px;
+    overflow-y: auto;
+    margin-top: var(--space-1);
+  }
+
+  .search-loading,
+  .search-empty {
+    padding: var(--space-4);
+    text-align: center;
+    color: var(--color-text-tertiary);
+    font-size: 0.875rem;
+  }
+
+  .search-group {
+    padding: var(--space-2);
+  }
+
+  .search-group-label {
+    font-size: 0.6875rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--color-text-tertiary);
+    padding: var(--space-2) var(--space-2);
+  }
+
+  .search-result {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    width: 100%;
+    padding: var(--space-2) var(--space-2);
+    background: none;
+    border: none;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    text-align: left;
+    transition: background-color var(--transition-fast);
+  }
+
+  .search-result:hover {
+    background: var(--color-bg-hover);
+  }
+
+  .search-result :global(.icon) {
+    color: var(--color-text-tertiary);
+    flex-shrink: 0;
+  }
+
+  .search-result-info {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+
+  .search-result-title {
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--color-text);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .search-result-subtitle {
+    font-size: 0.75rem;
+    color: var(--color-text-tertiary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .logo {

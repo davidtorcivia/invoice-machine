@@ -1,6 +1,26 @@
 <script>
   import Header from '$lib/components/Header.svelte';
   import Icon from '$lib/components/Icons.svelte';
+  import CollapsibleSection from '$lib/components/CollapsibleSection.svelte';
+
+  // Track which sections are open
+  let openSections = {
+    gettingStarted: true,
+    creatingInvoices: false,
+    invoiceNumbering: false,
+    managingClients: false,
+    pdfGeneration: false,
+    settings: false,
+    taxSettings: false,
+    recurringInvoices: false,
+    emailDelivery: false,
+    search: false,
+    reportsAnalytics: false,
+    trash: false,
+    tips: false,
+    dataBackup: false,
+    mcpIntegration: false
+  };
 </script>
 
 <Header
@@ -11,11 +31,7 @@
 <div class="page-content">
   <div class="help-sections">
     <!-- Getting Started -->
-    <section class="help-section">
-      <h2>
-        <Icon name="home" size="md" />
-        Getting Started
-      </h2>
+    <CollapsibleSection title="Getting Started" icon="home" bind:open={openSections.gettingStarted}>
       <div class="help-content">
         <p>Welcome to Invoice Machine! Here's how to get set up:</p>
         <ol>
@@ -25,14 +41,10 @@
           <li>Start creating invoices!</li>
         </ol>
       </div>
-    </section>
+    </CollapsibleSection>
 
     <!-- Creating Invoices -->
-    <section class="help-section">
-      <h2>
-        <Icon name="invoice" size="md" />
-        Creating Invoices
-      </h2>
+    <CollapsibleSection title="Creating Invoices" icon="invoice" bind:open={openSections.creatingInvoices}>
       <div class="help-content">
         <h3>New Invoice</h3>
         <ol>
@@ -64,14 +76,10 @@
         </ol>
         <p>If no payment methods are configured, a simple "Include Payment Instructions" toggle is shown instead.</p>
       </div>
-    </section>
+    </CollapsibleSection>
 
     <!-- Invoice Numbering -->
-    <section class="help-section">
-      <h2>
-        <Icon name="invoice" size="md" />
-        Invoice Numbering
-      </h2>
+    <CollapsibleSection title="Invoice Numbering" icon="invoice" bind:open={openSections.invoiceNumbering}>
       <div class="help-content">
         <p>Invoices are automatically numbered using the format: <code>YYYYMMDD-N</code></p>
         <ul>
@@ -82,14 +90,10 @@
         </ul>
         <p class="note"><strong>Note:</strong> Changing an invoice's issue date will regenerate its number based on the new date.</p>
       </div>
-    </section>
+    </CollapsibleSection>
 
     <!-- Managing Clients -->
-    <section class="help-section">
-      <h2>
-        <Icon name="users" size="md" />
-        Managing Clients
-      </h2>
+    <CollapsibleSection title="Managing Clients" icon="users" bind:open={openSections.managingClients}>
       <div class="help-content">
         <ul>
           <li><strong>Add Client:</strong> Go to Clients &gt; New Client</li>
@@ -98,14 +102,10 @@
         </ul>
         <p>Client information is automatically populated when creating new invoices for that client.</p>
       </div>
-    </section>
+    </CollapsibleSection>
 
     <!-- PDF Generation -->
-    <section class="help-section">
-      <h2>
-        <Icon name="download" size="md" />
-        PDF Generation
-      </h2>
+    <CollapsibleSection title="PDF Generation" icon="download" bind:open={openSections.pdfGeneration}>
       <div class="help-content">
         <ul>
           <li>Click <strong>Download PDF</strong> on any invoice or quote to download it</li>
@@ -114,20 +114,16 @@
         </ul>
         <p>The PDF includes your logo, business details, line items, totals, and payment instructions (if enabled).</p>
       </div>
-    </section>
+    </CollapsibleSection>
 
     <!-- Settings -->
-    <section class="help-section">
-      <h2>
-        <Icon name="settings" size="md" />
-        Settings
-      </h2>
+    <CollapsibleSection title="Settings Overview" icon="settings" bind:open={openSections.settings}>
       <div class="help-content">
         <h3>Business Profile</h3>
         <p>Configure your company name, address, phone, email, and tax ID (EIN). This information appears on all invoices.</p>
 
         <h3>Logo</h3>
-        <p>Upload your company logo. Supported formats: PNG, JPG, GIF, SVG, WebP. Maximum size: 5MB. Click the trash icon to remove your logo.</p>
+        <p>Upload your company logo. Supported formats: PNG, JPG, GIF, WebP. Maximum size: 5MB. Click the trash icon to remove your logo.</p>
 
         <h3>Default Payment Terms</h3>
         <p>Set the default number of days until an invoice is due. This is automatically applied to new invoices but can be changed per invoice.</p>
@@ -135,23 +131,16 @@
         <h3>Payment Methods</h3>
         <p>Add multiple payment options (Bank Transfer, Venmo, Zelle, PayPal, etc.) with their specific instructions. When creating invoices, you can select which payment methods to show on the PDF.</p>
 
-        <h3>Legacy Payment Instructions</h3>
-        <p>The "Default Payment Instructions" field is a fallback used when no payment methods are configured or selected.</p>
-
         <h3>Accent Color</h3>
         <p>Customize the accent color used in your invoices. The default is forest green (#16a34a).</p>
 
         <h3>Theme</h3>
         <p>Choose between light mode, dark mode, or system preference (which follows your operating system's setting).</p>
       </div>
-    </section>
+    </CollapsibleSection>
 
     <!-- Tax Settings -->
-    <section class="help-section">
-      <h2>
-        <Icon name="invoice" size="md" />
-        Tax Settings
-      </h2>
+    <CollapsibleSection title="Tax Settings" icon="invoice" bind:open={openSections.taxSettings}>
       <div class="help-content">
         <p>Invoice Machine supports optional tax with a cascade system:</p>
         <ol>
@@ -168,14 +157,10 @@
           <li>Override on specific invoices as needed</li>
         </ol>
       </div>
-    </section>
+    </CollapsibleSection>
 
     <!-- Recurring Invoices -->
-    <section class="help-section">
-      <h2>
-        <Icon name="invoice" size="md" />
-        Recurring Invoices
-      </h2>
+    <CollapsibleSection title="Recurring Invoices" icon="repeat" bind:open={openSections.recurringInvoices}>
       <div class="help-content">
         <p>Set up recurring invoices for retainers, subscriptions, or regular services.</p>
         <h3>Creating a Schedule</h3>
@@ -199,14 +184,10 @@
         </ul>
         <p class="note"><strong>Note:</strong> Invoices are automatically generated at 2 AM UTC on the scheduled day.</p>
       </div>
-    </section>
+    </CollapsibleSection>
 
     <!-- Email Delivery -->
-    <section class="help-section">
-      <h2>
-        <Icon name="check" size="md" />
-        Email Delivery
-      </h2>
+    <CollapsibleSection title="Email Delivery" icon="send" bind:open={openSections.emailDelivery}>
       <div class="help-content">
         <p>Send invoices directly to clients via SMTP email.</p>
         <h3>Configuration</h3>
@@ -225,30 +206,23 @@
         <h3>Sending Invoices</h3>
         <p>On any invoice, click <strong>Send Email</strong> to deliver the PDF to the client. Works with any SMTP provider (Gmail, SendGrid, Mailgun, etc.).</p>
       </div>
-    </section>
+    </CollapsibleSection>
 
     <!-- Search -->
-    <section class="help-section">
-      <h2>
-        <Icon name="home" size="md" />
-        Search
-      </h2>
+    <CollapsibleSection title="Search" icon="search" bind:open={openSections.search}>
       <div class="help-content">
         <p>Use the search bar in the sidebar to find invoices and clients quickly.</p>
         <ul>
           <li>Search by invoice number, client name, or notes</li>
           <li>Results include both invoices and clients</li>
           <li>Partial matches are supported using full-text search</li>
+          <li>Press Enter or wait for results as you type</li>
         </ul>
       </div>
-    </section>
+    </CollapsibleSection>
 
     <!-- Reports & Analytics -->
-    <section class="help-section">
-      <h2>
-        <Icon name="invoice" size="md" />
-        Reports & Analytics
-      </h2>
+    <CollapsibleSection title="Reports & Analytics" icon="chart" bind:open={openSections.reportsAnalytics}>
       <div class="help-content">
         <p>View revenue insights and client metrics from the <strong>Reports</strong> page.</p>
         <h3>Revenue Dashboard</h3>
@@ -264,14 +238,10 @@
           <li>Invoice count and payment history</li>
         </ul>
       </div>
-    </section>
+    </CollapsibleSection>
 
     <!-- Trash -->
-    <section class="help-section">
-      <h2>
-        <Icon name="trash" size="md" />
-        Trash
-      </h2>
+    <CollapsibleSection title="Trash" icon="trash" bind:open={openSections.trash}>
       <div class="help-content">
         <p>When you delete invoices or clients, they're moved to Trash instead of being permanently deleted.</p>
         <ul>
@@ -280,14 +250,10 @@
           <li>Click <strong>Empty Trash</strong> to permanently delete items older than 90 days</li>
         </ul>
       </div>
-    </section>
+    </CollapsibleSection>
 
-    <!-- Keyboard Shortcuts -->
-    <section class="help-section">
-      <h2>
-        <Icon name="settings" size="md" />
-        Tips
-      </h2>
+    <!-- Tips -->
+    <CollapsibleSection title="Tips & Shortcuts" icon="settings" bind:open={openSections.tips}>
       <div class="help-content">
         <ul>
           <li>Use the sidebar to navigate between sections</li>
@@ -296,14 +262,10 @@
           <li>All monetary amounts use tabular figures for clean alignment</li>
         </ul>
       </div>
-    </section>
+    </CollapsibleSection>
 
     <!-- Data & Backup -->
-    <section class="help-section">
-      <h2>
-        <Icon name="download" size="md" />
-        Data & Backup
-      </h2>
+    <CollapsibleSection title="Data & Backup" icon="download" bind:open={openSections.dataBackup}>
       <div class="help-content">
         <p>All your data is stored locally in the <code>data/</code> directory:</p>
         <ul>
@@ -311,16 +273,12 @@
           <li><code>logos/</code> - Your uploaded logo files</li>
           <li><code>pdfs/</code> - Generated PDF files</li>
         </ul>
-        <p>To backup your data, simply copy the entire <code>data/</code> directory.</p>
+        <p>To backup your data, simply copy the entire <code>data/</code> directory, or use the built-in backup feature in Settings.</p>
       </div>
-    </section>
+    </CollapsibleSection>
 
     <!-- MCP Integration -->
-    <section class="help-section">
-      <h2>
-        <Icon name="check" size="md" />
-        Claude Desktop (MCP) Integration
-      </h2>
+    <CollapsibleSection title="Claude Desktop (MCP) Integration" icon="settings" bind:open={openSections.mcpIntegration}>
       <div class="help-content">
         <p>Invoice Machine supports the Model Context Protocol (MCP), allowing you to manage invoices through natural language with Claude Desktop.</p>
 
@@ -387,7 +345,7 @@
           <li><strong>Other:</strong> generate PDF, list trash, empty trash</li>
         </ul>
       </div>
-    </section>
+    </CollapsibleSection>
   </div>
 </div>
 
@@ -400,30 +358,7 @@
   .help-sections {
     display: flex;
     flex-direction: column;
-    gap: var(--space-6);
-  }
-
-  .help-section {
-    background: var(--color-bg-elevated);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-lg);
-    padding: var(--space-6);
-  }
-
-  .help-section h2 {
-    display: flex;
-    align-items: center;
     gap: var(--space-3);
-    font-size: 1.125rem;
-    font-weight: 600;
-    color: var(--color-text);
-    margin-bottom: var(--space-4);
-    padding-bottom: var(--space-3);
-    border-bottom: 1px solid var(--color-border-light);
-  }
-
-  .help-section h2 :global(.icon) {
-    color: var(--color-primary);
   }
 
   .help-content {
@@ -502,10 +437,6 @@
 
   @media (max-width: 768px) {
     .page-content {
-      padding: var(--space-4);
-    }
-
-    .help-section {
       padding: var(--space-4);
     }
   }
