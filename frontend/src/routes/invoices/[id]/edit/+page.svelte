@@ -28,10 +28,22 @@
   let selectedPaymentMethods = [];
   let items = [];
 
+  // Notes handling
+  let useDefaultNotes = false;
+  let originalNotes = '';
+
   // Tax settings
   let taxEnabled = false;
   let taxRate = '';
   let taxName = 'Tax';
+
+  // Default notes from profile
+  $: defaultNotesText = profile?.default_notes || '';
+
+  function removeDefaultNotes() {
+    useDefaultNotes = false;
+    notes = '';
+  }
 
   onMount(async () => {
     await Promise.all([loadInvoice(), loadProfile()]);
@@ -91,11 +103,18 @@
       taxEnabled = data.tax_enabled || false;
       taxRate = data.tax_rate && parseFloat(data.tax_rate) > 0 ? data.tax_rate : '';
       taxName = data.tax_name || 'Tax';
+
+      // Track original notes and check if using default
+      originalNotes = data.notes || '';
     } catch (error) {
       toast.error('Failed to load invoice');
       goto('/invoices');
     } finally {
       loading = false;
+      // After profile is loaded, check if notes match default
+      if (profile?.default_notes && originalNotes === profile.default_notes) {
+        useDefaultNotes = true;
+      }
     }
   }
 
@@ -118,6 +137,9 @@
   $: taxAmount = taxEnabled && taxRate ? (subtotal * parseFloat(taxRate) / 100) : 0;
   $: total = subtotal + taxAmount;
 
+  // Effective notes (use default if toggled on)
+  $: effectiveNotes = useDefaultNotes && defaultNotesText ? defaultNotesText : notes;
+
   async function saveInvoice() {
     const validItems = items.filter(item => item.description.trim() && item.unit_price);
     if (validItems.length === 0) {
@@ -132,7 +154,7 @@
         issue_date: issueDate || undefined,
         due_date: dueDate || undefined,
         payment_terms_days: parseInt(paymentTermsDays) || undefined,
-        notes: notes || undefined,
+        notes: effectiveNotes || undefined,
         status: status,
         document_type: documentType,
         client_reference: clientReference || undefined,
@@ -222,6 +244,15 @@
       <div class="card">
         <div class="card-header">
           <h3 class="card-title">{documentType === 'quote' ? 'Quote' : 'Invoice'} Details</h3>
+        </div>
+
+        <!-- Invoice Number (read-only) -->
+        <div class="form-group" style="margin-bottom: var(--space-4);">
+          <label class="label">{documentType === 'quote' ? 'Quote' : 'Invoice'} Number</label>
+          <div class="invoice-number-display">
+            <span class="invoice-number-value">{invoice?.invoice_number || ''}</span>
+            <span class="invoice-number-hint">Currency: {invoice?.currency_code || 'USD'}</span>
+          </div>
         </div>
 
         <div class="form-row">
@@ -477,12 +508,42 @@
         <div class="card-header">
           <h3 class="card-title">Notes</h3>
         </div>
-        <textarea
-          class="textarea"
-          rows="3"
-          placeholder="Payment terms, thank you message, etc."
-          bind:value={notes}
-        ></textarea>
+
+        {#if useDefaultNotes && defaultNotesText}
+          <div class="default-notes-display">
+            <div class="default-notes-header">
+              <span class="default-notes-label">Using default notes from Settings</span>
+              <button
+                type="button"
+                class="btn btn-ghost btn-sm"
+                on:click={removeDefaultNotes}
+              >
+                <Icon name="x" size="sm" />
+                Remove
+              </button>
+            </div>
+            <div class="default-notes-content">
+              {defaultNotesText}
+            </div>
+          </div>
+        {:else}
+          <textarea
+            class="textarea"
+            rows="3"
+            placeholder="Payment terms, thank you message, etc."
+            bind:value={notes}
+          ></textarea>
+          {#if defaultNotesText && !useDefaultNotes}
+            <button
+              type="button"
+              class="btn btn-ghost btn-sm mt-2"
+              on:click={() => { useDefaultNotes = true; notes = ''; }}
+            >
+              <Icon name="refresh" size="sm" />
+              Use default notes
+            </button>
+          {/if}
+        {/if}
       </div>
 
       <!-- Actions -->
@@ -742,6 +803,57 @@
 
   .link:hover {
     text-decoration: underline;
+  }
+
+  /* Default Notes Display */
+  .default-notes-display {
+    background: var(--color-bg-sunken);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    padding: var(--space-3);
+  }
+
+  .default-notes-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: var(--space-2);
+  }
+
+  .default-notes-label {
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: var(--color-text-secondary);
+  }
+
+  .default-notes-content {
+    font-size: 0.875rem;
+    color: var(--color-text);
+    white-space: pre-wrap;
+    line-height: 1.5;
+  }
+
+  /* Invoice Number Display */
+  .invoice-number-display {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    padding: var(--space-2) var(--space-3);
+    background: var(--color-bg-sunken);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+  }
+
+  .invoice-number-value {
+    font-family: var(--font-mono);
+    font-weight: 600;
+    color: var(--color-text);
+  }
+
+  .invoice-number-hint {
+    font-size: 0.8125rem;
+    color: var(--color-text-tertiary);
+    margin-left: auto;
   }
 
   /* Responsive - Large screens */

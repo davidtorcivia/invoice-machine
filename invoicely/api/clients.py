@@ -35,6 +35,8 @@ class ClientSchema(BaseModel):
     tax_enabled: Optional[int] = None
     tax_rate: Optional[str] = None
     tax_name: Optional[str] = None
+    # Currency preference (null = use global default)
+    preferred_currency: Optional[str] = None
     created_at: datetime
     updated_at: datetime
     deleted_at: Optional[datetime] = None
@@ -62,6 +64,8 @@ class ClientCreate(BaseModel):
     tax_enabled: Optional[int] = Field(None, ge=0, le=1)
     tax_rate: Optional[Decimal] = Field(None, ge=0, le=100)
     tax_name: Optional[str] = Field(None, max_length=50)
+    # Currency preference (null = use global default)
+    preferred_currency: Optional[str] = Field(None, max_length=3)
 
 
 class ClientUpdate(BaseModel):
@@ -83,6 +87,8 @@ class ClientUpdate(BaseModel):
     tax_enabled: Optional[int] = Field(None, ge=0, le=1)
     tax_rate: Optional[Decimal] = Field(None, ge=0, le=100)
     tax_name: Optional[str] = Field(None, max_length=50)
+    # Currency preference (null = use global default)
+    preferred_currency: Optional[str] = Field(None, max_length=3)
 
 
 @router.get("", response_model=List[ClientSchema])

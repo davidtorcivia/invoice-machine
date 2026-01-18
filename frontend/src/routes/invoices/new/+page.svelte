@@ -91,6 +91,31 @@
   $: defaultNotesText = profile?.default_notes || '';
   $: effectiveNotes = useDefaultNotes && defaultNotesText ? defaultNotesText : notes;
 
+  // Get selected client data
+  $: selectedClient = clients.find(c => c.id === parseInt(clientId)) || null;
+
+  // When client changes, update currency and tax settings from client
+  $: if (selectedClient) {
+    // Use client's preferred currency if set
+    if (selectedClient.preferred_currency) {
+      currencyCode = selectedClient.preferred_currency;
+    }
+    // Use client's payment terms if set
+    if (selectedClient.payment_terms_days) {
+      paymentTermsDays = selectedClient.payment_terms_days;
+    }
+    // Use client's tax settings if they have custom settings (tax_enabled is not null)
+    if (selectedClient.tax_enabled !== null) {
+      taxEnabled = !!selectedClient.tax_enabled;
+      if (selectedClient.tax_rate) {
+        taxRate = selectedClient.tax_rate;
+      }
+      if (selectedClient.tax_name) {
+        taxName = selectedClient.tax_name;
+      }
+    }
+  }
+
   // Parse payment methods from profile
   $: availablePaymentMethods = (() => {
     try {

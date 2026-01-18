@@ -161,6 +161,8 @@ class Client(Base):
     tax_enabled: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     tax_rate: Mapped[Optional[Decimal]] = mapped_column(DECIMAL(5, 2), nullable=True)
     tax_name: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    # Per-client currency preference (None = use global default)
+    preferred_currency: Mapped[Optional[str]] = mapped_column(String(3), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow

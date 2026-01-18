@@ -30,6 +30,10 @@
   let taxRate = '';
   let taxName = 'Tax';
 
+  // Currency preference
+  let preferredCurrency = '';
+  const currencies = ['USD', 'EUR', 'GBP', 'CAD', 'AUD'];
+
   async function saveClient() {
     if (!name.trim() && !businessName.trim()) {
       toast.error('Please enter a contact name or business name');
@@ -52,6 +56,7 @@
         country: country || undefined,
         payment_terms_days: parseInt(paymentTermsDays) || undefined,
         notes: notes || undefined,
+        preferred_currency: preferredCurrency || undefined,
       };
 
       // Add tax settings if overriding global defaults
@@ -232,6 +237,17 @@
             bind:value={paymentTermsDays}
           />
           <p class="form-hint">Used as the default when creating new invoices for this client.</p>
+        </div>
+
+        <div class="form-group">
+          <label for="currency" class="label">Preferred Currency</label>
+          <select id="currency" class="select" bind:value={preferredCurrency}>
+            <option value="">Use default (from Settings)</option>
+            {#each currencies as c}
+              <option value={c}>{c}</option>
+            {/each}
+          </select>
+          <p class="form-hint">Pre-select this currency when creating invoices for this client.</p>
         </div>
       </div>
 
