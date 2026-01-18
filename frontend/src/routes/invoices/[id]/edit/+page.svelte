@@ -28,6 +28,11 @@
   let selectedPaymentMethods = [];
   let items = [];
 
+  // Tax settings
+  let taxEnabled = false;
+  let taxRate = '';
+  let taxName = 'Tax';
+
   onMount(async () => {
     await Promise.all([loadInvoice(), loadProfile()]);
   });
@@ -81,6 +86,11 @@
       if (items.length === 0) {
         items = [{ description: '', quantity: 1, unit_price: '', unit_type: 'qty' }];
       }
+
+      // Load tax settings
+      taxEnabled = data.tax_enabled || false;
+      taxRate = data.tax_rate && parseFloat(data.tax_rate) > 0 ? data.tax_rate : '';
+      taxName = data.tax_name || 'Tax';
     } catch (error) {
       toast.error('Failed to load invoice');
       goto('/invoices');
@@ -104,6 +114,10 @@
     return sum + (price * item.quantity);
   }, 0);
 
+  // Tax calculations
+  $: taxAmount = taxEnabled && taxRate ? (subtotal * parseFloat(taxRate) / 100) : 0;
+  $: total = subtotal + taxAmount;
+
   async function saveInvoice() {
     const validItems = items.filter(item => item.description.trim() && item.unit_price);
     if (validItems.length === 0) {
@@ -124,6 +138,9 @@
         client_reference: clientReference || undefined,
         show_payment_instructions: showPaymentInstructions,
         selected_payment_methods: selectedPaymentMethods.length > 0 ? JSON.stringify(selectedPaymentMethods) : null,
+        tax_enabled: taxEnabled ? 1 : 0,
+        tax_rate: taxEnabled && taxRate ? parseFloat(taxRate) : 0,
+        tax_name: taxName || 'Tax',
       });
 
       // Delete removed items
@@ -346,9 +363,64 @@
         </div>
 
         <div class="totals-summary">
-          <span class="totals-label">Subtotal</span>
-          <span class="totals-value">{formatCurrency(subtotal)}</span>
+          <div class="totals-rows">
+            <div class="total-row">
+              <span class="totals-label">Subtotal</span>
+              <span class="totals-value">{formatCurrency(subtotal)}</span>
+            </div>
+            {#if taxEnabled && taxRate}
+              <div class="total-row tax-row">
+                <span class="totals-label">{taxName || 'Tax'} ({taxRate}%)</span>
+                <span class="totals-value">{formatCurrency(taxAmount)}</span>
+              </div>
+            {/if}
+            <div class="total-row total-final">
+              <span class="totals-label">Total</span>
+              <span class="totals-value totals-total">{formatCurrency(total)}</span>
+            </div>
+          </div>
         </div>
+      </div>
+
+      <!-- Tax Settings -->
+      <div class="card">
+        <div class="card-header">
+          <h3 class="card-title">Tax Settings</h3>
+        </div>
+
+        <label class="checkbox-label">
+          <input type="checkbox" bind:checked={taxEnabled} />
+          <span>Enable Tax</span>
+        </label>
+
+        {#if taxEnabled}
+          <div class="form-row" style="margin-top: var(--space-4);">
+            <div class="form-group">
+              <label for="tax-rate" class="label">Tax Rate (%)</label>
+              <input
+                id="tax-rate"
+                type="number"
+                class="input"
+                min="0"
+                max="100"
+                step="0.01"
+                placeholder="e.g. 10"
+                bind:value={taxRate}
+              />
+            </div>
+            <div class="form-group">
+              <label for="tax-name" class="label">Tax Name</label>
+              <input
+                id="tax-name"
+                type="text"
+                class="input"
+                placeholder="e.g. VAT, GST, Sales Tax"
+                bind:value={taxName}
+              />
+            </div>
+          </div>
+          <p class="form-hint">This will override any client or global default tax settings.</p>
+        {/if}
       </div>
 
       <!-- Payment Methods Selection -->
@@ -536,10 +608,22 @@
   .totals-summary {
     display: flex;
     justify-content: flex-end;
-    gap: var(--space-6);
     padding-top: var(--space-4);
     border-top: 1px solid var(--color-border-light);
     margin-top: var(--space-4);
+  }
+
+  .totals-rows {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    min-width: 200px;
+  }
+
+  .total-row {
+    display: flex;
+    justify-content: space-between;
+    gap: var(--space-6);
   }
 
   .totals-label {
@@ -548,9 +632,24 @@
   }
 
   .totals-value {
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+  }
+
+  .tax-row {
+    color: var(--color-text-tertiary);
+    font-size: 0.9375rem;
+  }
+
+  .total-final {
+    padding-top: var(--space-2);
+    border-top: 1px solid var(--color-border-light);
+    margin-top: var(--space-1);
+  }
+
+  .totals-total {
     font-size: 1.125rem;
     font-weight: 600;
-    font-variant-numeric: tabular-nums;
   }
 
   .form-actions {

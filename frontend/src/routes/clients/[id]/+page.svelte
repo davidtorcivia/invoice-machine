@@ -244,6 +244,20 @@
               <dt>Payment Terms</dt>
               <dd>Net {client.payment_terms_days || 30} days</dd>
             </div>
+            <div class="detail-item">
+              <dt>Tax Settings</dt>
+              {#if client.tax_enabled !== null}
+                <dd>
+                  {#if client.tax_enabled}
+                    <span class="tax-badge tax-enabled">{client.tax_name || 'Tax'} @ {client.tax_rate || 0}%</span>
+                  {:else}
+                    <span class="tax-badge tax-disabled">Tax Disabled</span>
+                  {/if}
+                </dd>
+              {:else}
+                <dd class="text-secondary">Using global default</dd>
+              {/if}
+            </div>
             {#if client.notes}
               <div class="detail-item">
                 <dt>Notes</dt>
@@ -458,6 +472,25 @@
     font-weight: 400;
     white-space: pre-line;
     line-height: 1.5;
+  }
+
+  .tax-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: var(--space-1) var(--space-2);
+    border-radius: var(--radius-sm);
+    font-size: 0.8125rem;
+    font-weight: 500;
+  }
+
+  .tax-enabled {
+    background: color-mix(in srgb, var(--color-success) 15%, transparent);
+    color: var(--color-success);
+  }
+
+  .tax-disabled {
+    background: color-mix(in srgb, var(--color-text-tertiary) 15%, transparent);
+    color: var(--color-text-tertiary);
   }
 
   .action-list {

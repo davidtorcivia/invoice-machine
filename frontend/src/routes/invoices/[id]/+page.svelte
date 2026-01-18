@@ -19,6 +19,10 @@
   let showDeleteModal = false;
   let deleting = false;
 
+  // Quote to Invoice conversion
+  let showConvertModal = false;
+  let converting = false;
+
   const statusConfig = {
     draft: { class: 'badge-draft', label: 'Draft' },
     sent: { class: 'badge-sent', label: 'Sent' },
@@ -91,9 +95,35 @@
   function cancelDelete() {
     showDeleteModal = false;
   }
+
+  // Quote to Invoice conversion
+  $: isQuote = invoice?.document_type === 'quote';
+  $: documentLabel = isQuote ? 'Quote' : 'Invoice';
+
+  function openConvertModal() {
+    showConvertModal = true;
+  }
+
+  async function confirmConvert() {
+    converting = true;
+    try {
+      await invoicesApi.update(id, { document_type: 'invoice' });
+      toast.success('Quote converted to invoice');
+      await loadInvoice();
+    } catch (error) {
+      toast.error('Failed to convert quote');
+    } finally {
+      converting = false;
+      showConvertModal = false;
+    }
+  }
+
+  function cancelConvert() {
+    showConvertModal = false;
+  }
 </script>
 
-<Header title={invoice ? `Invoice #${invoice.invoice_number}` : 'Invoice'} />
+<Header title={invoice ? `${documentLabel} #${invoice.invoice_number}` : 'Invoice'} />
 
 <div class="page-content">
   {#if loading}
@@ -103,10 +133,16 @@
   {:else if invoice}
     <div class="page-header">
       <div class="page-header-text">
-        <h1>Invoice #{invoice.invoice_number}</h1>
+        <h1>{documentLabel} #{invoice.invoice_number}</h1>
         <p class="page-subtitle">{invoice.client_business || invoice.client_name || ''}</p>
       </div>
       <div class="page-actions">
+        {#if isQuote}
+          <button class="btn btn-success" on:click={openConvertModal}>
+            <Icon name="check" size="sm" />
+            Convert to Invoice
+          </button>
+        {/if}
         <a href="/invoices/{id}/edit" class="btn btn-secondary">
           <Icon name="pencil" size="sm" />
           Edit
@@ -235,6 +271,12 @@
                 <span class="total-label">Subtotal</span>
                 <span class="total-value">{formatCurrency(invoice.subtotal)}</span>
               </div>
+              {#if invoice.tax_enabled && parseFloat(invoice.tax_amount) > 0}
+                <div class="total-row tax-row">
+                  <span class="total-label">{invoice.tax_name || 'Tax'} ({invoice.tax_rate}%)</span>
+                  <span class="total-value">{formatCurrency(invoice.tax_amount)}</span>
+                </div>
+              {/if}
               <div class="total-row total-final">
                 <span class="total-label">Total</span>
                 <span class="total-value total-amount">{formatCurrency(invoice.total)}</span>
@@ -264,7 +306,17 @@
           </div>
           <dl class="detail-list">
             <div class="detail-item">
-              <dt>Invoice Number</dt>
+              <dt>Document Type</dt>
+              <dd>
+                {#if isQuote}
+                  <span class="doc-type-badge doc-type-quote">Quote</span>
+                {:else}
+                  <span class="doc-type-badge doc-type-invoice">Invoice</span>
+                {/if}
+              </dd>
+            </div>
+            <div class="detail-item">
+              <dt>{documentLabel} Number</dt>
               <dd class="font-mono">#{invoice.invoice_number}</dd>
             </div>
             <div class="detail-item">
@@ -292,8 +344,8 @@
 
 <ConfirmModal
   show={showDeleteModal}
-  title="Delete Invoice"
-  message="Move invoice #{invoice?.invoice_number} to trash? You can restore it later from the Trash."
+  title="Delete {documentLabel}"
+  message="Move {documentLabel.toLowerCase()} #{invoice?.invoice_number} to trash? You can restore it later from the Trash."
   confirmText="Delete"
   cancelText="Cancel"
   variant="danger"
@@ -301,6 +353,19 @@
   loading={deleting}
   onConfirm={confirmDelete}
   onCancel={cancelDelete}
+/>
+
+<ConfirmModal
+  show={showConvertModal}
+  title="Convert to Invoice"
+  message="Convert quote #{invoice?.invoice_number} to an invoice? The document number will remain the same."
+  confirmText="Convert"
+  cancelText="Cancel"
+  variant="primary"
+  icon="check"
+  loading={converting}
+  onConfirm={confirmConvert}
+  onCancel={cancelConvert}
 />
 
 <style>
@@ -526,6 +591,14 @@
     color: var(--color-text-secondary);
   }
 
+  .tax-row .total-label {
+    color: var(--color-text-tertiary);
+  }
+
+  .tax-row .total-value {
+    color: var(--color-text-secondary);
+  }
+
   .total-value {
     font-weight: 500;
     font-variant-numeric: tabular-nums;
@@ -575,6 +648,38 @@
   .detail-item dd {
     font-weight: 500;
     color: var(--color-text);
+  }
+
+  .doc-type-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: var(--space-1) var(--space-2);
+    border-radius: var(--radius-sm);
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+  }
+
+  .doc-type-invoice {
+    background: color-mix(in srgb, var(--color-primary) 15%, transparent);
+    color: var(--color-primary);
+  }
+
+  .doc-type-quote {
+    background: color-mix(in srgb, var(--color-warning) 15%, transparent);
+    color: var(--color-warning);
+  }
+
+  :global(.btn-success) {
+    background: var(--color-success);
+    color: white;
+    border-color: var(--color-success);
+  }
+
+  :global(.btn-success:hover) {
+    background: color-mix(in srgb, var(--color-success) 90%, black);
+    border-color: color-mix(in srgb, var(--color-success) 90%, black);
   }
 
   @media (max-width: 1024px) {

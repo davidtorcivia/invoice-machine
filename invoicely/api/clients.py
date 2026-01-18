@@ -1,11 +1,11 @@
 """Clients API endpoints."""
 
 from datetime import datetime
+from decimal import Decimal
 from typing import Optional, List
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
-from pydantic.types import PositiveInt
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from invoicely.database import Client, get_session
@@ -30,6 +30,10 @@ class ClientSchema(BaseModel):
     phone: Optional[str] = None
     payment_terms_days: int = 30
     notes: Optional[str] = None
+    # Tax settings (null = use global default)
+    tax_enabled: Optional[int] = None
+    tax_rate: Optional[str] = None
+    tax_name: Optional[str] = None
     created_at: datetime
     updated_at: datetime
     deleted_at: Optional[datetime] = None
@@ -53,6 +57,10 @@ class ClientCreate(BaseModel):
     phone: Optional[str] = Field(None, max_length=50)
     payment_terms_days: int = Field(30, ge=0, le=365)
     notes: Optional[str] = Field(None, max_length=10000)
+    # Tax settings (null = use global default)
+    tax_enabled: Optional[int] = Field(None, ge=0, le=1)
+    tax_rate: Optional[Decimal] = Field(None, ge=0, le=100)
+    tax_name: Optional[str] = Field(None, max_length=50)
 
 
 class ClientUpdate(BaseModel):
@@ -70,6 +78,10 @@ class ClientUpdate(BaseModel):
     phone: Optional[str] = Field(None, max_length=50)
     payment_terms_days: Optional[int] = Field(None, ge=0, le=365)
     notes: Optional[str] = Field(None, max_length=10000)
+    # Tax settings (null = use global default)
+    tax_enabled: Optional[int] = Field(None, ge=0, le=1)
+    tax_rate: Optional[Decimal] = Field(None, ge=0, le=100)
+    tax_name: Optional[str] = Field(None, max_length=50)
 
 
 @router.get("", response_model=List[ClientSchema])

@@ -24,6 +24,12 @@
   let paymentTermsDays = 30;
   let notes = '';
 
+  // Tax settings
+  let taxOverride = false;  // Whether to override global settings
+  let taxEnabled = false;
+  let taxRate = '';
+  let taxName = 'Tax';
+
   async function saveClient() {
     if (!name.trim() && !businessName.trim()) {
       toast.error('Please enter a contact name or business name');
@@ -32,7 +38,8 @@
 
     saving = true;
     try {
-      const client = await clientsApi.create({
+      // Build create payload
+      const createData = {
         name: name || undefined,
         business_name: businessName || undefined,
         email: email || undefined,
@@ -45,7 +52,16 @@
         country: country || undefined,
         payment_terms_days: parseInt(paymentTermsDays) || undefined,
         notes: notes || undefined,
-      });
+      };
+
+      // Add tax settings if overriding global defaults
+      if (taxOverride) {
+        createData.tax_enabled = taxEnabled ? 1 : 0;
+        createData.tax_rate = taxEnabled && taxRate ? parseFloat(taxRate) : 0;
+        createData.tax_name = taxName || 'Tax';
+      }
+
+      const client = await clientsApi.create(createData);
 
       toast.success('Client created successfully');
       goto(`/clients/${client.id}`);
@@ -231,6 +247,58 @@
       </div>
     </div>
 
+    <!-- Tax Settings -->
+    <div class="card">
+      <div class="card-header">
+        <h3 class="card-title">Tax Settings</h3>
+      </div>
+
+      <label class="checkbox-label">
+        <input type="checkbox" bind:checked={taxOverride} />
+        <span>Override global tax settings for this client</span>
+      </label>
+      <p class="form-hint">When unchecked, invoices for this client will use your global default tax settings.</p>
+
+      {#if taxOverride}
+        <div class="tax-override-section">
+          <label class="checkbox-label">
+            <input type="checkbox" bind:checked={taxEnabled} />
+            <span>Enable Tax</span>
+          </label>
+
+          {#if taxEnabled}
+            <div class="form-row" style="margin-top: var(--space-4);">
+              <div class="form-group">
+                <label for="tax-rate" class="label">Tax Rate (%)</label>
+                <input
+                  id="tax-rate"
+                  type="number"
+                  class="input"
+                  min="0"
+                  max="100"
+                  step="0.01"
+                  placeholder="e.g. 10"
+                  bind:value={taxRate}
+                />
+              </div>
+              <div class="form-group">
+                <label for="tax-name" class="label">Tax Name</label>
+                <input
+                  id="tax-name"
+                  type="text"
+                  class="input"
+                  placeholder="e.g. VAT, GST, Sales Tax"
+                  bind:value={taxName}
+                />
+              </div>
+            </div>
+          {:else}
+            <p class="form-hint" style="margin-top: var(--space-3);">Tax will be disabled for invoices to this client.</p>
+          {/if}
+        </div>
+      {/if}
+    </div>
+
     <!-- Actions -->
     <div class="form-actions">
       <button
@@ -280,6 +348,26 @@
     font-size: 0.8125rem;
     color: var(--color-text-tertiary);
     margin-top: var(--space-1);
+  }
+
+  .checkbox-label {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    cursor: pointer;
+    font-weight: 500;
+  }
+
+  .checkbox-label input[type="checkbox"] {
+    width: 18px;
+    height: 18px;
+    accent-color: var(--color-primary);
+  }
+
+  .tax-override-section {
+    margin-top: var(--space-4);
+    padding-top: var(--space-4);
+    border-top: 1px solid var(--color-border-light);
   }
 
   .form-actions {
