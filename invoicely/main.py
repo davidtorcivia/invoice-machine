@@ -170,18 +170,28 @@ def run_alembic_migrations():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Lifespan context manager."""
-    # Startup - run Alembic migrations first
-    run_alembic_migrations()
+    import sys
+    print("Starting Invoice Machine...", flush=True)
 
+    # Startup - run Alembic migrations first
+    print("Running database migrations...", flush=True)
+    run_alembic_migrations()
+    print("Migrations complete.", flush=True)
+
+    print("Initializing database...", flush=True)
     await init_db()
+    print("Database initialized.", flush=True)
 
     # Start background tasks
+    print("Starting background tasks...", flush=True)
     cleanup_task = asyncio.create_task(session_cleanup_task())
     backup_task = asyncio.create_task(scheduled_backup_task())
     trash_task = asyncio.create_task(trash_cleanup_task())
     overdue_task = asyncio.create_task(overdue_check_task())
     recurring_task = asyncio.create_task(recurring_invoice_task())
+    print("Background tasks started.", flush=True)
 
+    print("Invoice Machine ready! Listening on port 8080", flush=True)
     yield
 
     # Shutdown

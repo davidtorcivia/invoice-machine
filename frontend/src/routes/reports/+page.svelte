@@ -65,6 +65,13 @@
 <Header title="Reports" subtitle="Revenue analytics and client insights" />
 
 <div class="page-content">
+  <div class="page-header">
+    <div class="page-header-text">
+      <h1>Reports</h1>
+      <p class="page-subtitle">Revenue analytics and client insights</p>
+    </div>
+  </div>
+
   {#if loading}
     <div class="loading-container">
       <div class="spinner"></div>
@@ -235,6 +242,32 @@
 </div>
 
 <style>
+  .page-content {
+    padding: var(--space-8);
+    max-width: 1400px;
+  }
+
+  .page-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: var(--space-6);
+    gap: var(--space-4);
+  }
+
+  .page-header h1 {
+    font-size: 1.5rem;
+    font-weight: 600;
+    color: var(--color-text);
+    margin: 0;
+  }
+
+  .page-subtitle {
+    color: var(--color-text-secondary);
+    font-size: 0.875rem;
+    margin: var(--space-1) 0 0 0;
+  }
+
   .loading-container {
     display: flex;
     justify-content: center;
@@ -568,6 +601,12 @@
     color: var(--color-success);
   }
 
+  @media (max-width: 768px) {
+    .page-content {
+      padding: var(--space-4);
+    }
+  }
+
   @media (max-width: 640px) {
     .chart-row {
       grid-template-columns: 60px 1fr 80px;
@@ -584,6 +623,12 @@
 
     .revenue-value {
       text-align: right;
+    }
+  }
+
+  @media (max-width: 480px) {
+    .page-content {
+      padding: var(--space-3);
     }
   }
 </style>

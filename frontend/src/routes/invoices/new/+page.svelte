@@ -25,6 +25,11 @@
   let invoiceNumberOverride = '';
   let selectedPaymentMethods = [];
 
+  // Tax settings
+  let taxEnabled = false;
+  let taxRate = '';
+  let taxName = 'Tax';
+
   // Line items
   let items = [{ description: '', quantity: 1, unit_price: '', unit_type: 'qty' }];
 
@@ -67,6 +72,16 @@
       if (profile.default_payment_terms_days) {
         paymentTermsDays = profile.default_payment_terms_days;
       }
+      // Set tax defaults from profile
+      if (profile.default_tax_enabled) {
+        taxEnabled = true;
+      }
+      if (profile.default_tax_rate) {
+        taxRate = profile.default_tax_rate;
+      }
+      if (profile.default_tax_name) {
+        taxName = profile.default_tax_name;
+      }
     } catch (error) {
       console.error('Failed to load profile');
     }
@@ -105,6 +120,9 @@
     return sum + (price * item.quantity);
   }, 0);
 
+  $: taxAmount = taxEnabled && taxRate ? (subtotal * parseFloat(taxRate) / 100) : 0;
+  $: total = subtotal + taxAmount;
+
   async function saveInvoice() {
     if (!clientId) {
       toast.error('Please select a client');
@@ -129,6 +147,10 @@
         client_reference: clientReference || undefined,
         show_payment_instructions: showPaymentInstructions,
         selected_payment_methods: selectedPaymentMethods.length > 0 ? JSON.stringify(selectedPaymentMethods) : null,
+        // Tax settings
+        tax_enabled: taxEnabled ? 1 : 0,
+        tax_rate: taxEnabled && taxRate ? parseFloat(taxRate) : 0,
+        tax_name: taxName || 'Tax',
         items: validItems.map(item => ({
           description: item.description,
           quantity: parseInt(item.quantity) || 1,
@@ -400,9 +422,70 @@
         </div>
 
         <div class="totals-summary">
-          <span class="totals-label">Subtotal</span>
-          <span class="totals-value">{formatCurrency(subtotal)}</span>
+          <div class="totals-row">
+            <span class="totals-label">Subtotal</span>
+            <span class="totals-value">{formatCurrency(subtotal)}</span>
+          </div>
+          {#if taxEnabled && taxRate}
+            <div class="totals-row tax-row">
+              <span class="totals-label">{taxName} ({taxRate}%)</span>
+              <span class="totals-value">{formatCurrency(taxAmount)}</span>
+            </div>
+            <div class="totals-row total-row">
+              <span class="totals-label">Total</span>
+              <span class="totals-value total-value">{formatCurrency(total)}</span>
+            </div>
+          {/if}
         </div>
+      </div>
+
+      <!-- Tax Settings -->
+      <div class="card">
+        <div class="card-header">
+          <h3 class="card-title">Tax Settings</h3>
+        </div>
+
+        <label class="checkbox-label">
+          <input type="checkbox" bind:checked={taxEnabled} />
+          <span>Apply Tax</span>
+        </label>
+
+        {#if taxEnabled}
+          <div class="form-row tax-fields">
+            <div class="form-group">
+              <label for="tax-rate" class="label">Tax Rate (%)</label>
+              <input
+                id="tax-rate"
+                type="number"
+                class="input"
+                step="0.01"
+                min="0"
+                max="100"
+                placeholder="e.g., 8.5"
+                bind:value={taxRate}
+              />
+            </div>
+
+            <div class="form-group">
+              <label for="tax-name" class="label">Tax Name</label>
+              <input
+                id="tax-name"
+                type="text"
+                class="input"
+                placeholder="Tax, VAT, GST, etc."
+                bind:value={taxName}
+              />
+            </div>
+          </div>
+          <p class="form-hint">Tax will be calculated on the subtotal and shown on the invoice.</p>
+        {:else}
+          <p class="form-hint">
+            Enable tax to add a tax line to this invoice.
+            {#if profile?.default_tax_enabled}
+              Default tax ({profile.default_tax_rate}%) is configured in Settings.
+            {/if}
+          </p>
+        {/if}
       </div>
 
       <!-- Payment Methods Selection -->
@@ -753,11 +836,19 @@
 
   .totals-summary {
     display: flex;
-    justify-content: flex-end;
-    gap: var(--space-6);
+    flex-direction: column;
+    align-items: flex-end;
+    gap: var(--space-2);
     padding-top: var(--space-4);
     border-top: 1px solid var(--color-border-light);
     margin-top: var(--space-4);
+  }
+
+  .totals-row {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--space-6);
+    min-width: 280px;
   }
 
   .totals-label {
@@ -766,9 +857,33 @@
   }
 
   .totals-value {
-    font-size: 1.125rem;
+    font-size: 1rem;
     font-weight: 600;
     font-variant-numeric: tabular-nums;
+    min-width: 100px;
+    text-align: right;
+  }
+
+  .tax-row .totals-label {
+    color: var(--color-text-tertiary);
+  }
+
+  .tax-row .totals-value {
+    font-weight: 500;
+  }
+
+  .total-row {
+    padding-top: var(--space-2);
+    border-top: 1px solid var(--color-border-light);
+  }
+
+  .total-value {
+    font-size: 1.25rem;
+    color: var(--color-primary);
+  }
+
+  .tax-fields {
+    margin-top: var(--space-4);
   }
 
   .form-actions {

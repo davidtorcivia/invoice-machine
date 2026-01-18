@@ -50,6 +50,10 @@ class InvoiceSchema(BaseModel):
     currency_code: str
     subtotal: str
     total: str
+    tax_enabled: bool = False
+    tax_rate: str = "0"
+    tax_name: str = "Tax"
+    tax_amount: str = "0"
     notes: Optional[str] = None
     pdf_path: Optional[str] = None
     pdf_generated_at: Optional[datetime] = None
@@ -85,6 +89,10 @@ class InvoiceCreate(BaseModel):
     show_payment_instructions: bool = True
     selected_payment_methods: Optional[str] = Field(None, max_length=1000)
     invoice_number_override: Optional[str] = Field(None, max_length=50)
+    # Tax settings
+    tax_enabled: Optional[int] = Field(0, ge=0, le=1)
+    tax_rate: Optional[Decimal] = Field(None, ge=0, le=100)
+    tax_name: Optional[str] = Field(None, max_length=50)
     items: Optional[List[InvoiceItemCreate]] = Field(None, max_length=100)
 
 
@@ -99,6 +107,10 @@ class InvoiceUpdate(BaseModel):
     client_reference: Optional[str] = Field(None, max_length=100)
     show_payment_instructions: Optional[bool] = None
     selected_payment_methods: Optional[str] = Field(None, max_length=1000)
+    # Tax settings
+    tax_enabled: Optional[int] = Field(None, ge=0, le=1)
+    tax_rate: Optional[Decimal] = Field(None, ge=0, le=100)
+    tax_name: Optional[str] = Field(None, max_length=50)
 
 
 class InvoiceItemUpdate(BaseModel):
@@ -132,6 +144,10 @@ def _serialize_invoice(invoice: Invoice) -> dict:
         "currency_code": invoice.currency_code,
         "subtotal": str(invoice.subtotal),
         "total": str(invoice.total),
+        "tax_enabled": bool(invoice.tax_enabled),
+        "tax_rate": str(invoice.tax_rate) if invoice.tax_rate else "0",
+        "tax_name": invoice.tax_name or "Tax",
+        "tax_amount": str(invoice.tax_amount) if invoice.tax_amount else "0",
         "notes": invoice.notes,
         "pdf_path": invoice.pdf_path,
         "pdf_generated_at": invoice.pdf_generated_at,
@@ -207,6 +223,9 @@ async def create_invoice(
         show_payment_instructions=invoice_data.show_payment_instructions,
         selected_payment_methods=invoice_data.selected_payment_methods,
         invoice_number_override=invoice_data.invoice_number_override,
+        tax_enabled=invoice_data.tax_enabled,
+        tax_rate=invoice_data.tax_rate,
+        tax_name=invoice_data.tax_name,
         items=items_data,
     )
 

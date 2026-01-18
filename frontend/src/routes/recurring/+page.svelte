@@ -208,7 +208,11 @@
 <Header title="Recurring Invoices" subtitle="Automate your billing with scheduled invoices" />
 
 <div class="page-content">
-  <div class="page-actions">
+  <div class="page-header">
+    <div class="page-header-text">
+      <h1>Recurring Invoices</h1>
+      <p class="page-subtitle">{schedules.length} schedule{schedules.length !== 1 ? 's' : ''}</p>
+    </div>
     <button class="btn btn-primary" on:click={openCreateModal}>
       <Icon name="plus" size="sm" />
       New Schedule
@@ -481,10 +485,30 @@
 />
 
 <style>
-  .page-actions {
+  .page-content {
+    padding: var(--space-8);
+    max-width: 1400px;
+  }
+
+  .page-header {
     display: flex;
-    justify-content: flex-end;
+    justify-content: space-between;
+    align-items: center;
     margin-bottom: var(--space-6);
+    gap: var(--space-4);
+  }
+
+  .page-header h1 {
+    font-size: 1.5rem;
+    font-weight: 600;
+    color: var(--color-text);
+    margin: 0;
+  }
+
+  .page-subtitle {
+    color: var(--color-text-secondary);
+    font-size: 0.875rem;
+    margin: var(--space-1) 0 0 0;
   }
 
   .loading-container {
@@ -739,6 +763,17 @@
     to { transform: rotate(360deg); }
   }
 
+  @media (max-width: 768px) {
+    .page-content {
+      padding: var(--space-4);
+    }
+
+    .page-header {
+      flex-direction: column;
+      align-items: flex-start;
+    }
+  }
+
   @media (max-width: 640px) {
     .form-row {
       grid-template-columns: 1fr;
@@ -751,6 +786,12 @@
     .add-item-form .input:first-child {
       width: 100%;
       flex: none;
+    }
+  }
+
+  @media (max-width: 480px) {
+    .page-content {
+      padding: var(--space-3);
     }
   }
 </style>
