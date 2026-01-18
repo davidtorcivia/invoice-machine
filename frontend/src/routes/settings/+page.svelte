@@ -1970,6 +1970,7 @@
     width: 18px;
     height: 18px;
     cursor: pointer;
+    accent-color: var(--color-primary);
   }
 
   .s3-section {
