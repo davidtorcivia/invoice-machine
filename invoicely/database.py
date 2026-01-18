@@ -251,6 +251,10 @@ class Invoice(Base):
         Index("idx_invoices_status", "status"),
         Index("idx_invoices_client", "client_id"),
         Index("idx_invoices_deleted", "deleted_at"),
+        # Composite indexes for common query patterns
+        Index("idx_invoices_status_deleted", "status", "deleted_at"),
+        Index("idx_invoices_client_status", "client_id", "status"),
+        Index("idx_invoices_date_status", "issue_date", "status"),
     )
 
     @property
@@ -335,6 +339,8 @@ class RecurringSchedule(Base):
         Index("idx_recurring_client", "client_id"),
         Index("idx_recurring_next_date", "next_invoice_date"),
         Index("idx_recurring_active", "is_active"),
+        # Composite index for processing due schedules
+        Index("idx_recurring_active_next_date", "is_active", "next_invoice_date"),
     )
 
 

@@ -173,7 +173,9 @@ def _serialize_invoice(invoice: Invoice) -> dict:
 
 
 @router.get("", response_model=List[InvoiceSchema])
+@limiter.limit("120/minute")
 async def list_invoices(
+    request: Request,
     status: Optional[str] = Query(None, description="Filter by status"),
     client_id: Optional[int] = Query(None, description="Filter by client ID"),
     from_date: Optional[date] = Query(None, description="Filter from this date"),

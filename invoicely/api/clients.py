@@ -4,12 +4,13 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Optional, List
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from invoicely.database import Client, get_session
 from invoicely.services import ClientService
+from invoicely.rate_limit import limiter
 
 router = APIRouter(prefix="/api/clients", tags=["clients"])
 
@@ -85,7 +86,9 @@ class ClientUpdate(BaseModel):
 
 
 @router.get("", response_model=List[ClientSchema])
+@limiter.limit("120/minute")
 async def list_clients(
+    request: Request,
     search: Optional[str] = Query(None, description="Search by name or business name"),
     include_deleted: bool = Query(False, description="Include soft-deleted clients"),
     session: AsyncSession = Depends(get_session),
@@ -97,7 +100,9 @@ async def list_clients(
 
 
 @router.post("", response_model=ClientSchema, status_code=201)
+@limiter.limit("30/hour")
 async def create_client(
+    request: Request,
     client_data: ClientCreate,
     session: AsyncSession = Depends(get_session),
 ) -> Client:
@@ -106,7 +111,9 @@ async def create_client(
 
 
 @router.get("/{client_id}", response_model=ClientSchema)
+@limiter.limit("120/minute")
 async def get_client(
+    request: Request,
     client_id: int,
     session: AsyncSession = Depends(get_session),
 ) -> Client:
@@ -118,7 +125,9 @@ async def get_client(
 
 
 @router.put("/{client_id}", response_model=ClientSchema)
+@limiter.limit("60/hour")
 async def update_client(
+    request: Request,
     client_id: int,
     updates: ClientUpdate,
     session: AsyncSession = Depends(get_session),
@@ -133,7 +142,9 @@ async def update_client(
 
 
 @router.delete("/{client_id}", status_code=204)
+@limiter.limit("30/hour")
 async def delete_client(
+    request: Request,
     client_id: int,
     session: AsyncSession = Depends(get_session),
 ):
@@ -144,7 +155,9 @@ async def delete_client(
 
 
 @router.post("/{client_id}/restore", response_model=ClientSchema)
+@limiter.limit("30/hour")
 async def restore_client(
+    request: Request,
     client_id: int,
     session: AsyncSession = Depends(get_session),
 ) -> Client:

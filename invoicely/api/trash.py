@@ -2,12 +2,13 @@
 
 from datetime import datetime
 from typing import List, Literal
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from invoicely.database import Client, Invoice, get_session
 from invoicely.services import ClientService, InvoiceService
+from invoicely.rate_limit import limiter
 
 router = APIRouter(prefix="/api/trash", tags=["trash"])
 
@@ -23,7 +24,9 @@ class TrashedItemSchema(BaseModel):
 
 
 @router.get("", response_model=List[TrashedItemSchema])
+@limiter.limit("60/minute")
 async def list_trash(
+    request: Request,
     session: AsyncSession = Depends(get_session),
 ) -> List[TrashedItemSchema]:
     """List all trashed items."""
@@ -79,7 +82,8 @@ async def list_trash(
 
 
 @router.post("/empty", status_code=204)
-async def empty_trash(session: AsyncSession = Depends(get_session)):
+@limiter.limit("5/hour")
+async def empty_trash(request: Request, session: AsyncSession = Depends(get_session)):
     """Permanently delete all trashed items immediately."""
     from sqlalchemy import delete
 
@@ -97,7 +101,9 @@ async def empty_trash(session: AsyncSession = Depends(get_session)):
 
 
 @router.post("/restore/{item_type}/{item_id}", status_code=204)
+@limiter.limit("30/hour")
 async def restore_trashed_item(
+    request: Request,
     item_type: Literal["client", "invoice"],
     item_id: int,
     session: AsyncSession = Depends(get_session),

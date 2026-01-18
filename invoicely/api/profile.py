@@ -133,7 +133,9 @@ def validate_image_content(content: bytes) -> bool:
 
 
 @router.get("", response_model=BusinessProfileSchema)
+@limiter.limit("120/minute")
 async def get_profile(
+    request: Request,
     session: AsyncSession = Depends(get_session),
 ) -> BusinessProfile:
     """Get business profile."""
@@ -142,7 +144,9 @@ async def get_profile(
 
 
 @router.put("", response_model=BusinessProfileSchema)
+@limiter.limit("30/hour")
 async def update_profile(
+    request: Request,
     updates: BusinessProfileUpdate,
     session: AsyncSession = Depends(get_session),
 ) -> BusinessProfile:
@@ -239,7 +243,9 @@ async def upload_logo(
 
 
 @router.delete("/logo")
+@limiter.limit("10/hour")
 async def delete_logo(
+    request: Request,
     session: AsyncSession = Depends(get_session),
 ):
     """Delete business logo."""
@@ -284,7 +290,9 @@ async def get_logo(filename: str):
 
 
 @router.post("/mcp-key")
+@limiter.limit("5/hour")
 async def generate_mcp_key(
+    request: Request,
     session: AsyncSession = Depends(get_session),
 ):
     """Generate a new MCP API key.
@@ -311,7 +319,9 @@ async def generate_mcp_key(
 
 
 @router.delete("/mcp-key")
+@limiter.limit("5/hour")
 async def delete_mcp_key(
+    request: Request,
     session: AsyncSession = Depends(get_session),
 ):
     """Delete MCP API key (disables remote MCP access)."""

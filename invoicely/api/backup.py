@@ -8,8 +8,7 @@ from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
-from slowapi import Limiter
-from slowapi.util import get_remote_address
+from invoicely.rate_limit import limiter
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from invoicely.database import BusinessProfile, get_session
@@ -19,7 +18,6 @@ from invoicely.crypto import encrypt_credential, decrypt_credential
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/backups", tags=["backups"])
-limiter = Limiter(key_func=get_remote_address)
 
 
 class BackupSchema(BaseModel):
@@ -119,7 +117,9 @@ async def get_backup_service(session: AsyncSession) -> BackupService:
 
 
 @router.get("/settings", response_model=BackupSettingsSchema)
+@limiter.limit("60/minute")
 async def get_backup_settings(
+    request: Request,
     session: AsyncSession = Depends(get_session),
 ) -> BackupSettingsSchema:
     """Get current backup settings."""
@@ -144,7 +144,9 @@ async def get_backup_settings(
 
 
 @router.put("/settings", response_model=BackupSettingsSchema)
+@limiter.limit("10/hour")
 async def update_backup_settings(
+    request: Request,
     updates: BackupSettingsUpdate,
     session: AsyncSession = Depends(get_session),
 ) -> BackupSettingsSchema:
@@ -207,7 +209,9 @@ async def update_backup_settings(
 
 
 @router.get("", response_model=List[BackupSchema])
+@limiter.limit("60/minute")
 async def list_backups(
+    request: Request,
     include_s3: bool = Query(True, description="Include S3 backups"),
     session: AsyncSession = Depends(get_session),
 ) -> List[BackupSchema]:
@@ -264,7 +268,9 @@ async def create_backup(
 
 
 @router.post("/restore/{filename}", response_model=RestoreResult)
+@limiter.limit("5/hour")
 async def restore_backup(
+    request: Request,
     filename: str,
     download_from_s3: bool = Query(False, description="Download from S3 first"),
     session: AsyncSession = Depends(get_session),
@@ -300,7 +306,9 @@ async def restore_backup(
 
 
 @router.get("/download/{filename}")
+@limiter.limit("30/hour")
 async def download_backup(
+    request: Request,
     filename: str,
     session: AsyncSession = Depends(get_session),
 ):
@@ -323,7 +331,9 @@ async def download_backup(
 
 
 @router.delete("/{filename}")
+@limiter.limit("10/hour")
 async def delete_backup(
+    request: Request,
     filename: str,
     session: AsyncSession = Depends(get_session),
 ):
@@ -337,7 +347,9 @@ async def delete_backup(
 
 
 @router.post("/cleanup")
+@limiter.limit("5/hour")
 async def cleanup_old_backups(
+    request: Request,
     session: AsyncSession = Depends(get_session),
 ):
     """Delete backups older than retention period."""
