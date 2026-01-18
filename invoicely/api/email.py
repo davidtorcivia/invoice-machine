@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from invoicely.database import get_session, BusinessProfile
 from invoicely.services import InvoiceService
 from invoicely.email import EmailService
+from invoicely.crypto import encrypt_credential
 
 router = APIRouter(tags=["email"])
 
@@ -86,6 +87,10 @@ async def update_smtp_settings(
         update_data["smtp_enabled"] = int(update_data["smtp_enabled"])
     if "smtp_use_tls" in update_data:
         update_data["smtp_use_tls"] = int(update_data["smtp_use_tls"])
+
+    # Encrypt SMTP password before storage
+    if "smtp_password" in update_data and update_data["smtp_password"]:
+        update_data["smtp_password"] = encrypt_credential(update_data["smtp_password"])
 
     for key, value in update_data.items():
         setattr(profile, key, value)

@@ -39,7 +39,8 @@ class Settings(BaseSettings):
 
     # File upload limits
     max_logo_size_mb: int = 5
-    allowed_logo_extensions: list[str] = [".jpg", ".jpeg", ".png", ".gif", ".svg", ".webp"]
+    # Note: SVG is excluded due to XSS security risks (can contain embedded JavaScript)
+    allowed_logo_extensions: list[str] = [".jpg", ".jpeg", ".png", ".gif", ".webp"]
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)

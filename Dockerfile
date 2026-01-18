@@ -44,7 +44,8 @@ RUN pip install --no-cache-dir \
     "pydantic-settings>=2.1.0" \
     "boto3>=1.34.0" \
     "slowapi>=0.1.9" \
-    "mcp>=1.0.0"
+    "mcp>=1.0.0" \
+    "cryptography>=42.0.0"
 
 # Copy backend code and alembic config
 COPY invoicely/ ./invoicely/

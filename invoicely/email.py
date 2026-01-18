@@ -15,6 +15,7 @@ from starlette.concurrency import run_in_threadpool
 from invoicely.database import Invoice, BusinessProfile
 from invoicely.services import format_currency
 from invoicely.config import get_settings
+from invoicely.crypto import decrypt_credential
 
 settings = get_settings()
 
@@ -94,6 +95,16 @@ class EmailService:
         """
         self.profile = profile
 
+    def _get_smtp_password(self) -> Optional[str]:
+        """Get decrypted SMTP password."""
+        if not self.profile.smtp_password:
+            return None
+        try:
+            return decrypt_credential(self.profile.smtp_password)
+        except ValueError:
+            # If decryption fails, try using as-is (for legacy unencrypted values)
+            return self.profile.smtp_password
+
     def _validate_config(self) -> None:
         """Validate SMTP configuration is complete."""
         if not self.profile.smtp_enabled:
@@ -164,22 +175,25 @@ class EmailService:
         use_tls = bool(self.profile.smtp_use_tls)
         port = self.profile.smtp_port or 587
 
+        # Decrypt password for authentication
+        smtp_password = self._get_smtp_password()
+
         if use_tls and port == 465:
             # SSL connection (port 465)
             context = ssl.create_default_context()
             with smtplib.SMTP_SSL(
                 self.profile.smtp_host, port, context=context
             ) as server:
-                if self.profile.smtp_username and self.profile.smtp_password:
-                    server.login(self.profile.smtp_username, self.profile.smtp_password)
+                if self.profile.smtp_username and smtp_password:
+                    server.login(self.profile.smtp_username, smtp_password)
                 server.send_message(msg)
         else:
             # STARTTLS connection (port 587 or other)
             with smtplib.SMTP(self.profile.smtp_host, port) as server:
                 if use_tls:
                     server.starttls()
-                if self.profile.smtp_username and self.profile.smtp_password:
-                    server.login(self.profile.smtp_username, self.profile.smtp_password)
+                if self.profile.smtp_username and smtp_password:
+                    server.login(self.profile.smtp_username, smtp_password)
                 server.send_message(msg)
 
         return True
@@ -283,6 +297,9 @@ Best regards,
         try:
             self._validate_config()
 
+            # Decrypt password outside of nested function to use self
+            smtp_password = self._get_smtp_password()
+
             def _test_sync():
                 use_tls = bool(self.profile.smtp_use_tls)
                 port = self.profile.smtp_port or 587
@@ -292,17 +309,17 @@ Best regards,
                     with smtplib.SMTP_SSL(
                         self.profile.smtp_host, port, context=context
                     ) as server:
-                        if self.profile.smtp_username and self.profile.smtp_password:
+                        if self.profile.smtp_username and smtp_password:
                             server.login(
-                                self.profile.smtp_username, self.profile.smtp_password
+                                self.profile.smtp_username, smtp_password
                             )
                 else:
                     with smtplib.SMTP(self.profile.smtp_host, port) as server:
                         if use_tls:
                             server.starttls()
-                        if self.profile.smtp_username and self.profile.smtp_password:
+                        if self.profile.smtp_username and smtp_password:
                             server.login(
-                                self.profile.smtp_username, self.profile.smtp_password
+                                self.profile.smtp_username, smtp_password
                             )
 
             await run_in_threadpool(_test_sync)

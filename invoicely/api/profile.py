@@ -100,14 +100,13 @@ def sanitize_filename(filename: str) -> str:
 
 
 # Image magic bytes for validation
+# Note: SVG is excluded due to XSS security risks (can contain embedded JavaScript)
 IMAGE_SIGNATURES = {
     b"\x89PNG\r\n\x1a\n": "png",        # PNG
     b"\xff\xd8\xff": "jpeg",             # JPEG
     b"GIF87a": "gif",                    # GIF87a
     b"GIF89a": "gif",                    # GIF89a
     b"RIFF": "webp",                     # WebP (starts with RIFF...WEBP)
-    b"<svg": "svg",                      # SVG
-    b"<?xml": "svg",                     # SVG with XML declaration
 }
 
 
@@ -288,15 +287,27 @@ async def get_logo(filename: str):
 async def generate_mcp_key(
     session: AsyncSession = Depends(get_session),
 ):
-    """Generate a new MCP API key."""
-    import secrets
+    """Generate a new MCP API key.
+
+    IMPORTANT: The plain-text key is only shown once. It is stored hashed
+    in the database and cannot be recovered. Save it immediately.
+    """
+    from invoicely.crypto import generate_api_key, hash_api_key
 
     profile = await BusinessProfile.get_or_create(session)
-    profile.mcp_api_key = secrets.token_hex(32)  # 64 character hex string
+
+    # Generate a new random API key
+    plain_key = generate_api_key()
+
+    # Hash it before storing - the plain key is only shown once
+    profile.mcp_api_key = hash_api_key(plain_key)
     profile.updated_at = datetime.utcnow()
     await session.commit()
 
-    return {"mcp_api_key": profile.mcp_api_key}
+    return {
+        "mcp_api_key": plain_key,
+        "warning": "This key is only shown once. Save it now - it cannot be recovered.",
+    }
 
 
 @router.delete("/mcp-key")

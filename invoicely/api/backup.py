@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from invoicely.database import BusinessProfile, get_session
 from invoicely.services import BackupService
+from invoicely.crypto import encrypt_credential, decrypt_credential
 
 logger = logging.getLogger(__name__)
 
@@ -74,6 +75,30 @@ class BackupSettingsUpdate(BaseModel):
     backup_s3_prefix: Optional[str] = Field(None, max_length=200)
 
 
+def _decrypt_s3_config(s3_config: dict) -> dict:
+    """Decrypt S3 credentials in config dict."""
+    if not s3_config:
+        return s3_config
+
+    result = s3_config.copy()
+
+    # Decrypt access key ID
+    if result.get("access_key_id"):
+        try:
+            result["access_key_id"] = decrypt_credential(result["access_key_id"])
+        except ValueError:
+            pass  # Keep original if decryption fails
+
+    # Decrypt secret access key
+    if result.get("secret_access_key"):
+        try:
+            result["secret_access_key"] = decrypt_credential(result["secret_access_key"])
+        except ValueError:
+            pass  # Keep original if decryption fails
+
+    return result
+
+
 async def get_backup_service(session: AsyncSession) -> BackupService:
     """Get backup service with settings from database."""
     profile = await BusinessProfile.get_or_create(session)
@@ -82,6 +107,7 @@ async def get_backup_service(session: AsyncSession) -> BackupService:
     if profile.backup_s3_enabled and profile.backup_s3_config:
         try:
             s3_config = json.loads(profile.backup_s3_config)
+            s3_config = _decrypt_s3_config(s3_config)
             s3_config["enabled"] = True
         except json.JSONDecodeError:
             pass
@@ -145,9 +171,17 @@ async def update_backup_settings(
     if updates.backup_s3_endpoint_url is not None:
         s3_config["endpoint_url"] = updates.backup_s3_endpoint_url or None
     if updates.backup_s3_access_key_id is not None:
-        s3_config["access_key_id"] = updates.backup_s3_access_key_id or None
+        # Encrypt access key ID before storage
+        if updates.backup_s3_access_key_id:
+            s3_config["access_key_id"] = encrypt_credential(updates.backup_s3_access_key_id)
+        else:
+            s3_config["access_key_id"] = None
     if updates.backup_s3_secret_access_key is not None:
-        s3_config["secret_access_key"] = updates.backup_s3_secret_access_key or None
+        # Encrypt secret access key before storage
+        if updates.backup_s3_secret_access_key:
+            s3_config["secret_access_key"] = encrypt_credential(updates.backup_s3_secret_access_key)
+        else:
+            s3_config["secret_access_key"] = None
     if updates.backup_s3_bucket is not None:
         s3_config["bucket"] = updates.backup_s3_bucket or None
     if updates.backup_s3_region is not None:
@@ -327,6 +361,8 @@ async def test_s3_connection(
 
     try:
         s3_config = json.loads(profile.backup_s3_config)
+        # Decrypt credentials for use
+        s3_config = _decrypt_s3_config(s3_config)
     except json.JSONDecodeError:
         raise HTTPException(status_code=400, detail="Invalid S3 configuration")
 
