@@ -1,10 +1,22 @@
 """FastAPI application entry point."""
 
 import asyncio
+import logging
+import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, Request, status
+
+# Configure logging with proper handlers
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    handlers=[
+        logging.StreamHandler(sys.stdout),
+    ],
+)
+logger = logging.getLogger(__name__)
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, FileResponse, Response
 from slowapi import _rate_limit_exceeded_handler
@@ -65,8 +77,8 @@ async def trash_cleanup_task():
 
         try:
             await cleanup_trash()
-        except Exception:
-            pass  # Don't crash on cleanup failures
+        except Exception as e:
+            logger.error(f"Trash cleanup task failed: {e}", exc_info=True)
 
 
 async def overdue_check_task():
@@ -89,9 +101,9 @@ async def overdue_check_task():
             async with async_session_maker() as session:
                 count = await InvoiceService.update_overdue_invoices(session)
                 if count > 0:
-                    print(f"Marked {count} invoices as overdue")
-        except Exception:
-            pass  # Don't crash on failures
+                    logger.info(f"Marked {count} invoices as overdue")
+        except Exception as e:
+            logger.error(f"Overdue check task failed: {e}", exc_info=True)
 
 
 async def recurring_invoice_task():
@@ -115,9 +127,9 @@ async def recurring_invoice_task():
                 results = await RecurringService.process_due_schedules(session)
                 if results:
                     success_count = sum(1 for r in results if r.get("success"))
-                    print(f"Processed {len(results)} recurring schedules, {success_count} invoices created")
-        except Exception:
-            pass  # Don't crash on failures
+                    logger.info(f"Processed {len(results)} recurring schedules, {success_count} invoices created")
+        except Exception as e:
+            logger.error(f"Recurring invoice task failed: {e}", exc_info=True)
 
         # Check if backups are enabled and run backup
         try:
@@ -143,8 +155,9 @@ async def recurring_invoice_task():
 
                     # Cleanup old backups
                     backup_service.cleanup_old_backups()
-        except Exception:
-            pass  # Don't crash on backup failures
+                    logger.info("Scheduled backup completed successfully")
+        except Exception as e:
+            logger.error(f"Scheduled backup task failed: {e}", exc_info=True)
 
 
 def run_alembic_migrations():
@@ -152,10 +165,41 @@ def run_alembic_migrations():
     from alembic.config import Config
     from alembic import command
     from pathlib import Path
+    import sqlite3
 
     # Get the alembic.ini path relative to project root
     project_root = Path(__file__).parent.parent
     alembic_cfg = Config(str(project_root / "alembic.ini"))
+
+    # Check if database exists and has tables but no alembic_version
+    db_path = settings.data_dir / "invoicely.db"
+    if db_path.exists():
+        try:
+            conn = sqlite3.connect(str(db_path))
+            cursor = conn.cursor()
+
+            # Check if alembic_version table exists
+            cursor.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='alembic_version'"
+            )
+            has_alembic = cursor.fetchone() is not None
+
+            # Check if users table exists (indicates existing database)
+            cursor.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='users'"
+            )
+            has_users = cursor.fetchone() is not None
+
+            conn.close()
+
+            # If database has tables but no alembic tracking, stamp it at latest
+            if has_users and not has_alembic:
+                print("Existing database detected, stamping at latest migration...")
+                command.stamp(alembic_cfg, "head")
+                print("Database stamped successfully")
+                return
+        except Exception as e:
+            print(f"Database check failed: {e}")
 
     # Run upgrade to head
     try:
@@ -226,6 +270,26 @@ app.add_middleware(
 )
 
 
+class RequestSizeLimitMiddleware(BaseHTTPMiddleware):
+    """Limit request body size to prevent DoS attacks."""
+
+    MAX_BODY_SIZE = 10 * 1024 * 1024  # 10 MB default limit
+
+    async def dispatch(self, request: Request, call_next):
+        # Check Content-Length header if present
+        content_length = request.headers.get("content-length")
+        if content_length:
+            try:
+                if int(content_length) > self.MAX_BODY_SIZE:
+                    return JSONResponse(
+                        {"detail": "Request body too large"},
+                        status_code=413,
+                    )
+            except ValueError:
+                pass  # Invalid content-length, let request proceed
+        return await call_next(request)
+
+
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     """Add security headers to all responses."""
 
@@ -261,6 +325,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
 
 
 app.add_middleware(SecurityHeadersMiddleware)
+app.add_middleware(RequestSizeLimitMiddleware)
 
 
 @app.middleware("http")

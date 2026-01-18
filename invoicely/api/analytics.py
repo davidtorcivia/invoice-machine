@@ -10,12 +10,20 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from invoicely.database import get_session
 from invoicely.services import InvoiceService, ClientService, format_currency
+from invoicely.rate_limit import limiter
+from starlette.requests import Request
 
 router = APIRouter(prefix="/api/analytics", tags=["analytics"])
 
+# Reasonable limits to prevent excessive queries
+MAX_INVOICE_QUERY_LIMIT = 1000
+MAX_CLIENT_LIMIT = 100
+
 
 @router.get("/revenue")
+@limiter.limit("30/minute")
 async def get_revenue_summary(
+    request: Request,
     from_date: Optional[str] = Query(
         None, description="Start date (ISO format, defaults to start of current year)"
     ),
@@ -41,7 +49,7 @@ async def get_revenue_summary(
         session,
         from_date=from_date_parsed,
         to_date=to_date_parsed,
-        limit=10000,
+        limit=MAX_INVOICE_QUERY_LIMIT,
     )
 
     # Calculate totals
@@ -98,7 +106,9 @@ async def get_revenue_summary(
 
 
 @router.get("/clients")
+@limiter.limit("30/minute")
 async def get_client_lifetime_values(
+    request: Request,
     client_id: Optional[int] = Query(None, description="Specific client ID"),
     limit: int = Query(20, ge=1, le=100, description="Max clients to return"),
     session: AsyncSession = Depends(get_session),
@@ -108,40 +118,34 @@ async def get_client_lifetime_values(
 
     Returns list of clients with total invoiced, paid, and invoice counts.
     Sorted by total paid descending.
+
+    Uses optimized SQL aggregation to avoid N+1 queries.
     """
-    if client_id:
-        client = await ClientService.get_client(session, client_id)
-        clients = [client] if client else []
-    else:
-        clients = await ClientService.list_clients(session)
+    # Use optimized aggregated query instead of N+1 individual queries
+    stats = await ClientService.get_client_invoice_stats(
+        session,
+        client_id=client_id,
+        limit=min(limit, MAX_CLIENT_LIMIT),
+    )
 
-    results = []
-    for client in clients:
-        if not client:
-            continue
+    # Format results
+    results = [
+        {
+            "client_id": stat["client_id"],
+            "name": stat["name"],
+            "email": stat["email"],
+            "total_invoiced": str(stat["total_invoiced"]),
+            "total_invoiced_formatted": format_currency(stat["total_invoiced"], "USD"),
+            "total_paid": str(stat["total_paid"]),
+            "total_paid_formatted": format_currency(stat["total_paid"], "USD"),
+            "invoice_count": stat["invoice_count"],
+            "paid_invoice_count": stat["paid_invoice_count"],
+            "first_invoice": stat["first_invoice"].isoformat() if stat["first_invoice"] else None,
+            "last_invoice": stat["last_invoice"].isoformat() if stat["last_invoice"] else None,
+        }
+        for stat in stats
+    ]
 
-        invoices = await InvoiceService.list_invoices(
-            session, client_id=client.id, limit=10000
-        )
-
-        total_invoiced = sum(inv.total for inv in invoices)
-        total_paid = sum(inv.total for inv in invoices if inv.status == "paid")
-        paid_invoices = [inv for inv in invoices if inv.status == "paid"]
-
-        results.append({
-            "client_id": client.id,
-            "name": client.display_name,
-            "email": client.email,
-            "total_invoiced": str(total_invoiced),
-            "total_invoiced_formatted": format_currency(total_invoiced, "USD"),
-            "total_paid": str(total_paid),
-            "total_paid_formatted": format_currency(total_paid, "USD"),
-            "invoice_count": len(invoices),
-            "paid_invoice_count": len(paid_invoices),
-            "first_invoice": min(inv.issue_date for inv in invoices).isoformat() if invoices else None,
-            "last_invoice": max(inv.issue_date for inv in invoices).isoformat() if invoices else None,
-        })
-
-    # Sort by total paid (descending) and limit
+    # Sort by total paid (descending)
     results.sort(key=lambda x: Decimal(x["total_paid"]), reverse=True)
-    return results[:limit]
+    return results

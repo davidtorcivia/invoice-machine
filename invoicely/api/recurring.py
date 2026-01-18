@@ -7,9 +7,11 @@ from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.requests import Request
 
 from invoicely.database import get_session, RecurringSchedule
 from invoicely.services import RecurringService
+from invoicely.rate_limit import limiter
 
 router = APIRouter(prefix="/api/recurring", tags=["recurring"])
 
@@ -119,7 +121,9 @@ def _schedule_to_dict(schedule: RecurringSchedule) -> dict:
 
 
 @router.get("")
+@limiter.limit("60/minute")
 async def list_schedules(
+    request: Request,
     client_id: Optional[int] = None,
     active_only: bool = True,
     session: AsyncSession = Depends(get_session),
@@ -132,7 +136,9 @@ async def list_schedules(
 
 
 @router.post("", status_code=201)
+@limiter.limit("30/minute")
 async def create_schedule(
+    request: Request,
     data: RecurringScheduleCreate,
     session: AsyncSession = Depends(get_session),
 ) -> dict:
@@ -164,7 +170,9 @@ async def create_schedule(
 
 
 @router.get("/{schedule_id}")
+@limiter.limit("60/minute")
 async def get_schedule(
+    request: Request,
     schedule_id: int,
     session: AsyncSession = Depends(get_session),
 ) -> dict:
@@ -176,7 +184,9 @@ async def get_schedule(
 
 
 @router.put("/{schedule_id}")
+@limiter.limit("30/minute")
 async def update_schedule(
+    request: Request,
     schedule_id: int,
     data: RecurringScheduleUpdate,
     session: AsyncSession = Depends(get_session),
@@ -207,7 +217,9 @@ async def update_schedule(
 
 
 @router.delete("/{schedule_id}", status_code=204)
+@limiter.limit("30/minute")
 async def delete_schedule(
+    request: Request,
     schedule_id: int,
     session: AsyncSession = Depends(get_session),
 ) -> None:
@@ -218,7 +230,9 @@ async def delete_schedule(
 
 
 @router.post("/{schedule_id}/pause")
+@limiter.limit("30/minute")
 async def pause_schedule(
+    request: Request,
     schedule_id: int,
     session: AsyncSession = Depends(get_session),
 ) -> dict:
@@ -231,7 +245,9 @@ async def pause_schedule(
 
 
 @router.post("/{schedule_id}/resume")
+@limiter.limit("30/minute")
 async def resume_schedule(
+    request: Request,
     schedule_id: int,
     session: AsyncSession = Depends(get_session),
 ) -> dict:
@@ -244,7 +260,9 @@ async def resume_schedule(
 
 
 @router.post("/{schedule_id}/trigger")
+@limiter.limit("10/minute")  # Stricter limit as this creates invoices
 async def trigger_schedule(
+    request: Request,
     schedule_id: int,
     session: AsyncSession = Depends(get_session),
 ) -> dict:

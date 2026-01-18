@@ -84,15 +84,17 @@ def _decrypt_s3_config(s3_config: dict) -> dict:
     if result.get("access_key_id"):
         try:
             result["access_key_id"] = decrypt_credential(result["access_key_id"])
-        except ValueError:
-            pass  # Keep original if decryption fails
+        except ValueError as e:
+            import logging
+            logging.getLogger(__name__).debug(f"S3 access key not encrypted (legacy): {e}")
 
     # Decrypt secret access key
     if result.get("secret_access_key"):
         try:
             result["secret_access_key"] = decrypt_credential(result["secret_access_key"])
-        except ValueError:
-            pass  # Keep original if decryption fails
+        except ValueError as e:
+            import logging
+            logging.getLogger(__name__).debug(f"S3 secret key not encrypted (legacy): {e}")
 
     return result
 

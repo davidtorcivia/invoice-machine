@@ -5,11 +5,13 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.requests import Request
 
 from invoicely.database import get_session, BusinessProfile
 from invoicely.services import InvoiceService
 from invoicely.email import EmailService
 from invoicely.crypto import encrypt_credential
+from invoicely.rate_limit import limiter
 
 router = APIRouter(tags=["email"])
 
@@ -102,7 +104,9 @@ async def update_smtp_settings(
 
 
 @router.post("/api/settings/smtp/test")
+@limiter.limit("5/minute")  # Limit connection tests to prevent abuse
 async def test_smtp_connection(
+    request: Request,
     session: AsyncSession = Depends(get_session),
 ) -> dict:
     """Test SMTP connection."""
@@ -117,7 +121,9 @@ async def test_smtp_connection(
 
 
 @router.post("/api/invoices/{invoice_id}/send-email")
+@limiter.limit("10/minute")  # Limit email sending to prevent spam abuse
 async def send_invoice_email(
+    request: Request,
     invoice_id: int,
     data: SendEmailRequest,
     session: AsyncSession = Depends(get_session),

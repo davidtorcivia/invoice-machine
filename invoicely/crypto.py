@@ -42,7 +42,7 @@ def _get_encryption_key() -> bytes:
         "sha256",
         machine_id.encode(),
         b"invoicely-salt-v1",
-        100000
+        600000  # OWASP recommended minimum for PBKDF2-HMAC-SHA256
     )
     return base64.urlsafe_b64encode(derived)
 

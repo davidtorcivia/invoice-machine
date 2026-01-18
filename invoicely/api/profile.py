@@ -257,8 +257,9 @@ async def delete_logo(
         if logo_file.exists():
             try:
                 logo_file.unlink()
-            except OSError:
-                pass  # File might already be deleted
+            except OSError as e:
+                import logging
+                logging.getLogger(__name__).warning(f"Could not delete logo file: {e}")
 
         profile.logo_path = None
         profile.updated_at = datetime.utcnow()

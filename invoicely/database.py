@@ -176,7 +176,12 @@ class Client(Base):
         lazy="selectin",
     )
 
-    __table_args__ = (Index("idx_clients_deleted", "deleted_at"),)
+    __table_args__ = (
+        Index("idx_clients_deleted", "deleted_at"),
+        Index("idx_clients_email", "email"),
+        Index("idx_clients_name", "name"),
+        Index("idx_clients_business_name", "business_name"),
+    )
 
     @property
     def display_name(self) -> str:
@@ -257,6 +262,7 @@ class Invoice(Base):
         Index("idx_invoices_status_deleted", "status", "deleted_at"),
         Index("idx_invoices_client_status", "client_id", "status"),
         Index("idx_invoices_date_status", "issue_date", "status"),
+        Index("idx_invoices_client_deleted", "client_id", "deleted_at"),
     )
 
     @property

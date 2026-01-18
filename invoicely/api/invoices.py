@@ -422,13 +422,25 @@ async def get_invoice_pdf(
         await session.refresh(invoice)
 
     # Sanitize pdf_path to prevent path traversal
-    if not all(c.isalnum() or c in "._-/" for c in invoice.pdf_path):
+    # Reject any path traversal attempts
+    if not invoice.pdf_path or ".." in invoice.pdf_path:
         raise HTTPException(status_code=400, detail="Invalid PDF path")
 
-    # Resolve path and ensure it's within data directory
-    pdf_path = (settings.data_dir / invoice.pdf_path).resolve()
+    # Extract just the filename (basename) to prevent directory traversal
+    # PDF paths are stored as "pdfs/{filename}.pdf"
+    import os
+    safe_filename = os.path.basename(invoice.pdf_path)
 
-    if not str(pdf_path).startswith(str(settings.data_dir.resolve())):
+    # Validate filename contains only safe characters
+    if not safe_filename or not all(c.isalnum() or c in "._-" for c in safe_filename):
+        raise HTTPException(status_code=400, detail="Invalid PDF path")
+
+    # Build the path - PDFs are always stored in the pdfs subdirectory
+    pdf_path = (settings.data_dir / "pdfs" / safe_filename).resolve()
+    data_dir_resolved = settings.data_dir.resolve()
+
+    # Final security check: ensure resolved path is within data directory
+    if not str(pdf_path).startswith(str(data_dir_resolved) + os.sep):
         raise HTTPException(status_code=404, detail="PDF not found")
 
     if not pdf_path.exists() or not pdf_path.is_file():

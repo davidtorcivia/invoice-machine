@@ -36,7 +36,7 @@
 
 <style>
   .collapsible {
-    background: var(--color-surface);
+    background: var(--color-bg-elevated);
     border: 1px solid var(--color-border);
     border-radius: var(--radius-lg);
     overflow: hidden;
@@ -53,10 +53,11 @@
     cursor: pointer;
     text-align: left;
     transition: background-color 0.15s ease;
+    color: var(--color-text-secondary);
   }
 
   .collapsible-header:hover {
-    background: var(--color-surface-hover);
+    background: var(--color-bg-hover);
   }
 
   .collapsible-title {
@@ -75,7 +76,7 @@
   .collapsible-subtitle {
     margin: 0.25rem 0 0 0;
     font-size: 0.8125rem;
-    color: var(--color-text-muted);
+    color: var(--color-text-tertiary);
   }
 
   .collapsible-text {

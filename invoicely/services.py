@@ -162,6 +162,88 @@ class ClientService:
     """Service for client operations."""
 
     @staticmethod
+    async def get_client_invoice_stats(
+        session: AsyncSession,
+        client_id: Optional[int] = None,
+        limit: int = 100,
+    ) -> list[dict]:
+        """
+        Get invoice statistics for clients using a single aggregated query.
+
+        This avoids N+1 queries by using SQL aggregation with GROUP BY.
+
+        Args:
+            session: Database session
+            client_id: Optional specific client ID to filter by
+            limit: Maximum number of clients to return
+
+        Returns:
+            List of dicts with client info and invoice statistics
+        """
+        from sqlalchemy import func, case
+
+        # Build aggregated query
+        query = (
+            select(
+                Client.id,
+                Client.name,
+                Client.business_name,
+                Client.email,
+                func.coalesce(func.sum(Invoice.total), 0).label("total_invoiced"),
+                func.coalesce(
+                    func.sum(
+                        case(
+                            (Invoice.status == "paid", Invoice.total),
+                            else_=0,
+                        )
+                    ),
+                    0,
+                ).label("total_paid"),
+                func.count(Invoice.id).label("invoice_count"),
+                func.sum(
+                    case(
+                        (Invoice.status == "paid", 1),
+                        else_=0,
+                    )
+                ).label("paid_invoice_count"),
+                func.min(Invoice.issue_date).label("first_invoice"),
+                func.max(Invoice.issue_date).label("last_invoice"),
+            )
+            .outerjoin(
+                Invoice,
+                and_(
+                    Invoice.client_id == Client.id,
+                    Invoice.deleted_at.is_(None),
+                ),
+            )
+            .where(Client.deleted_at.is_(None))
+            .group_by(Client.id)
+        )
+
+        if client_id:
+            query = query.where(Client.id == client_id)
+
+        query = query.limit(limit)
+
+        result = await session.execute(query)
+        rows = result.all()
+
+        return [
+            {
+                "client_id": row.id,
+                "name": row.business_name or row.name or "Unknown",
+                "email": row.email,
+                "total_invoiced": Decimal(str(row.total_invoiced)),
+                "total_paid": Decimal(str(row.total_paid)),
+                "invoice_count": row.invoice_count or 0,
+                "paid_invoice_count": row.paid_invoice_count or 0,
+                "first_invoice": row.first_invoice,
+                "last_invoice": row.last_invoice,
+            }
+            for row in rows
+        ]
+
+    @staticmethod
     async def list_clients(
         session: AsyncSession,
         search: Optional[str] = None,
