@@ -146,6 +146,126 @@
       </div>
     </section>
 
+    <!-- Tax Settings -->
+    <section class="help-section">
+      <h2>
+        <Icon name="invoice" size="md" />
+        Tax Settings
+      </h2>
+      <div class="help-content">
+        <p>Invoice Machine supports optional tax with a cascade system:</p>
+        <ol>
+          <li><strong>Invoice-level:</strong> Override tax settings on individual invoices</li>
+          <li><strong>Client-level:</strong> Set default tax for specific clients</li>
+          <li><strong>Global default:</strong> Configure in Settings &gt; Tax Settings</li>
+        </ol>
+        <p>The cascade priority is: Invoice &gt; Client &gt; Global. Tax is disabled by default.</p>
+        <h3>Enabling Tax</h3>
+        <ol>
+          <li>Go to <strong>Settings</strong> and scroll to <strong>Tax Settings</strong></li>
+          <li>Enable tax and set your default rate (e.g., 8.5%)</li>
+          <li>Optionally set per-client rates in the client editor</li>
+          <li>Override on specific invoices as needed</li>
+        </ol>
+      </div>
+    </section>
+
+    <!-- Recurring Invoices -->
+    <section class="help-section">
+      <h2>
+        <Icon name="invoice" size="md" />
+        Recurring Invoices
+      </h2>
+      <div class="help-content">
+        <p>Set up recurring invoices for retainers, subscriptions, or regular services.</p>
+        <h3>Creating a Schedule</h3>
+        <ol>
+          <li>Go to <strong>Recurring</strong> in the sidebar</li>
+          <li>Click <strong>New Schedule</strong></li>
+          <li>Select a client and configure:
+            <ul>
+              <li>Name (e.g., "Monthly Retainer")</li>
+              <li>Frequency: daily, weekly, monthly, quarterly, or yearly</li>
+              <li>Schedule day (1-31 for monthly, 0-6 for weekly)</li>
+              <li>Line items and amounts</li>
+            </ul>
+          </li>
+        </ol>
+        <h3>Managing Schedules</h3>
+        <ul>
+          <li><strong>Pause/Resume:</strong> Temporarily stop or restart a schedule</li>
+          <li><strong>Trigger Now:</strong> Generate an invoice immediately</li>
+          <li><strong>Edit:</strong> Modify schedule details and line items</li>
+        </ul>
+        <p class="note"><strong>Note:</strong> Invoices are automatically generated at 2 AM UTC on the scheduled day.</p>
+      </div>
+    </section>
+
+    <!-- Email Delivery -->
+    <section class="help-section">
+      <h2>
+        <Icon name="check" size="md" />
+        Email Delivery
+      </h2>
+      <div class="help-content">
+        <p>Send invoices directly to clients via SMTP email.</p>
+        <h3>Configuration</h3>
+        <ol>
+          <li>Go to <strong>Settings</strong> &gt; <strong>Email Configuration</strong></li>
+          <li>Configure your SMTP server:
+            <ul>
+              <li>Host (e.g., smtp.gmail.com)</li>
+              <li>Port (587 for TLS, 465 for SSL)</li>
+              <li>Username and password</li>
+              <li>From name and email address</li>
+            </ul>
+          </li>
+          <li>Click <strong>Test Connection</strong> to verify settings</li>
+        </ol>
+        <h3>Sending Invoices</h3>
+        <p>On any invoice, click <strong>Send Email</strong> to deliver the PDF to the client. Works with any SMTP provider (Gmail, SendGrid, Mailgun, etc.).</p>
+      </div>
+    </section>
+
+    <!-- Search -->
+    <section class="help-section">
+      <h2>
+        <Icon name="home" size="md" />
+        Search
+      </h2>
+      <div class="help-content">
+        <p>Use the search bar in the sidebar to find invoices and clients quickly.</p>
+        <ul>
+          <li>Search by invoice number, client name, or notes</li>
+          <li>Results include both invoices and clients</li>
+          <li>Partial matches are supported using full-text search</li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- Reports & Analytics -->
+    <section class="help-section">
+      <h2>
+        <Icon name="invoice" size="md" />
+        Reports & Analytics
+      </h2>
+      <div class="help-content">
+        <p>View revenue insights and client metrics from the <strong>Reports</strong> page.</p>
+        <h3>Revenue Dashboard</h3>
+        <ul>
+          <li>Total revenue, paid vs outstanding</li>
+          <li>Monthly and yearly breakdowns</li>
+          <li>Revenue trends over time</li>
+        </ul>
+        <h3>Client Insights</h3>
+        <ul>
+          <li>Top clients by total paid</li>
+          <li>Lifetime value per client</li>
+          <li>Invoice count and payment history</li>
+        </ul>
+      </div>
+    </section>
+
     <!-- Trash -->
     <section class="help-section">
       <h2>
@@ -254,12 +374,16 @@
         </ul>
 
         <h3>Available Tools</h3>
-        <p>The MCP server provides 21 tools for full invoice management:</p>
+        <p>The MCP server provides 30+ tools for full invoice management:</p>
         <ul>
           <li><strong>Profile:</strong> get/update profile, add/remove payment methods</li>
           <li><strong>Clients:</strong> list, get, create, update, delete, restore</li>
           <li><strong>Invoices:</strong> list, get, create, update, delete, restore</li>
           <li><strong>Line Items:</strong> add, update, remove</li>
+          <li><strong>Recurring:</strong> list, get, create, update, delete, pause, resume, trigger schedules</li>
+          <li><strong>Search:</strong> full-text search across invoices and clients</li>
+          <li><strong>Analytics:</strong> revenue summary, top clients, lifetime value</li>
+          <li><strong>Email:</strong> send invoice email, test SMTP connection</li>
           <li><strong>Other:</strong> generate PDF, list trash, empty trash</li>
         </ul>
       </div>

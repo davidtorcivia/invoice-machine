@@ -13,7 +13,9 @@
   const navItems = [
     { path: '/dashboard', label: 'Dashboard', icon: 'home' },
     { path: '/invoices', label: 'Invoices', icon: 'invoice' },
+    { path: '/recurring', label: 'Recurring', icon: 'repeat' },
     { path: '/clients', label: 'Clients', icon: 'users' },
+    { path: '/reports', label: 'Reports', icon: 'chart' },
     { path: '/settings', label: 'Settings', icon: 'settings' },
     { path: '/trash', label: 'Trash', icon: 'trash' },
     { path: '/help', label: 'Help', icon: 'help' },

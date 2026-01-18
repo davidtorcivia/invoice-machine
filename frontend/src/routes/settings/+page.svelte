@@ -1,15 +1,29 @@
 <script>
   import { onMount } from 'svelte';
-  import { profileApi, backupsApi } from '$lib/api';
+  import { profileApi, backupsApi, emailApi } from '$lib/api';
   import { toast } from '$lib/stores';
   import { countries } from '$lib/data/countries';
   import Header from '$lib/components/Header.svelte';
   import Icon from '$lib/components/Icons.svelte';
   import ConfirmModal from '$lib/components/ConfirmModal.svelte';
+  import CollapsibleSection from '$lib/components/CollapsibleSection.svelte';
 
   let profile = null;
   let loading = true;
   let saving = false;
+
+  // Collapsible section states
+  let openSections = {
+    logo: true,
+    business: true,
+    address: false,
+    invoiceDefaults: false,
+    taxSettings: false,
+    paymentMethods: false,
+    smtpSettings: false,
+    mcpIntegration: false,
+    backup: false
+  };
 
   // Form data
   let name = '';
@@ -27,6 +41,24 @@
   let defaultPaymentTermsDays = 30;
   let defaultNotes = '';
   let defaultPaymentInstructions = '';
+
+  // Tax settings
+  let defaultTaxEnabled = false;
+  let defaultTaxRate = '';
+  let defaultTaxName = 'Tax';
+
+  // SMTP settings
+  let smtpEnabled = false;
+  let smtpHost = '';
+  let smtpPort = 587;
+  let smtpUsername = '';
+  let smtpPassword = '';
+  let smtpFromEmail = '';
+  let smtpFromName = '';
+  let smtpUseTls = true;
+  let smtpPasswordSet = false;
+  let testingSmtp = false;
+  let savingSmtp = false;
 
   // Payment methods (array of {id, name, instructions})
   let paymentMethods = [];
@@ -120,10 +152,75 @@
       // MCP settings
       mcpApiKey = profile.mcp_api_key || '';
       appBaseUrl = profile.app_base_url || '';
+
+      // Tax settings
+      defaultTaxEnabled = profile.default_tax_enabled || false;
+      defaultTaxRate = profile.default_tax_rate || '';
+      defaultTaxName = profile.default_tax_name || 'Tax';
+
+      // Load SMTP settings separately
+      await loadSmtpSettings();
     } catch (error) {
       toast.error('Failed to load profile');
     } finally {
       loading = false;
+    }
+  }
+
+  async function loadSmtpSettings() {
+    try {
+      const settings = await emailApi.getSmtpSettings();
+      smtpEnabled = settings.smtp_enabled || false;
+      smtpHost = settings.smtp_host || '';
+      smtpPort = settings.smtp_port || 587;
+      smtpUsername = settings.smtp_username || '';
+      smtpFromEmail = settings.smtp_from_email || '';
+      smtpFromName = settings.smtp_from_name || '';
+      smtpUseTls = settings.smtp_use_tls !== false;
+      smtpPasswordSet = settings.smtp_password_set || false;
+      smtpPassword = ''; // Never show actual password
+    } catch (error) {
+      console.error('Failed to load SMTP settings:', error);
+    }
+  }
+
+  async function saveSmtpSettings() {
+    savingSmtp = true;
+    try {
+      const data = {
+        smtp_enabled: smtpEnabled,
+        smtp_host: smtpHost || undefined,
+        smtp_port: parseInt(smtpPort) || 587,
+        smtp_username: smtpUsername || undefined,
+        smtp_from_email: smtpFromEmail || undefined,
+        smtp_from_name: smtpFromName || undefined,
+        smtp_use_tls: smtpUseTls,
+      };
+      // Only include password if changed
+      if (smtpPassword) {
+        data.smtp_password = smtpPassword;
+      }
+      await emailApi.updateSmtpSettings(data);
+      toast.success('SMTP settings saved');
+      smtpPasswordSet = !!smtpPassword || smtpPasswordSet;
+      smtpPassword = '';
+    } catch (error) {
+      toast.error(error.message || 'Failed to save SMTP settings');
+    } finally {
+      savingSmtp = false;
+    }
+  }
+
+  async function testSmtpConnection() {
+    testingSmtp = true;
+    try {
+      await saveSmtpSettings();
+      const result = await emailApi.testSmtp();
+      toast.success(result.message || 'SMTP connection successful');
+    } catch (error) {
+      toast.error(error.message || 'SMTP connection failed');
+    } finally {
+      testingSmtp = false;
     }
   }
 
@@ -153,6 +250,10 @@
         default_payment_instructions: defaultPaymentInstructions || undefined,
         payment_methods: JSON.stringify(paymentMethods),
         app_base_url: appBaseUrl || undefined,
+        // Tax settings
+        default_tax_enabled: defaultTaxEnabled,
+        default_tax_rate: defaultTaxRate || undefined,
+        default_tax_name: defaultTaxName || undefined,
       });
 
       toast.success('Settings saved successfully');
@@ -787,6 +888,185 @@
             <button class="btn btn-secondary btn-sm mt-2" on:click={openAddMethodModal}>
               <Icon name="plus" size="sm" />
               Add your first method
+            </button>
+          </div>
+        {/if}
+      </div>
+
+      <!-- Tax Settings -->
+      <div class="card">
+        <div class="card-header">
+          <h3 class="card-title">Tax Settings</h3>
+        </div>
+
+        <p class="form-hint mb-4">
+          Configure default tax settings for new invoices. These can be overridden on individual invoices.
+        </p>
+
+        <div class="form-group">
+          <label class="toggle-container">
+            <input type="checkbox" bind:checked={defaultTaxEnabled} />
+            <span class="toggle-label">Enable tax by default on new invoices</span>
+          </label>
+        </div>
+
+        {#if defaultTaxEnabled}
+          <div class="form-row">
+            <div class="form-group">
+              <label for="tax-name" class="label">Tax Name</label>
+              <input
+                id="tax-name"
+                type="text"
+                class="input"
+                placeholder="Tax"
+                bind:value={defaultTaxName}
+              />
+              <p class="form-hint">e.g., "Sales Tax", "VAT", "GST"</p>
+            </div>
+
+            <div class="form-group">
+              <label for="tax-rate" class="label">Tax Rate (%)</label>
+              <input
+                id="tax-rate"
+                type="number"
+                class="input"
+                placeholder="0.00"
+                step="0.01"
+                min="0"
+                max="100"
+                bind:value={defaultTaxRate}
+              />
+              <p class="form-hint">Default tax percentage</p>
+            </div>
+          </div>
+        {/if}
+      </div>
+
+      <!-- SMTP / Email Settings -->
+      <div class="card">
+        <div class="card-header">
+          <h3 class="card-title">Email Settings (SMTP)</h3>
+        </div>
+
+        <p class="form-hint mb-4">
+          Configure SMTP to send invoices directly via email. Leave disabled if you prefer to download and send PDFs manually.
+        </p>
+
+        <div class="form-group">
+          <label class="toggle-container">
+            <input type="checkbox" bind:checked={smtpEnabled} />
+            <span class="toggle-label">Enable email sending</span>
+          </label>
+        </div>
+
+        {#if smtpEnabled}
+          <div class="form-row">
+            <div class="form-group">
+              <label for="smtp-host" class="label">SMTP Host *</label>
+              <input
+                id="smtp-host"
+                type="text"
+                class="input"
+                placeholder="smtp.example.com"
+                bind:value={smtpHost}
+              />
+            </div>
+
+            <div class="form-group">
+              <label for="smtp-port" class="label">Port</label>
+              <input
+                id="smtp-port"
+                type="number"
+                class="input"
+                placeholder="587"
+                bind:value={smtpPort}
+              />
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label for="smtp-username" class="label">Username</label>
+              <input
+                id="smtp-username"
+                type="text"
+                class="input"
+                placeholder="your@email.com"
+                bind:value={smtpUsername}
+              />
+            </div>
+
+            <div class="form-group">
+              <label for="smtp-password" class="label">Password {smtpPasswordSet ? '(set)' : ''}</label>
+              <input
+                id="smtp-password"
+                type="password"
+                class="input"
+                placeholder={smtpPasswordSet ? '••••••••' : 'Enter password'}
+                bind:value={smtpPassword}
+              />
+              <p class="form-hint">Leave empty to keep existing password</p>
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label for="smtp-from-email" class="label">From Email *</label>
+              <input
+                id="smtp-from-email"
+                type="email"
+                class="input"
+                placeholder="invoices@example.com"
+                bind:value={smtpFromEmail}
+              />
+            </div>
+
+            <div class="form-group">
+              <label for="smtp-from-name" class="label">From Name</label>
+              <input
+                id="smtp-from-name"
+                type="text"
+                class="input"
+                placeholder="Your Business Name"
+                bind:value={smtpFromName}
+              />
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="toggle-container">
+              <input type="checkbox" bind:checked={smtpUseTls} />
+              <span class="toggle-label">Use TLS encryption</span>
+            </label>
+            <p class="form-hint">Recommended for security. Use port 587 for STARTTLS or 465 for SSL.</p>
+          </div>
+
+          <div class="form-actions">
+            <button
+              class="btn btn-secondary"
+              on:click={testSmtpConnection}
+              disabled={testingSmtp || !smtpHost || !smtpFromEmail}
+            >
+              {#if testingSmtp}
+                <span class="spinner-sm"></span>
+                Testing...
+              {:else}
+                <Icon name="send" size="sm" />
+                Test Connection
+              {/if}
+            </button>
+
+            <button
+              class="btn btn-primary"
+              on:click={saveSmtpSettings}
+              disabled={savingSmtp}
+            >
+              {#if savingSmtp}
+                <span class="spinner-sm"></span>
+                Saving...
+              {:else}
+                Save SMTP Settings
+              {/if}
             </button>
           </div>
         {/if}
@@ -1792,5 +2072,41 @@
   .text-secondary {
     color: var(--color-text-secondary);
     font-size: 0.875rem;
+  }
+
+  /* Toggle container for checkbox toggles */
+  .toggle-container {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    cursor: pointer;
+    user-select: none;
+  }
+
+  .toggle-container input[type="checkbox"] {
+    width: 18px;
+    height: 18px;
+    accent-color: var(--color-primary);
+    cursor: pointer;
+  }
+
+  .toggle-label {
+    font-size: 0.9375rem;
+    color: var(--color-text);
+  }
+
+  /* Spinner for buttons */
+  .spinner-sm {
+    width: 14px;
+    height: 14px;
+    border: 2px solid currentColor;
+    border-top-color: transparent;
+    border-radius: 50%;
+    animation: spin 0.75s linear infinite;
+    display: inline-block;
+  }
+
+  @keyframes spin {
+    to { transform: rotate(360deg); }
   }
 </style>
