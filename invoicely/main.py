@@ -255,7 +255,8 @@ async def lifespan(app: FastAPI):
             elif reindex_result.get("rebuilt"):
                 indexed_invoices = reindex_result.get("invoices_indexed", 0)
                 indexed_clients = reindex_result.get("clients_indexed", 0)
-                print(f"FTS rebuild complete: {indexed_invoices} invoices, {indexed_clients} clients indexed", flush=True)
+                indexed_line_items = reindex_result.get("line_items_indexed", 0)
+                print(f"FTS rebuild complete: {indexed_invoices} invoices, {indexed_clients} clients, {indexed_line_items} line items indexed", flush=True)
     except Exception as e:
         print(f"FTS rebuild failed (non-fatal): {e}", flush=True)
 

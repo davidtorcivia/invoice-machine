@@ -1488,12 +1488,41 @@ class SearchService:
                 result["reason"] = "FTS tables don't exist"
                 return result
 
+            # Create invoice_items_fts if it doesn't exist (migration may have failed)
+            if "invoice_items_fts" not in existing_tables:
+                await session.execute(text("""
+                    CREATE VIRTUAL TABLE IF NOT EXISTS invoice_items_fts USING fts5(
+                        description,
+                        content='invoice_items',
+                        content_rowid='id'
+                    )
+                """))
+                await session.execute(text("""
+                    CREATE TRIGGER IF NOT EXISTS invoice_items_fts_insert AFTER INSERT ON invoice_items BEGIN
+                        INSERT INTO invoice_items_fts(rowid, description)
+                        VALUES (new.id, new.description);
+                    END
+                """))
+                await session.execute(text("""
+                    CREATE TRIGGER IF NOT EXISTS invoice_items_fts_delete AFTER DELETE ON invoice_items BEGIN
+                        INSERT INTO invoice_items_fts(invoice_items_fts, rowid, description)
+                        VALUES ('delete', old.id, old.description);
+                    END
+                """))
+                await session.execute(text("""
+                    CREATE TRIGGER IF NOT EXISTS invoice_items_fts_update AFTER UPDATE ON invoice_items BEGIN
+                        INSERT INTO invoice_items_fts(invoice_items_fts, rowid, description)
+                        VALUES ('delete', old.id, old.description);
+                        INSERT INTO invoice_items_fts(rowid, description)
+                        VALUES (new.id, new.description);
+                    END
+                """))
+                await session.commit()
+
             # Get counts from main tables
             invoices_count = (await session.execute(text("SELECT COUNT(*) FROM invoices"))).scalar()
             clients_count = (await session.execute(text("SELECT COUNT(*) FROM clients"))).scalar()
-            line_items_count = 0
-            if "invoice_items_fts" in existing_tables:
-                line_items_count = (await session.execute(text("SELECT COUNT(*) FROM invoice_items"))).scalar()
+            line_items_count = (await session.execute(text("SELECT COUNT(*) FROM invoice_items"))).scalar()
 
             # If no data to index, skip
             if invoices_count == 0 and clients_count == 0 and line_items_count == 0:
@@ -1512,8 +1541,8 @@ class SearchService:
                 await session.execute(text("INSERT INTO clients_fts(clients_fts) VALUES('rebuild')"))
                 result["clients_indexed"] = clients_count
 
-            # Reindex line items if table exists and has data
-            if "invoice_items_fts" in existing_tables and line_items_count > 0:
+            # Reindex line items (table created above if it didn't exist)
+            if line_items_count > 0:
                 await session.execute(text("INSERT INTO invoice_items_fts(invoice_items_fts) VALUES('rebuild')"))
                 result["line_items_indexed"] = line_items_count
 
@@ -1595,6 +1624,10 @@ class SearchService:
                 """)
                 result = await session.execute(invoice_sql, {"query": fts_query, "limit": limit})
                 for row in result.fetchall():
+                    # issue_date may be string (from raw SQL) or datetime
+                    issue_date = row.issue_date
+                    if issue_date and hasattr(issue_date, 'isoformat'):
+                        issue_date = issue_date.isoformat()
                     results["invoices"].append({
                         "id": row.id,
                         "invoice_number": row.invoice_number,
@@ -1603,7 +1636,7 @@ class SearchService:
                         "status": row.status,
                         "total": str(row.total),
                         "currency_code": row.currency_code,
-                        "issue_date": row.issue_date.isoformat() if row.issue_date else None,
+                        "issue_date": issue_date,
                         "is_deleted": row.deleted_at is not None,
                         "match_snippet": row.match_snippet,
                     })
@@ -1663,6 +1696,10 @@ class SearchService:
                 """)
                 result = await session.execute(line_items_sql, {"query": fts_query, "limit": limit})
                 for row in result.fetchall():
+                    # issue_date may be string (from raw SQL) or datetime
+                    issue_date = row.issue_date
+                    if issue_date and hasattr(issue_date, 'isoformat'):
+                        issue_date = issue_date.isoformat()
                     results["line_items"].append({
                         "id": row.id,
                         "invoice_id": row.invoice_id,
@@ -1676,7 +1713,7 @@ class SearchService:
                         "client_business": row.client_business,
                         "invoice_status": row.status,
                         "currency_code": row.currency_code,
-                        "issue_date": row.issue_date.isoformat() if row.issue_date else None,
+                        "issue_date": issue_date,
                         "is_deleted": row.deleted_at is not None,
                         "match_snippet": row.match_snippet,
                     })
