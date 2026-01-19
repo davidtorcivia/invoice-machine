@@ -1571,8 +1571,10 @@ class SearchService:
         if not safe_query:
             return results
 
-        # Add wildcards for partial matching (safe now that special chars are removed)
-        fts_query = f'"{safe_query}"*'
+        # Add wildcards for partial matching - FTS5 requires wildcard on each word
+        # "phrase"* is invalid FTS5 syntax, use word1* word2* instead
+        words = safe_query.split()
+        fts_query = ' '.join(f'{word}*' for word in words)
 
         if search_invoices:
             try:
