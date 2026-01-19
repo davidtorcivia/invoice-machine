@@ -1489,35 +1489,42 @@ class SearchService:
                 return result
 
             # Create invoice_items_fts if it doesn't exist (migration may have failed)
+            # Using a regular FTS5 table (not external content) for simplicity
             if "invoice_items_fts" not in existing_tables:
+                # Drop any existing table/triggers first to ensure clean state
+                await session.execute(text("DROP TABLE IF EXISTS invoice_items_fts"))
+                await session.execute(text("DROP TRIGGER IF EXISTS invoice_items_fts_insert"))
+                await session.execute(text("DROP TRIGGER IF EXISTS invoice_items_fts_delete"))
+                await session.execute(text("DROP TRIGGER IF EXISTS invoice_items_fts_update"))
+
+                # Create regular FTS5 table (stores its own content)
                 await session.execute(text("""
-                    CREATE VIRTUAL TABLE IF NOT EXISTS invoice_items_fts USING fts5(
-                        description,
-                        content='invoice_items',
-                        content_rowid='id'
+                    CREATE VIRTUAL TABLE invoice_items_fts USING fts5(
+                        description
                     )
                 """))
+                # Triggers to keep it in sync
                 await session.execute(text("""
-                    CREATE TRIGGER IF NOT EXISTS invoice_items_fts_insert AFTER INSERT ON invoice_items BEGIN
+                    CREATE TRIGGER invoice_items_fts_insert AFTER INSERT ON invoice_items BEGIN
                         INSERT INTO invoice_items_fts(rowid, description)
                         VALUES (new.id, new.description);
                     END
                 """))
                 await session.execute(text("""
-                    CREATE TRIGGER IF NOT EXISTS invoice_items_fts_delete AFTER DELETE ON invoice_items BEGIN
-                        INSERT INTO invoice_items_fts(invoice_items_fts, rowid, description)
-                        VALUES ('delete', old.id, old.description);
+                    CREATE TRIGGER invoice_items_fts_delete AFTER DELETE ON invoice_items BEGIN
+                        DELETE FROM invoice_items_fts WHERE rowid = old.id;
                     END
                 """))
                 await session.execute(text("""
-                    CREATE TRIGGER IF NOT EXISTS invoice_items_fts_update AFTER UPDATE ON invoice_items BEGIN
-                        INSERT INTO invoice_items_fts(invoice_items_fts, rowid, description)
-                        VALUES ('delete', old.id, old.description);
+                    CREATE TRIGGER invoice_items_fts_update AFTER UPDATE ON invoice_items BEGIN
+                        DELETE FROM invoice_items_fts WHERE rowid = old.id;
                         INSERT INTO invoice_items_fts(rowid, description)
                         VALUES (new.id, new.description);
                     END
                 """))
                 await session.commit()
+                # Mark that we need to populate the new table
+                existing_tables.add("invoice_items_fts_needs_populate")
 
             # Get counts from main tables
             invoices_count = (await session.execute(text("SELECT COUNT(*) FROM invoices"))).scalar()
@@ -1541,9 +1548,15 @@ class SearchService:
                 await session.execute(text("INSERT INTO clients_fts(clients_fts) VALUES('rebuild')"))
                 result["clients_indexed"] = clients_count
 
-            # Reindex line items (table created above if it didn't exist)
+            # Reindex line items - clear and repopulate with direct INSERT
             if line_items_count > 0:
-                await session.execute(text("INSERT INTO invoice_items_fts(invoice_items_fts) VALUES('rebuild')"))
+                # Clear existing data
+                await session.execute(text("DELETE FROM invoice_items_fts"))
+                # Repopulate from invoice_items
+                await session.execute(text("""
+                    INSERT INTO invoice_items_fts(rowid, description)
+                    SELECT id, description FROM invoice_items
+                """))
                 result["line_items_indexed"] = line_items_count
 
             await session.commit()
