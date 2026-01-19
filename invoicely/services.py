@@ -1456,19 +1456,25 @@ class SearchService:
     """Service for full-text search across invoices and clients."""
 
     @staticmethod
-    async def reindex_fts(session: AsyncSession) -> dict:
+    async def reindex_fts(session: AsyncSession, force: bool = False) -> dict:
         """
-        Repopulate FTS tables with data from main tables.
+        Rebuild FTS tables from main tables using FTS5 'rebuild' command.
 
-        This should be called on startup if FTS tables exist but are empty
-        while the main tables have data (can happen after failed migrations).
+        The FTS tables use 'content=' option (external content tables), which means
+        they store only the tokenized index, not the actual content. The 'rebuild'
+        command tells FTS5 to re-read all data from the content table and rebuild
+        its index.
+
+        Args:
+            session: Database session
+            force: If True, always rebuild even if FTS tables appear populated
 
         Returns:
             Dict with counts of indexed invoices and clients
         """
         from sqlalchemy import text
 
-        result = {"invoices_indexed": 0, "clients_indexed": 0, "skipped": False}
+        result = {"invoices_indexed": 0, "clients_indexed": 0, "skipped": False, "rebuilt": False}
 
         try:
             # Check if FTS tables exist
@@ -1482,41 +1488,29 @@ class SearchService:
                 result["reason"] = "FTS tables don't exist"
                 return result
 
-            # Check if FTS tables are empty while main tables have data
-            invoices_fts_count = (await session.execute(text("SELECT COUNT(*) FROM invoices_fts"))).scalar()
-            clients_fts_count = (await session.execute(text("SELECT COUNT(*) FROM clients_fts"))).scalar()
+            # Get counts from main tables
             invoices_count = (await session.execute(text("SELECT COUNT(*) FROM invoices"))).scalar()
             clients_count = (await session.execute(text("SELECT COUNT(*) FROM clients"))).scalar()
 
-            # If FTS tables already have data, skip reindexing
-            if invoices_fts_count > 0 and clients_fts_count > 0:
+            # If no data to index, skip
+            if invoices_count == 0 and clients_count == 0:
                 result["skipped"] = True
-                result["reason"] = "FTS tables already populated"
+                result["reason"] = "No data to index"
                 return result
 
-            # Reindex invoices if needed
-            if invoices_count > 0 and invoices_fts_count == 0:
-                # Clear FTS table first (in case of partial data)
-                await session.execute(text("DELETE FROM invoices_fts"))
-                # Repopulate from invoices table
-                await session.execute(text("""
-                    INSERT INTO invoices_fts(rowid, invoice_number, client_name, client_business, notes)
-                    SELECT id, invoice_number, client_name, client_business, notes FROM invoices
-                """))
+            # For external content FTS tables, use the 'rebuild' command
+            # This re-reads all data from the content table and rebuilds the index
+            # It's the correct way to sync FTS with external content tables
+            if invoices_count > 0:
+                await session.execute(text("INSERT INTO invoices_fts(invoices_fts) VALUES('rebuild')"))
                 result["invoices_indexed"] = invoices_count
 
-            # Reindex clients if needed
-            if clients_count > 0 and clients_fts_count == 0:
-                # Clear FTS table first (in case of partial data)
-                await session.execute(text("DELETE FROM clients_fts"))
-                # Repopulate from clients table
-                await session.execute(text("""
-                    INSERT INTO clients_fts(rowid, name, business_name, email, notes)
-                    SELECT id, name, business_name, email, notes FROM clients
-                """))
+            if clients_count > 0:
+                await session.execute(text("INSERT INTO clients_fts(clients_fts) VALUES('rebuild')"))
                 result["clients_indexed"] = clients_count
 
             await session.commit()
+            result["rebuilt"] = True
             return result
 
         except Exception as e:
@@ -1604,7 +1598,8 @@ class SearchService:
                         "match_snippet": row.match_snippet,
                     })
             except Exception as e:
-                # FTS tables might not exist yet, fall back to LIKE search
+                # FTS tables might not exist yet or query error, fall back to LIKE search
+                print(f"FTS invoice search error, falling back to LIKE: {e}", flush=True)
                 results["invoices"] = await SearchService._fallback_invoice_search(
                     session, query, limit
                 )
@@ -1634,7 +1629,8 @@ class SearchService:
                         "match_snippet": row.match_snippet,
                     })
             except Exception as e:
-                # FTS tables might not exist yet, fall back to LIKE search
+                # FTS tables might not exist yet or query error, fall back to LIKE search
+                print(f"FTS client search error, falling back to LIKE: {e}", flush=True)
                 results["clients"] = await SearchService._fallback_client_search(
                     session, query, limit
                 )

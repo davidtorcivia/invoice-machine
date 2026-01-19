@@ -241,24 +241,23 @@ async def lifespan(app: FastAPI):
     await init_db()
     print("Database initialized.", flush=True)
 
-    # Reindex FTS tables if needed (fixes search when data exists but FTS is empty)
-    print("Checking FTS search indexes...", flush=True)
+    # Rebuild FTS tables on startup (ensures search index is in sync with data)
+    print("Rebuilding FTS search indexes...", flush=True)
     try:
         from invoicely.database import async_session_maker
         from invoicely.services import SearchService
         async with async_session_maker() as session:
             reindex_result = await SearchService.reindex_fts(session)
             if reindex_result.get("skipped"):
-                print(f"FTS reindex skipped: {reindex_result.get('reason', 'already up to date')}", flush=True)
+                print(f"FTS rebuild skipped: {reindex_result.get('reason', 'no data')}", flush=True)
             elif reindex_result.get("error"):
-                print(f"FTS reindex error: {reindex_result.get('error')}", flush=True)
-            else:
+                print(f"FTS rebuild error: {reindex_result.get('error')}", flush=True)
+            elif reindex_result.get("rebuilt"):
                 indexed_invoices = reindex_result.get("invoices_indexed", 0)
                 indexed_clients = reindex_result.get("clients_indexed", 0)
-                if indexed_invoices > 0 or indexed_clients > 0:
-                    print(f"FTS reindex complete: {indexed_invoices} invoices, {indexed_clients} clients indexed", flush=True)
+                print(f"FTS rebuild complete: {indexed_invoices} invoices, {indexed_clients} clients indexed", flush=True)
     except Exception as e:
-        print(f"FTS reindex check failed (non-fatal): {e}", flush=True)
+        print(f"FTS rebuild failed (non-fatal): {e}", flush=True)
 
     # Start background tasks
     print("Starting background tasks...", flush=True)

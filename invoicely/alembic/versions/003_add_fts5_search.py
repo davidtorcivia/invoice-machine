@@ -90,21 +90,19 @@ def upgrade() -> None:
         END
     """)
 
-    # Populate FTS tables with existing data (only if empty - check first)
+    # Rebuild FTS tables to sync with existing data
+    # For external content FTS tables (content=), use the 'rebuild' command
+    # This reads from the content table and builds the inverted index correctly
     conn = op.get_bind()
-    result = conn.execute(sa.text("SELECT COUNT(*) FROM invoices_fts"))
-    if result.scalar() == 0:
-        op.execute("""
-            INSERT INTO invoices_fts(rowid, invoice_number, client_name, client_business, notes)
-            SELECT id, invoice_number, client_name, client_business, notes FROM invoices
-        """)
 
-    result = conn.execute(sa.text("SELECT COUNT(*) FROM clients_fts"))
-    if result.scalar() == 0:
-        op.execute("""
-            INSERT INTO clients_fts(rowid, name, business_name, email, notes)
-            SELECT id, name, business_name, email, notes FROM clients
-        """)
+    # Check if there's data to index
+    invoices_count = conn.execute(sa.text("SELECT COUNT(*) FROM invoices")).scalar()
+    if invoices_count > 0:
+        op.execute("INSERT INTO invoices_fts(invoices_fts) VALUES('rebuild')")
+
+    clients_count = conn.execute(sa.text("SELECT COUNT(*) FROM clients")).scalar()
+    if clients_count > 0:
+        op.execute("INSERT INTO clients_fts(clients_fts) VALUES('rebuild')")
 
 
 def downgrade() -> None:
