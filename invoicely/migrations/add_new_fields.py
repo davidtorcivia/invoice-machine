@@ -68,6 +68,8 @@ def migrate(db_path: Path = DEFAULT_DB_PATH):
         ("clients", "tax_enabled", "INTEGER"),
         ("clients", "tax_rate", "DECIMAL(5,2)"),
         ("clients", "tax_name", "VARCHAR(50)"),
+        # Client currency preference (added in migration 005)
+        ("clients", "preferred_currency", "VARCHAR(3)"),
     ]
 
     for table, column, col_type in migrations:

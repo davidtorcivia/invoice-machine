@@ -17,29 +17,43 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
+    # Get existing indexes to make migration idempotent
+    from sqlalchemy import inspect
+    conn = op.get_bind()
+    inspector = inspect(conn)
+
+    # Helper to check if index exists
+    def index_exists(table_name, index_name):
+        indexes = inspector.get_indexes(table_name)
+        return any(idx["name"] == index_name for idx in indexes)
+
     # Composite indexes for invoices - common query patterns
-    op.create_index(
-        "idx_invoices_status_deleted",
-        "invoices",
-        ["status", "deleted_at"],
-    )
-    op.create_index(
-        "idx_invoices_client_status",
-        "invoices",
-        ["client_id", "status"],
-    )
-    op.create_index(
-        "idx_invoices_date_status",
-        "invoices",
-        ["issue_date", "status"],
-    )
+    if not index_exists("invoices", "idx_invoices_status_deleted"):
+        op.create_index(
+            "idx_invoices_status_deleted",
+            "invoices",
+            ["status", "deleted_at"],
+        )
+    if not index_exists("invoices", "idx_invoices_client_status"):
+        op.create_index(
+            "idx_invoices_client_status",
+            "invoices",
+            ["client_id", "status"],
+        )
+    if not index_exists("invoices", "idx_invoices_date_status"):
+        op.create_index(
+            "idx_invoices_date_status",
+            "invoices",
+            ["issue_date", "status"],
+        )
 
     # Composite index for recurring schedules - processing due schedules
-    op.create_index(
-        "idx_recurring_active_next_date",
-        "recurring_schedules",
-        ["is_active", "next_invoice_date"],
-    )
+    if not index_exists("recurring_schedules", "idx_recurring_active_next_date"):
+        op.create_index(
+            "idx_recurring_active_next_date",
+            "recurring_schedules",
+            ["is_active", "next_invoice_date"],
+        )
 
 
 def downgrade() -> None:

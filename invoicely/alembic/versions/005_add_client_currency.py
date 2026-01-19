@@ -18,10 +18,17 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    op.add_column(
-        "clients",
-        sa.Column("preferred_currency", sa.String(3), nullable=True),
-    )
+    # Check if column exists to make migration idempotent
+    from sqlalchemy import inspect
+    conn = op.get_bind()
+    inspector = inspect(conn)
+    columns = [col["name"] for col in inspector.get_columns("clients")]
+
+    if "preferred_currency" not in columns:
+        op.add_column(
+            "clients",
+            sa.Column("preferred_currency", sa.String(3), nullable=True),
+        )
 
 
 def downgrade() -> None:

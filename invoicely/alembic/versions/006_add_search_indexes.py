@@ -17,29 +17,43 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
+    # Get existing indexes to make migration idempotent
+    from sqlalchemy import inspect
+    conn = op.get_bind()
+    inspector = inspect(conn)
+
+    # Helper to check if index exists
+    def index_exists(table_name, index_name):
+        indexes = inspector.get_indexes(table_name)
+        return any(idx["name"] == index_name for idx in indexes)
+
     # Composite index for getting invoices by client that aren't deleted
-    op.create_index(
-        "idx_invoices_client_deleted",
-        "invoices",
-        ["client_id", "deleted_at"],
-    )
+    if not index_exists("invoices", "idx_invoices_client_deleted"):
+        op.create_index(
+            "idx_invoices_client_deleted",
+            "invoices",
+            ["client_id", "deleted_at"],
+        )
 
     # Client search indexes
-    op.create_index(
-        "idx_clients_email",
-        "clients",
-        ["email"],
-    )
-    op.create_index(
-        "idx_clients_name",
-        "clients",
-        ["name"],
-    )
-    op.create_index(
-        "idx_clients_business_name",
-        "clients",
-        ["business_name"],
-    )
+    if not index_exists("clients", "idx_clients_email"):
+        op.create_index(
+            "idx_clients_email",
+            "clients",
+            ["email"],
+        )
+    if not index_exists("clients", "idx_clients_name"):
+        op.create_index(
+            "idx_clients_name",
+            "clients",
+            ["name"],
+        )
+    if not index_exists("clients", "idx_clients_business_name"):
+        op.create_index(
+            "idx_clients_business_name",
+            "clients",
+            ["business_name"],
+        )
 
 
 def downgrade() -> None:

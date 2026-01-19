@@ -18,32 +18,39 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    op.create_table(
-        "recurring_schedules",
-        sa.Column("id", sa.Integer(), primary_key=True, autoincrement=True),
-        sa.Column("client_id", sa.Integer(), sa.ForeignKey("clients.id"), nullable=False),
-        sa.Column("name", sa.String(255), nullable=False),
-        sa.Column("frequency", sa.String(20), nullable=False),
-        sa.Column("schedule_day", sa.Integer(), default=1),
-        sa.Column("currency_code", sa.String(3), default="USD"),
-        sa.Column("payment_terms_days", sa.Integer(), default=30),
-        sa.Column("notes", sa.Text(), nullable=True),
-        sa.Column("line_items", sa.Text(), nullable=True),
-        # Tax settings
-        sa.Column("tax_enabled", sa.Integer(), nullable=True),
-        sa.Column("tax_rate", sa.DECIMAL(5, 2), nullable=True),
-        sa.Column("tax_name", sa.String(50), nullable=True),
-        # Schedule status
-        sa.Column("is_active", sa.Integer(), default=1),
-        sa.Column("next_invoice_date", sa.Date(), nullable=False),
-        sa.Column("last_invoice_id", sa.Integer(), sa.ForeignKey("invoices.id"), nullable=True),
-        # Timestamps
-        sa.Column("created_at", sa.DateTime(), nullable=True),
-        sa.Column("updated_at", sa.DateTime(), nullable=True),
-    )
-    op.create_index("idx_recurring_client", "recurring_schedules", ["client_id"])
-    op.create_index("idx_recurring_next_date", "recurring_schedules", ["next_invoice_date"])
-    op.create_index("idx_recurring_active", "recurring_schedules", ["is_active"])
+    # Get existing tables to make migration idempotent
+    from sqlalchemy import inspect
+    conn = op.get_bind()
+    inspector = inspect(conn)
+    existing_tables = set(inspector.get_table_names())
+
+    if "recurring_schedules" not in existing_tables:
+        op.create_table(
+            "recurring_schedules",
+            sa.Column("id", sa.Integer(), primary_key=True, autoincrement=True),
+            sa.Column("client_id", sa.Integer(), sa.ForeignKey("clients.id"), nullable=False),
+            sa.Column("name", sa.String(255), nullable=False),
+            sa.Column("frequency", sa.String(20), nullable=False),
+            sa.Column("schedule_day", sa.Integer(), default=1),
+            sa.Column("currency_code", sa.String(3), default="USD"),
+            sa.Column("payment_terms_days", sa.Integer(), default=30),
+            sa.Column("notes", sa.Text(), nullable=True),
+            sa.Column("line_items", sa.Text(), nullable=True),
+            # Tax settings
+            sa.Column("tax_enabled", sa.Integer(), nullable=True),
+            sa.Column("tax_rate", sa.DECIMAL(5, 2), nullable=True),
+            sa.Column("tax_name", sa.String(50), nullable=True),
+            # Schedule status
+            sa.Column("is_active", sa.Integer(), default=1),
+            sa.Column("next_invoice_date", sa.Date(), nullable=False),
+            sa.Column("last_invoice_id", sa.Integer(), sa.ForeignKey("invoices.id"), nullable=True),
+            # Timestamps
+            sa.Column("created_at", sa.DateTime(), nullable=True),
+            sa.Column("updated_at", sa.DateTime(), nullable=True),
+        )
+        op.create_index("idx_recurring_client", "recurring_schedules", ["client_id"])
+        op.create_index("idx_recurring_next_date", "recurring_schedules", ["next_invoice_date"])
+        op.create_index("idx_recurring_active", "recurring_schedules", ["is_active"])
 
 
 def downgrade() -> None:

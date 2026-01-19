@@ -171,18 +171,24 @@ def run_alembic_migrations():
     project_root = Path(__file__).parent.parent
     alembic_cfg = Config(str(project_root / "alembic.ini"))
 
-    # Check if database exists and has tables but no alembic_version
+    # Check if database exists and has tables but no valid alembic version
     db_path = settings.data_dir / "invoicely.db"
     if db_path.exists():
         try:
             conn = sqlite3.connect(str(db_path))
             cursor = conn.cursor()
 
-            # Check if alembic_version table exists
+            # Check if alembic_version table exists AND has a version row
+            # (A failed migration can leave an empty alembic_version table)
             cursor.execute(
                 "SELECT name FROM sqlite_master WHERE type='table' AND name='alembic_version'"
             )
-            has_alembic = cursor.fetchone() is not None
+            has_alembic_table = cursor.fetchone() is not None
+
+            has_valid_version = False
+            if has_alembic_table:
+                cursor.execute("SELECT version_num FROM alembic_version LIMIT 1")
+                has_valid_version = cursor.fetchone() is not None
 
             # Check if users table exists (indicates existing database)
             cursor.execute(
@@ -192,16 +198,17 @@ def run_alembic_migrations():
 
             conn.close()
 
-            # If database has tables but no alembic tracking, stamp it at latest
-            if has_users and not has_alembic:
-                print("Existing database detected, stamping at latest migration...")
-                command.stamp(alembic_cfg, "head")
-                print("Database stamped successfully")
-                return
+            # If database has tables but no valid alembic version, run fallback first
+            # to ensure all columns exist, then run idempotent migrations
+            if has_users and not has_valid_version:
+                print("Existing database detected without valid alembic version...")
+                print("Running fallback migration to ensure schema is complete...")
+                from invoicely.migrations.add_new_fields import migrate
+                migrate(settings.data_dir / "invoicely.db")
         except Exception as e:
             print(f"Database check failed: {e}")
 
-    # Run upgrade to head
+    # Run upgrade to head (migrations are idempotent - safe to run on any state)
     try:
         command.upgrade(alembic_cfg, "head")
         print("Alembic migrations completed successfully")
@@ -210,6 +217,13 @@ def run_alembic_migrations():
         # Fall back to manual migration for backwards compatibility
         from invoicely.migrations.add_new_fields import migrate
         migrate(settings.data_dir / "invoicely.db")
+
+        # CRITICAL: Stamp database after fallback to prevent repeated failures
+        try:
+            command.stamp(alembic_cfg, "head")
+            print("Database stamped at head after fallback migration")
+        except Exception as stamp_error:
+            print(f"Warning: Could not stamp database: {stamp_error}")
 
 
 @asynccontextmanager

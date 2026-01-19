@@ -90,16 +90,21 @@ def upgrade() -> None:
         END
     """)
 
-    # Populate FTS tables with existing data
-    op.execute("""
-        INSERT INTO invoices_fts(rowid, invoice_number, client_name, client_business, notes)
-        SELECT id, invoice_number, client_name, client_business, notes FROM invoices
-    """)
+    # Populate FTS tables with existing data (only if empty - check first)
+    conn = op.get_bind()
+    result = conn.execute(sa.text("SELECT COUNT(*) FROM invoices_fts"))
+    if result.scalar() == 0:
+        op.execute("""
+            INSERT INTO invoices_fts(rowid, invoice_number, client_name, client_business, notes)
+            SELECT id, invoice_number, client_name, client_business, notes FROM invoices
+        """)
 
-    op.execute("""
-        INSERT INTO clients_fts(rowid, name, business_name, email, notes)
-        SELECT id, name, business_name, email, notes FROM clients
-    """)
+    result = conn.execute(sa.text("SELECT COUNT(*) FROM clients_fts"))
+    if result.scalar() == 0:
+        op.execute("""
+            INSERT INTO clients_fts(rowid, name, business_name, email, notes)
+            SELECT id, name, business_name, email, notes FROM clients
+        """)
 
 
 def downgrade() -> None:
