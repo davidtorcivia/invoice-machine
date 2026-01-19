@@ -1688,6 +1688,15 @@ class SearchService:
                 for dr in debug_rows:
                     print(f"DEBUG: FTS row {dr[0]}: {dr[1][:50] if dr[1] else 'NULL'}...", flush=True)
 
+                # Debug: Test MATCH query directly
+                try:
+                    match_test_sql = text("SELECT rowid FROM invoice_items_fts WHERE invoice_items_fts MATCH :query")
+                    match_result = await session.execute(match_test_sql, {"query": fts_query})
+                    match_rows = match_result.fetchall()
+                    print(f"DEBUG: Direct MATCH found {len(match_rows)} rows: {[r[0] for r in match_rows]}", flush=True)
+                except Exception as match_err:
+                    print(f"DEBUG: Direct MATCH error: {match_err}", flush=True)
+
                 # Search line items using FTS5, joining to get invoice context
                 line_items_sql = text("""
                     SELECT ii.id, ii.invoice_id, ii.description, ii.quantity, ii.unit_type,
