@@ -84,6 +84,7 @@ class BusinessProfile(Base):
     logo_path: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     accent_color: Mapped[str] = mapped_column(String(7), default="#16a34a")
     default_payment_terms_days: Mapped[int] = mapped_column(Integer, default=30)
+    default_currency_code: Mapped[str] = mapped_column(String(3), default="USD")
     default_notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     default_payment_instructions: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     # JSON array: [{id, name, instructions}]

@@ -38,6 +38,7 @@ class BusinessProfileSchema(BaseModel):
     logo_path: Optional[str] = None
     accent_color: str = "#16a34a"
     default_payment_terms_days: int = 30
+    default_currency_code: str = "USD"
     default_notes: Optional[str] = None
     default_payment_instructions: Optional[str] = None
     payment_methods: Optional[str] = None  # JSON string: [{id, name, instructions}]
@@ -78,6 +79,7 @@ class BusinessProfileUpdate(BaseModel):
     ein: Optional[str] = Field(None, max_length=50)
     accent_color: Optional[str] = Field(None, pattern="^#[0-9a-fA-F]{6}$")
     default_payment_terms_days: Optional[int] = Field(None, ge=0, le=365)
+    default_currency_code: Optional[str] = Field(None, pattern="^[A-Z]{3}$")
     default_notes: Optional[str] = Field(None, max_length=10000)
     default_payment_instructions: Optional[str] = Field(None, max_length=10000)
     payment_methods: Optional[str] = Field(None, max_length=10000)  # JSON string

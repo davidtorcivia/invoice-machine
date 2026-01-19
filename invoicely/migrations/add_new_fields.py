@@ -34,6 +34,7 @@ def migrate(db_path: Path = DEFAULT_DB_PATH):
         ("business_profile", "theme_preference", "VARCHAR(20) DEFAULT 'system'"),
         ("business_profile", "mcp_api_key", "VARCHAR(64)"),
         ("business_profile", "app_base_url", "VARCHAR(500)"),
+        ("business_profile", "default_currency_code", "VARCHAR(3) DEFAULT 'USD'"),
         # Backup settings
         ("business_profile", "backup_enabled", "INTEGER DEFAULT 1"),
         ("business_profile", "backup_retention_days", "INTEGER DEFAULT 30"),

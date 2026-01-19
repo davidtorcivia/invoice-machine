@@ -3,6 +3,7 @@
   import { profileApi, backupsApi, emailApi } from '$lib/api';
   import { toast } from '$lib/stores';
   import { countries } from '$lib/data/countries';
+  import { currencies } from '$lib/data/currencies';
   import Header from '$lib/components/Header.svelte';
   import Icon from '$lib/components/Icons.svelte';
   import ConfirmModal from '$lib/components/ConfirmModal.svelte';
@@ -39,6 +40,7 @@
   let ein = '';
   let accentColor = '#16a34a';
   let defaultPaymentTermsDays = 30;
+  let defaultCurrencyCode = 'USD';
   let defaultNotes = '';
   let defaultPaymentInstructions = '';
 
@@ -135,6 +137,7 @@
       ein = profile.ein || '';
       accentColor = profile.accent_color || '#16a34a';
       defaultPaymentTermsDays = profile.default_payment_terms_days || 30;
+      defaultCurrencyCode = profile.default_currency_code || 'USD';
       defaultNotes = profile.default_notes || '';
       defaultPaymentInstructions = profile.default_payment_instructions || '';
 
@@ -246,6 +249,7 @@
         ein: ein || undefined,
         accent_color: accentColor || undefined,
         default_payment_terms_days: parseInt(defaultPaymentTermsDays) || undefined,
+        default_currency_code: defaultCurrencyCode || undefined,
         default_notes: defaultNotes || undefined,
         default_payment_instructions: defaultPaymentInstructions || undefined,
         payment_methods: JSON.stringify(paymentMethods),
@@ -788,6 +792,22 @@
             <p class="form-hint">Default due date for new invoices.</p>
           </div>
 
+          <div class="form-group">
+            <label for="default-currency" class="label">Default Currency</label>
+            <select id="default-currency" class="select" bind:value={defaultCurrencyCode}>
+              {#each currencies as currency}
+                {#if currency.disabled}
+                  <option value="" disabled>{currency.name}</option>
+                {:else}
+                  <option value={currency.code}>{currency.code} - {currency.name}</option>
+                {/if}
+              {/each}
+            </select>
+            <p class="form-hint">Default currency for new invoices.</p>
+          </div>
+        </div>
+
+        <div class="form-row">
           <div class="form-group">
             <label for="accent-color" class="label">Accent Color</label>
             <div class="color-input">

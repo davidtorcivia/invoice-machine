@@ -3,6 +3,7 @@
   import { clientsApi } from '$lib/api';
   import { toast } from '$lib/stores';
   import { countries } from '$lib/data/countries';
+  import { currencies } from '$lib/data/currencies';
   import Header from '$lib/components/Header.svelte';
   import Icon from '$lib/components/Icons.svelte';
   import ConfirmModal from '$lib/components/ConfirmModal.svelte';
@@ -32,7 +33,6 @@
 
   // Currency preference
   let preferredCurrency = '';
-  const currencies = ['USD', 'EUR', 'GBP', 'CAD', 'AUD'];
 
   async function saveClient() {
     if (!name.trim() && !businessName.trim()) {
@@ -244,7 +244,11 @@
           <select id="currency" class="select" bind:value={preferredCurrency}>
             <option value="">Use default (from Settings)</option>
             {#each currencies as c}
-              <option value={c}>{c}</option>
+              {#if c.disabled}
+                <option value="" disabled>{c.name}</option>
+              {:else}
+                <option value={c.code}>{c.code} - {c.name}</option>
+              {/if}
             {/each}
           </select>
           <p class="form-hint">Pre-select this currency when creating invoices for this client.</p>

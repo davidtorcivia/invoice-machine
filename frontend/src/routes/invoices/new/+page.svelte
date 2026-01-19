@@ -3,6 +3,7 @@
   import { goto } from '$app/navigation';
   import { clientsApi, invoicesApi, profileApi } from '$lib/api';
   import { formatCurrency, toast } from '$lib/stores';
+  import { currencies } from '$lib/data/currencies';
   import Header from '$lib/components/Header.svelte';
   import Icon from '$lib/components/Icons.svelte';
   import ConfirmModal from '$lib/components/ConfirmModal.svelte';
@@ -71,6 +72,10 @@
       // Set defaults from profile
       if (profile.default_payment_terms_days) {
         paymentTermsDays = profile.default_payment_terms_days;
+      }
+      // Set default currency from profile
+      if (profile.default_currency_code) {
+        currencyCode = profile.default_currency_code;
       }
       // Set tax defaults from profile
       if (profile.default_tax_enabled) {
@@ -334,11 +339,13 @@
           <div class="form-group">
             <label for="currency" class="label">Currency</label>
             <select id="currency" class="select" bind:value={currencyCode}>
-              <option value="USD">USD - US Dollar</option>
-              <option value="EUR">EUR - Euro</option>
-              <option value="GBP">GBP - British Pound</option>
-              <option value="CAD">CAD - Canadian Dollar</option>
-              <option value="AUD">AUD - Australian Dollar</option>
+              {#each currencies as currency}
+                {#if currency.disabled}
+                  <option value="" disabled>{currency.name}</option>
+                {:else}
+                  <option value={currency.code}>{currency.code} - {currency.name}</option>
+                {/if}
+              {/each}
             </select>
           </div>
         </div>

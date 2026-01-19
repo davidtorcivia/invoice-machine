@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { recurringApi, clientsApi } from '$lib/api';
   import { toast } from '$lib/stores';
+  import { currencies } from '$lib/data/currencies';
   import Header from '$lib/components/Header.svelte';
   import Icon from '$lib/components/Icons.svelte';
   import ConfirmModal from '$lib/components/ConfirmModal.svelte';
@@ -381,11 +382,13 @@
           <div class="form-group">
             <label for="currency" class="label">Currency</label>
             <select id="currency" class="input" bind:value={formData.currency_code}>
-              <option value="USD">USD</option>
-              <option value="EUR">EUR</option>
-              <option value="GBP">GBP</option>
-              <option value="CAD">CAD</option>
-              <option value="AUD">AUD</option>
+              {#each currencies as currency}
+                {#if currency.disabled}
+                  <option value="" disabled>{currency.name}</option>
+                {:else}
+                  <option value={currency.code}>{currency.code} - {currency.name}</option>
+                {/if}
+              {/each}
             </select>
           </div>
 
