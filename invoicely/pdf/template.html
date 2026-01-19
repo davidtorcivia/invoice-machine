@@ -6,7 +6,7 @@
     <style>
         @page {
             size: letter;
-            margin: 0.5in 0.6in;
+            margin: 0.5in 0.6in 0.8in 0.6in; /* Extra bottom margin for footer */
         }
 
         :root {
@@ -354,13 +354,17 @@
         }
 
         /* ============================================
-           FOOTER
+           FOOTER - Fixed at bottom of each page
            ============================================ */
         .footer {
-            margin-top: auto; /* Push to bottom of page */
-            padding-top: 0.12in;
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            padding: 0.12in 0.6in;
             border-top: 1px solid var(--border-light);
             text-align: center;
+            background: #fff;
         }
 
         .footer-text {

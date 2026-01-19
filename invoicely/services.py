@@ -1680,6 +1680,14 @@ class SearchService:
 
         if search_line_items:
             try:
+                # Debug: Check FTS table contents
+                debug_sql = text("SELECT rowid, description FROM invoice_items_fts LIMIT 10")
+                debug_result = await session.execute(debug_sql)
+                debug_rows = debug_result.fetchall()
+                print(f"DEBUG: FTS table has {len(debug_rows)} rows, query='{fts_query}'", flush=True)
+                for dr in debug_rows:
+                    print(f"DEBUG: FTS row {dr[0]}: {dr[1][:50] if dr[1] else 'NULL'}...", flush=True)
+
                 # Search line items using FTS5, joining to get invoice context
                 line_items_sql = text("""
                     SELECT ii.id, ii.invoice_id, ii.description, ii.quantity, ii.unit_type,
@@ -1718,7 +1726,8 @@ class SearchService:
                         "match_snippet": row.match_snippet,
                     })
             except Exception as e:
-                # FTS tables might not exist yet, fall back to LIKE search
+                # FTS tables might not exist yet or query error, fall back to LIKE search
+                print(f"FTS line_items search error, falling back to LIKE: {e}", flush=True)
                 results["line_items"] = await SearchService._fallback_line_items_search(
                     session, query, limit
                 )
