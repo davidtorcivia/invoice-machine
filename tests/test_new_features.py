@@ -337,10 +337,10 @@ class TestSearch:
     async def test_search_empty_query_returns_empty(self, db_session):
         """Empty query returns empty results."""
         results = await SearchService.search(db_session, "")
-        assert results == {"invoices": [], "clients": []}
+        assert results == {"invoices": [], "clients": [], "line_items": []}
 
         results = await SearchService.search(db_session, "   ")
-        assert results == {"invoices": [], "clients": []}
+        assert results == {"invoices": [], "clients": [], "line_items": []}
 
     @pytest.mark.asyncio
     async def test_search_limit_respected(self, db_session, business_profile):
@@ -397,6 +397,76 @@ class TestSearch:
         )
         assert "clients" in results
         assert results["invoices"] == []
+
+    @pytest.mark.asyncio
+    async def test_search_line_items_by_description(self, db_session, business_profile):
+        """Search finds line items by description."""
+        # Create a client
+        client = await ClientService.create_client(
+            db_session, name="Line Item Test Client"
+        )
+        # Create an invoice with a specific line item description
+        invoice = await InvoiceService.create_invoice(
+            db_session,
+            client_id=client.id,
+            items=[{"description": "Custom Widget Development", "quantity": 1, "unit_price": 500}],
+        )
+
+        # Search for the line item
+        results = await SearchService.search(db_session, "Widget")
+        assert "line_items" in results
+        assert len(results["line_items"]) >= 1
+        assert any("Widget" in item["description"] for item in results["line_items"])
+
+        # Verify line item has invoice context
+        matching_item = next(
+            item for item in results["line_items"] if "Widget" in item["description"]
+        )
+        assert matching_item["invoice_id"] == invoice.id
+        assert matching_item["invoice_number"] == invoice.invoice_number
+        assert matching_item["client_name"] == "Line Item Test Client"
+
+    @pytest.mark.asyncio
+    async def test_search_only_line_items(self, db_session, business_profile):
+        """Search can be limited to line items only."""
+        # Create a client
+        client = await ClientService.create_client(
+            db_session, name="Line Items Only Client"
+        )
+        # Create an invoice with a line item
+        await InvoiceService.create_invoice(
+            db_session,
+            client_id=client.id,
+            items=[{"description": "Unique Search Term XYZ", "quantity": 1, "unit_price": 100}],
+        )
+
+        # Search with only line_items
+        results = await SearchService.search(
+            db_session, "XYZ", search_invoices=False, search_clients=False, search_line_items=True
+        )
+        assert results["invoices"] == []
+        assert results["clients"] == []
+        assert len(results["line_items"]) >= 1
+
+    @pytest.mark.asyncio
+    async def test_search_excludes_line_items(self, db_session, business_profile):
+        """Search can exclude line items."""
+        # Create a client
+        client = await ClientService.create_client(
+            db_session, name="Exclude Line Items Client"
+        )
+        # Create an invoice with a line item
+        await InvoiceService.create_invoice(
+            db_session,
+            client_id=client.id,
+            items=[{"description": "Excluded Item ABC", "quantity": 1, "unit_price": 100}],
+        )
+
+        # Search without line_items
+        results = await SearchService.search(
+            db_session, "ABC", search_invoices=True, search_clients=True, search_line_items=False
+        )
+        assert results["line_items"] == []
 
 
 class TestClientTaxSettings:

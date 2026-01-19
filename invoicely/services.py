@@ -1470,16 +1470,16 @@ class SearchService:
             force: If True, always rebuild even if FTS tables appear populated
 
         Returns:
-            Dict with counts of indexed invoices and clients
+            Dict with counts of indexed invoices, clients, and line items
         """
         from sqlalchemy import text
 
-        result = {"invoices_indexed": 0, "clients_indexed": 0, "skipped": False, "rebuilt": False}
+        result = {"invoices_indexed": 0, "clients_indexed": 0, "line_items_indexed": 0, "skipped": False, "rebuilt": False}
 
         try:
             # Check if FTS tables exist
             tables_check = await session.execute(
-                text("SELECT name FROM sqlite_master WHERE type='table' AND name IN ('invoices_fts', 'clients_fts')")
+                text("SELECT name FROM sqlite_master WHERE type='table' AND name IN ('invoices_fts', 'clients_fts', 'invoice_items_fts')")
             )
             existing_tables = {row[0] for row in tables_check.fetchall()}
 
@@ -1491,9 +1491,12 @@ class SearchService:
             # Get counts from main tables
             invoices_count = (await session.execute(text("SELECT COUNT(*) FROM invoices"))).scalar()
             clients_count = (await session.execute(text("SELECT COUNT(*) FROM clients"))).scalar()
+            line_items_count = 0
+            if "invoice_items_fts" in existing_tables:
+                line_items_count = (await session.execute(text("SELECT COUNT(*) FROM invoice_items"))).scalar()
 
             # If no data to index, skip
-            if invoices_count == 0 and clients_count == 0:
+            if invoices_count == 0 and clients_count == 0 and line_items_count == 0:
                 result["skipped"] = True
                 result["reason"] = "No data to index"
                 return result
@@ -1509,6 +1512,11 @@ class SearchService:
                 await session.execute(text("INSERT INTO clients_fts(clients_fts) VALUES('rebuild')"))
                 result["clients_indexed"] = clients_count
 
+            # Reindex line items if table exists and has data
+            if "invoice_items_fts" in existing_tables and line_items_count > 0:
+                await session.execute(text("INSERT INTO invoice_items_fts(invoice_items_fts) VALUES('rebuild')"))
+                result["line_items_indexed"] = line_items_count
+
             await session.commit()
             result["rebuilt"] = True
             return result
@@ -1523,24 +1531,26 @@ class SearchService:
         query: str,
         search_invoices: bool = True,
         search_clients: bool = True,
+        search_line_items: bool = True,
         limit: int = 20,
     ) -> dict:
         """
-        Search across invoices and clients using FTS5.
+        Search across invoices, clients, and line items using FTS5.
 
         Args:
             session: Database session
             query: Search query (supports FTS5 syntax)
             search_invoices: Include invoices in search
             search_clients: Include clients in search
+            search_line_items: Include invoice line items in search
             limit: Maximum results per category
 
         Returns:
-            Dict with 'invoices' and 'clients' lists
+            Dict with 'invoices', 'clients', and 'line_items' lists
         """
         from sqlalchemy import text
 
-        results = {"invoices": [], "clients": []}
+        results = {"invoices": [], "clients": [], "line_items": []}
 
         # Validate and sanitize limit
         limit = max(1, min(limit, 100))  # Clamp between 1 and 100
@@ -1635,6 +1645,47 @@ class SearchService:
                     session, query, limit
                 )
 
+        if search_line_items:
+            try:
+                # Search line items using FTS5, joining to get invoice context
+                line_items_sql = text("""
+                    SELECT ii.id, ii.invoice_id, ii.description, ii.quantity, ii.unit_type,
+                           ii.unit_price, ii.total,
+                           i.invoice_number, i.client_name, i.client_business,
+                           i.status, i.currency_code, i.issue_date, i.deleted_at,
+                           snippet(invoice_items_fts, 0, '<mark>', '</mark>', '...', 32) as match_snippet
+                    FROM invoice_items_fts
+                    JOIN invoice_items ii ON invoice_items_fts.rowid = ii.id
+                    JOIN invoices i ON ii.invoice_id = i.id
+                    WHERE invoice_items_fts MATCH :query
+                    ORDER BY rank
+                    LIMIT :limit
+                """)
+                result = await session.execute(line_items_sql, {"query": fts_query, "limit": limit})
+                for row in result.fetchall():
+                    results["line_items"].append({
+                        "id": row.id,
+                        "invoice_id": row.invoice_id,
+                        "description": row.description,
+                        "quantity": row.quantity,
+                        "unit_type": row.unit_type,
+                        "unit_price": str(row.unit_price),
+                        "total": str(row.total),
+                        "invoice_number": row.invoice_number,
+                        "client_name": row.client_name,
+                        "client_business": row.client_business,
+                        "invoice_status": row.status,
+                        "currency_code": row.currency_code,
+                        "issue_date": row.issue_date.isoformat() if row.issue_date else None,
+                        "is_deleted": row.deleted_at is not None,
+                        "match_snippet": row.match_snippet,
+                    })
+            except Exception as e:
+                # FTS tables might not exist yet, fall back to LIKE search
+                results["line_items"] = await SearchService._fallback_line_items_search(
+                    session, query, limit
+                )
+
         return results
 
     @staticmethod
@@ -1707,4 +1758,41 @@ class SearchService:
                 "is_deleted": c.deleted_at is not None,
             }
             for c in clients
+        ]
+
+    @staticmethod
+    async def _fallback_line_items_search(
+        session: AsyncSession, query: str, limit: int
+    ) -> list:
+        """Fallback LIKE-based search for line items when FTS5 is unavailable."""
+        from sqlalchemy import select
+        from sqlalchemy.orm import selectinload
+
+        search_pattern = f"%{query}%"
+        stmt = (
+            select(InvoiceItem)
+            .where(InvoiceItem.description.ilike(search_pattern))
+            .options(selectinload(InvoiceItem.invoice))
+            .limit(limit)
+        )
+        result = await session.execute(stmt)
+        items = result.scalars().all()
+        return [
+            {
+                "id": item.id,
+                "invoice_id": item.invoice_id,
+                "description": item.description,
+                "quantity": item.quantity,
+                "unit_type": item.unit_type,
+                "unit_price": str(item.unit_price),
+                "total": str(item.total),
+                "invoice_number": item.invoice.invoice_number if item.invoice else None,
+                "client_name": item.invoice.client_name if item.invoice else None,
+                "client_business": item.invoice.client_business if item.invoice else None,
+                "invoice_status": item.invoice.status if item.invoice else None,
+                "currency_code": item.invoice.currency_code if item.invoice else None,
+                "issue_date": item.invoice.issue_date.isoformat() if item.invoice and item.invoice.issue_date else None,
+                "is_deleted": item.invoice.deleted_at is not None if item.invoice else False,
+            }
+            for item in items
         ]
