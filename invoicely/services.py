@@ -1761,6 +1761,25 @@ class SearchService:
 
         if search_line_items:
             try:
+                # Debug: Check what's in FTS vs invoice_items
+                fts_check = await session.execute(text("SELECT rowid, description FROM invoice_items_fts"))
+                fts_rows = fts_check.fetchall()
+                items_check = await session.execute(text("SELECT id, invoice_id, description FROM invoice_items"))
+                items_rows = items_check.fetchall()
+                print(f"LINE_ITEMS_DEBUG: FTS has {len(fts_rows)} rows, invoice_items has {len(items_rows)} rows", flush=True)
+                for fr in fts_rows:
+                    print(f"  FTS rowid={fr[0]}: {fr[1][:60] if fr[1] else 'NULL'}", flush=True)
+                for ir in items_rows:
+                    print(f"  invoice_items id={ir[0]}, invoice_id={ir[1]}: {ir[2][:60] if ir[2] else 'NULL'}", flush=True)
+
+                # Debug: Test MATCH directly
+                match_check = await session.execute(
+                    text("SELECT rowid FROM invoice_items_fts WHERE invoice_items_fts MATCH :q"),
+                    {"q": fts_query}
+                )
+                match_rows = match_check.fetchall()
+                print(f"LINE_ITEMS_DEBUG: MATCH '{fts_query}' found rowids: {[r[0] for r in match_rows]}", flush=True)
+
                 # Search line items using FTS5, joining to get invoice context
                 line_items_sql = text("""
                     SELECT ii.id, ii.invoice_id, ii.description, ii.quantity, ii.unit_type,
