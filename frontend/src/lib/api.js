@@ -227,6 +227,13 @@ export const emailApi = {
   testSmtp: () => post('/settings/smtp/test'),
 
   sendInvoice: (invoiceId, data = {}) => post(`/invoices/${invoiceId}/send-email`, data),
+
+  // Email templates
+  getTemplates: () => get('/settings/email-templates'),
+
+  updateTemplates: (data) => put('/settings/email-templates', data),
+
+  previewEmail: (invoiceId, data = {}) => post(`/invoices/${invoiceId}/email-preview`, data),
 };
 
 // ===== Search =====

@@ -2,6 +2,8 @@
 
 import asyncio
 import tempfile
+from datetime import date, timedelta
+from decimal import Decimal
 from pathlib import Path
 
 import pytest
@@ -90,3 +92,49 @@ async def test_client(db_session: AsyncSession) -> Client:
     await db_session.commit()
     await db_session.refresh(client)
     return client
+
+
+@pytest.fixture
+async def invoice_with_client(db_session: AsyncSession, test_client: Client) -> Invoice:
+    """Create a test invoice with client data for email preview testing."""
+    invoice = Invoice(
+        invoice_number="20250120-1",
+        document_type="invoice",
+        client_id=test_client.id,
+        client_name=test_client.name,
+        client_business=test_client.business_name,
+        client_email=test_client.email,
+        issue_date=date.today(),
+        due_date=date.today() + timedelta(days=30),
+        subtotal=Decimal("100.00"),
+        total=Decimal("100.00"),
+        currency_code="USD",
+        status="draft",
+    )
+    db_session.add(invoice)
+    await db_session.commit()
+    await db_session.refresh(invoice)
+    return invoice
+
+
+@pytest.fixture
+async def quote_with_client(db_session: AsyncSession, test_client: Client) -> Invoice:
+    """Create a test quote with client data for email preview testing."""
+    quote = Invoice(
+        invoice_number="Q-20250120-1",
+        document_type="quote",
+        client_id=test_client.id,
+        client_name=test_client.name,
+        client_business=test_client.business_name,
+        client_email=test_client.email,
+        issue_date=date.today(),
+        due_date=date.today() + timedelta(days=30),
+        subtotal=Decimal("250.00"),
+        total=Decimal("250.00"),
+        currency_code="USD",
+        status="draft",
+    )
+    db_session.add(quote)
+    await db_session.commit()
+    await db_session.refresh(quote)
+    return quote

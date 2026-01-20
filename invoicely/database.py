@@ -113,6 +113,9 @@ class BusinessProfile(Base):
     smtp_from_email: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     smtp_from_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     smtp_use_tls: Mapped[int] = mapped_column(Integer, default=1)
+    # Email template settings (optional - defaults used if not set)
+    email_subject_template: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    email_body_template: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow

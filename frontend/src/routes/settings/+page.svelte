@@ -1064,6 +1064,14 @@
               {/if}
             </button>
           </div>
+
+          <div class="template-link">
+            <a href="/settings/email-templates" class="btn btn-ghost">
+              <Icon name="pencil" size="sm" />
+              Configure Email Templates
+            </a>
+            <p class="form-hint">Customize the default subject and body for invoice emails</p>
+          </div>
         {/if}
       </CollapsibleSection>
 
@@ -2105,5 +2113,16 @@
 
   @keyframes spin {
     to { transform: rotate(360deg); }
+  }
+
+  /* Email Template Link */
+  .template-link {
+    margin-top: var(--space-6);
+    padding-top: var(--space-4);
+    border-top: 1px solid var(--color-border-light);
+  }
+
+  .template-link .form-hint {
+    margin-top: var(--space-2);
   }
 </style>

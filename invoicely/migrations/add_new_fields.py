@@ -53,6 +53,9 @@ def migrate(db_path: Path = DEFAULT_DB_PATH):
         ("business_profile", "smtp_from_email", "VARCHAR(255)"),
         ("business_profile", "smtp_from_name", "VARCHAR(255)"),
         ("business_profile", "smtp_use_tls", "INTEGER DEFAULT 1"),
+        # Email template settings
+        ("business_profile", "email_subject_template", "VARCHAR(500)"),
+        ("business_profile", "email_body_template", "TEXT"),
         # Invoice fields
         ("invoices", "document_type", "VARCHAR(20) DEFAULT 'invoice'"),
         ("invoices", "client_reference", "VARCHAR(100)"),

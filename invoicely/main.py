@@ -27,7 +27,7 @@ from invoicely.config import get_settings
 from invoicely.rate_limit import limiter
 from invoicely.database import init_db, close_db
 from starlette.routing import Route
-from invoicely.api import profile, clients, invoices, trash, auth, mcp, backup, recurring, email, search, analytics
+from invoicely.api import profile, clients, invoices, trash, auth, mcp, backup, recurring, email, email_templates, search, analytics
 from invoicely.api.auth import get_session_user_id, SESSION_COOKIE_NAME, cleanup_expired_sessions
 
 settings = get_settings()
@@ -397,6 +397,7 @@ app.include_router(trash.router)
 app.include_router(backup.router)
 app.include_router(recurring.router)
 app.include_router(email.router)
+app.include_router(email_templates.router)
 app.include_router(search.router)
 app.include_router(analytics.router)
 # Note: mcp.router is NOT included here - MCP routes are mounted separately below

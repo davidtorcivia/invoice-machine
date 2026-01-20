@@ -83,6 +83,77 @@ def _sanitize_header(value: str, field_name: str = "Header") -> str:
     return sanitized
 
 
+# Default email templates
+DEFAULT_SUBJECT_TEMPLATE = "{document_type} {invoice_number}"
+DEFAULT_BODY_TEMPLATE = """Dear {client_name},
+
+Please find attached {document_type_lower} {invoice_number}.
+
+Amount: {total}
+Due Date: {due_date}
+
+Thank you for your business!
+
+Best regards,
+{your_name}"""
+
+
+def expand_template(template: str, invoice: "Invoice", profile: "BusinessProfile") -> str:
+    """
+    Expand template placeholders with invoice and profile data.
+
+    Supported placeholders:
+    - {invoice_number}, {quote_number} - Document number
+    - {document_type} - "Invoice" or "Quote"
+    - {document_type_lower} - "invoice" or "quote"
+    - {client_name} - Client contact name
+    - {client_business_name} - Client business name
+    - {client_email} - Client email
+    - {total}, {amount} - Formatted total amount
+    - {subtotal} - Formatted subtotal
+    - {due_date} - Formatted due date
+    - {issue_date} - Formatted issue date
+    - {your_name} - Business profile name
+    - {business_name} - Business name from profile
+
+    Args:
+        template: Template string with placeholders
+        invoice: Invoice object with data
+        profile: BusinessProfile object with data
+
+    Returns:
+        Template with placeholders replaced by actual values
+    """
+    doc_type = "Quote" if getattr(invoice, "document_type", "invoice") == "quote" else "Invoice"
+    total_formatted = format_currency(invoice.total, invoice.currency_code)
+    subtotal_formatted = format_currency(invoice.subtotal, invoice.currency_code)
+    due_date_str = invoice.due_date.strftime("%B %d, %Y") if invoice.due_date else "Upon receipt"
+    issue_date_str = invoice.issue_date.strftime("%B %d, %Y") if invoice.issue_date else ""
+
+    replacements = {
+        "{invoice_number}": invoice.invoice_number,
+        "{quote_number}": invoice.invoice_number,
+        "{document_type}": doc_type,
+        "{document_type_lower}": doc_type.lower(),
+        "{client_name}": invoice.client_name or "Client",
+        "{client_business_name}": invoice.client_business or invoice.client_name or "Client",
+        "{client_email}": invoice.client_email or "",
+        "{total}": total_formatted,
+        "{amount}": total_formatted,
+        "{subtotal}": subtotal_formatted,
+        "{due_date}": due_date_str,
+        "{issue_date}": issue_date_str,
+        "{your_name}": profile.name or profile.business_name or "Invoice Machine",
+        "{business_name}": profile.business_name or profile.name or "",
+    }
+
+    result = template
+    for placeholder, value in replacements.items():
+        result = result.replace(placeholder, value)
+
+    return result
+
+
 class EmailService:
     """Service for sending invoice emails via SMTP."""
 
@@ -225,31 +296,19 @@ class EmailService:
                 "error": "No recipient email. Provide recipient_email or set client email.",
             }
 
-        # Determine subject
-        doc_type = "Quote" if getattr(invoice, "document_type", "invoice") == "quote" else "Invoice"
-        email_subject = subject or f"{doc_type} {invoice.invoice_number}"
+        # Determine subject - use explicit override, profile template, or default
+        if subject:
+            email_subject = subject
+        else:
+            subject_template = self.profile.email_subject_template or DEFAULT_SUBJECT_TEMPLATE
+            email_subject = expand_template(subject_template, invoice, self.profile)
 
-        # Determine body
+        # Determine body - use explicit override, profile template, or default
         if body:
             email_body = body
         else:
-            total_formatted = format_currency(invoice.total, invoice.currency_code)
-            due_date_str = (
-                invoice.due_date.strftime("%B %d, %Y") if invoice.due_date else "Upon receipt"
-            )
-
-            email_body = f"""Dear {invoice.client_name or 'Client'},
-
-Please find attached {doc_type.lower()} {invoice.invoice_number}.
-
-Amount: {total_formatted}
-Due Date: {due_date_str}
-
-Thank you for your business!
-
-Best regards,
-{self.profile.name or self.profile.business_name or 'Invoice Machine'}
-"""
+            body_template = self.profile.email_body_template or DEFAULT_BODY_TEMPLATE
+            email_body = expand_template(body_template, invoice, self.profile)
 
         # Get PDF path
         if not invoice.pdf_path:
