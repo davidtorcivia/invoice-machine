@@ -148,6 +148,20 @@ class TestTemplateExpansion:
         result = expand_template(template, invoice_with_client, business_profile)
         assert result == "From: Test Business LLC"
 
+    @pytest.mark.asyncio
+    async def test_expand_line_items_with_items(self, business_profile, invoice_with_items):
+        """Line items placeholder expands to comma-separated descriptions."""
+        template = "For: {line_items}"
+        result = expand_template(template, invoice_with_items, business_profile)
+        assert result == "For: Website Development, Logo Design"
+
+    @pytest.mark.asyncio
+    async def test_expand_line_items_empty(self, business_profile, invoice_with_client):
+        """Line items placeholder defaults to 'services rendered' when no items."""
+        template = "For: {line_items}"
+        result = expand_template(template, invoice_with_client, business_profile)
+        assert result == "For: services rendered"
+
     # Edge cases
 
     @pytest.mark.asyncio
@@ -269,6 +283,17 @@ class TestTemplateExpansion:
         assert "20250120-1" in result
         assert "$100.00" in result
         assert "Test User" in result
+        assert "services rendered" in result  # Default when no line items
+
+    @pytest.mark.asyncio
+    async def test_default_body_template_expands_line_items(
+        self, business_profile, invoice_with_items
+    ):
+        """Default body template expands line items correctly."""
+        result = expand_template(
+            DEFAULT_BODY_TEMPLATE, invoice_with_items, business_profile
+        )
+        assert "Website Development, Logo Design" in result
 
 
 # ============================================================================
@@ -402,6 +427,7 @@ class TestEmailTemplatesEndpoints:
         assert "{client_name}" in placeholders
         assert "{total}" in placeholders
         assert "{due_date}" in placeholders
+        assert "{line_items}" in placeholders
 
     @pytest.mark.asyncio
     async def test_get_templates_requires_authentication(self):

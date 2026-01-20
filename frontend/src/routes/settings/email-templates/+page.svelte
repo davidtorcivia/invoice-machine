@@ -33,11 +33,12 @@
     loading = true;
     try {
       const data = await emailApi.getTemplates();
-      subjectTemplate = data.email_subject_template || '';
-      bodyTemplate = data.email_body_template || '';
       availablePlaceholders = data.available_placeholders || [];
       defaultSubject = data.default_subject || '{document_type} {invoice_number}';
       defaultBody = data.default_body || '';
+      // Use default as editable text if no saved template
+      subjectTemplate = data.email_subject_template ?? defaultSubject;
+      bodyTemplate = data.email_body_template ?? defaultBody;
     } catch (error) {
       toast.error('Failed to load email templates');
     } finally {
@@ -103,8 +104,8 @@
   }
 
   function resetToDefaults() {
-    subjectTemplate = '';
-    bodyTemplate = '';
+    subjectTemplate = defaultSubject;
+    bodyTemplate = defaultBody;
     schedulePreviewUpdate();
   }
 
@@ -152,9 +153,8 @@
               class="input"
               bind:value={subjectTemplate}
               on:input={schedulePreviewUpdate}
-              placeholder={defaultSubject}
             />
-            <p class="form-hint">Leave empty to use default: <code>{defaultSubject}</code></p>
+            <p class="form-hint">Use placeholders like <code>{'{document_type}'}</code> to insert dynamic content</p>
           </div>
 
           <div class="form-group">
@@ -164,10 +164,9 @@
               class="input textarea"
               bind:value={bodyTemplate}
               on:input={schedulePreviewUpdate}
-              placeholder={defaultBody}
               rows="12"
             ></textarea>
-            <p class="form-hint">Leave empty to use the default template</p>
+            <p class="form-hint">Customize the email body sent with invoices. Click placeholders below to insert them.</p>
           </div>
 
           <div class="form-actions">
@@ -231,6 +230,9 @@
 
               <dt><code>{'{business_name}'}</code></dt>
               <dd>Your business name from profile</dd>
+
+              <dt><code>{'{line_items}'}</code></dt>
+              <dd>Comma-separated list of line item descriptions</dd>
             </dl>
           </div>
         </div>

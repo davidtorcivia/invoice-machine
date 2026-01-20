@@ -29,6 +29,7 @@ AVAILABLE_PLACEHOLDERS = [
     "{issue_date}",
     "{your_name}",
     "{business_name}",
+    "{line_items}",
 ]
 
 

@@ -87,7 +87,7 @@ def _sanitize_header(value: str, field_name: str = "Header") -> str:
 DEFAULT_SUBJECT_TEMPLATE = "{document_type} {invoice_number}"
 DEFAULT_BODY_TEMPLATE = """Dear {client_name},
 
-Please find attached {document_type_lower} {invoice_number}.
+Please find attached {document_type_lower} {invoice_number} for {line_items}.
 
 Amount: {total}
 Due Date: {due_date}
@@ -115,6 +115,7 @@ def expand_template(template: str, invoice: "Invoice", profile: "BusinessProfile
     - {issue_date} - Formatted issue date
     - {your_name} - Business profile name
     - {business_name} - Business name from profile
+    - {line_items} - Comma-separated list of line item descriptions
 
     Args:
         template: Template string with placeholders
@@ -129,6 +130,17 @@ def expand_template(template: str, invoice: "Invoice", profile: "BusinessProfile
     subtotal_formatted = format_currency(invoice.subtotal, invoice.currency_code)
     due_date_str = invoice.due_date.strftime("%B %d, %Y") if invoice.due_date else "Upon receipt"
     issue_date_str = invoice.issue_date.strftime("%B %d, %Y") if invoice.issue_date else ""
+
+    # Format line items as comma-separated descriptions
+    # Handle cases where items relationship isn't loaded (lazy load may fail in async)
+    try:
+        items = invoice.items or []
+        if items:
+            line_items_text = ", ".join(item.description for item in items)
+        else:
+            line_items_text = "services rendered"
+    except Exception:
+        line_items_text = "services rendered"
 
     replacements = {
         "{invoice_number}": invoice.invoice_number,
@@ -145,6 +157,7 @@ def expand_template(template: str, invoice: "Invoice", profile: "BusinessProfile
         "{issue_date}": issue_date_str,
         "{your_name}": profile.name or profile.business_name or "Invoice Machine",
         "{business_name}": profile.business_name or profile.name or "",
+        "{line_items}": line_items_text,
     }
 
     result = template
