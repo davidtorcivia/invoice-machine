@@ -55,10 +55,19 @@
     if (window.innerWidth < 768) {
       sidebarOpen.set(false);
     }
-    if (type === 'invoice') {
-      goto(`/invoices/${id}`, { invalidateAll: true });
+    const targetPath = type === 'invoice' ? `/invoices/${id}` : `/clients/${id}`;
+    const currentPath = $page.url.pathname;
+
+    // If already on the same route pattern, use location.href for full reload
+    // This ensures the page data refreshes when navigating invoice-to-invoice
+    const sameRoutePattern =
+      (type === 'invoice' && currentPath.startsWith('/invoices/')) ||
+      (type === 'client' && currentPath.startsWith('/clients/'));
+
+    if (sameRoutePattern && currentPath !== targetPath) {
+      window.location.href = targetPath;
     } else {
-      goto(`/clients/${id}`, { invalidateAll: true });
+      goto(targetPath, { invalidateAll: true });
     }
   }
 
