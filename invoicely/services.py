@@ -1804,8 +1804,7 @@ class SearchService:
                     SELECT ii.id, ii.invoice_id, ii.description, ii.quantity, ii.unit_type,
                            ii.unit_price, ii.total,
                            i.invoice_number, i.client_name, i.client_business,
-                           i.status, i.currency_code, i.issue_date, i.deleted_at,
-                           snippet(invoice_items_fts, 0, '<mark>', '</mark>', '...', 32) as match_snippet
+                           i.status, i.currency_code, i.issue_date, i.deleted_at
                     FROM invoice_items_fts
                     JOIN invoice_items ii ON invoice_items_fts.rowid = ii.id
                     JOIN invoices i ON ii.invoice_id = i.id
@@ -1814,7 +1813,10 @@ class SearchService:
                     LIMIT :limit
                 """)
                 result = await session.execute(line_items_sql, {"query": fts_query, "limit": limit})
-                for row in result.fetchall():
+                rows = result.fetchall()
+                print(f"LINE_ITEMS_DEBUG: Main query returned {len(rows)} rows", flush=True)
+                for row in rows:
+                    print(f"LINE_ITEMS_DEBUG: Processing row: id={row.id}, desc={row.description[:30] if row.description else 'NULL'}", flush=True)
                     # issue_date may be string (from raw SQL) or datetime
                     issue_date = row.issue_date
                     if issue_date and hasattr(issue_date, 'isoformat'):
@@ -1834,8 +1836,8 @@ class SearchService:
                         "currency_code": row.currency_code,
                         "issue_date": issue_date,
                         "is_deleted": row.deleted_at is not None,
-                        "match_snippet": row.match_snippet,
                     })
+                    print(f"LINE_ITEMS_DEBUG: Added to results, now have {len(results['line_items'])} items", flush=True)
             except Exception as e:
                 # FTS tables might not exist yet or query error, fall back to LIKE search
                 print(f"FTS line_items search error, falling back to LIKE: {e}", flush=True)
