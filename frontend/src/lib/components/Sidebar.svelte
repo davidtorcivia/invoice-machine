@@ -132,7 +132,7 @@
         {#if searching}
           <div class="search-loading">Searching...</div>
         {:else if searchResults}
-          {#if searchResults.invoices?.length === 0 && searchResults.clients?.length === 0}
+          {#if searchResults.invoices?.length === 0 && searchResults.clients?.length === 0 && searchResults.line_items?.length === 0}
             <div class="search-empty">No results found</div>
           {:else}
             {#if searchResults.invoices?.length > 0}
@@ -166,6 +166,23 @@
                       {#if client.email}
                         <span class="search-result-subtitle">{client.email}</span>
                       {/if}
+                    </div>
+                  </button>
+                {/each}
+              </div>
+            {/if}
+            {#if searchResults.line_items?.length > 0}
+              <div class="search-group">
+                <div class="search-group-label">Line Items</div>
+                {#each searchResults.line_items as item}
+                  <button
+                    class="search-result"
+                    on:click={() => navigateToResult('invoice', item.invoice_id)}
+                  >
+                    <Icon name="invoice" size="sm" />
+                    <div class="search-result-info">
+                      <span class="search-result-title">{item.description}</span>
+                      <span class="search-result-subtitle">{item.invoice_number} - {item.client_name || item.client_business || 'No client'}</span>
                     </div>
                   </button>
                 {/each}
