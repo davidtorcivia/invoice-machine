@@ -35,6 +35,8 @@ class RecurringScheduleSchema(BaseModel):
     name: str
     frequency: str
     schedule_day: int
+    schedule_month: Optional[int] = None
+    quarter_month: int = 1
     currency_code: str
     payment_terms_days: int
     notes: Optional[str] = None
@@ -42,6 +44,12 @@ class RecurringScheduleSchema(BaseModel):
     tax_enabled: Optional[bool] = None
     tax_rate: Optional[str] = None
     tax_name: Optional[str] = None
+    show_payment_instructions: bool = True
+    selected_payment_methods: Optional[List[str]] = None
+    auto_email_enabled: bool = False
+    email_subject_template: Optional[str] = None
+    email_body_template: Optional[str] = None
+    use_default_notes: bool = True
     is_active: bool
     next_invoice_date: date
     last_invoice_id: Optional[int] = None
@@ -59,6 +67,8 @@ class RecurringScheduleCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=255)
     frequency: str = Field(..., pattern="^(daily|weekly|monthly|quarterly|yearly)$")
     schedule_day: int = Field(1, ge=0, le=31)
+    schedule_month: Optional[int] = Field(None, ge=1, le=12)
+    quarter_month: int = Field(1, ge=1, le=3)
     currency_code: str = Field("USD", max_length=3)
     payment_terms_days: int = Field(30, ge=0, le=365)
     notes: Optional[str] = Field(None, max_length=10000)
@@ -66,6 +76,12 @@ class RecurringScheduleCreate(BaseModel):
     tax_enabled: Optional[bool] = None
     tax_rate: Optional[Decimal] = Field(None, ge=0, le=100)
     tax_name: Optional[str] = Field(None, max_length=50)
+    show_payment_instructions: bool = True
+    selected_payment_methods: Optional[List[str]] = None
+    auto_email_enabled: bool = False
+    email_subject_template: Optional[str] = Field(None, max_length=500)
+    email_body_template: Optional[str] = Field(None, max_length=10000)
+    use_default_notes: bool = True
     next_invoice_date: Optional[date] = None
 
 
@@ -75,6 +91,8 @@ class RecurringScheduleUpdate(BaseModel):
     name: Optional[str] = Field(None, min_length=1, max_length=255)
     frequency: Optional[str] = Field(None, pattern="^(daily|weekly|monthly|quarterly|yearly)$")
     schedule_day: Optional[int] = Field(None, ge=0, le=31)
+    schedule_month: Optional[int] = Field(None, ge=1, le=12)
+    quarter_month: Optional[int] = Field(None, ge=1, le=3)
     currency_code: Optional[str] = Field(None, max_length=3)
     payment_terms_days: Optional[int] = Field(None, ge=0, le=365)
     notes: Optional[str] = Field(None, max_length=10000)
@@ -82,6 +100,12 @@ class RecurringScheduleUpdate(BaseModel):
     tax_enabled: Optional[bool] = None
     tax_rate: Optional[Decimal] = Field(None, ge=0, le=100)
     tax_name: Optional[str] = Field(None, max_length=50)
+    show_payment_instructions: Optional[bool] = None
+    selected_payment_methods: Optional[List[str]] = None
+    auto_email_enabled: Optional[bool] = None
+    email_subject_template: Optional[str] = Field(None, max_length=500)
+    email_body_template: Optional[str] = Field(None, max_length=10000)
+    use_default_notes: Optional[bool] = None
     is_active: Optional[bool] = None
     next_invoice_date: Optional[date] = None
 
@@ -97,6 +121,13 @@ def _schedule_to_dict(schedule: RecurringSchedule) -> dict:
         except (json.JSONDecodeError, TypeError):
             line_items = None
 
+    selected_payment_methods = None
+    if schedule.selected_payment_methods:
+        try:
+            selected_payment_methods = json.loads(schedule.selected_payment_methods)
+        except (json.JSONDecodeError, TypeError):
+            selected_payment_methods = None
+
     return {
         "id": schedule.id,
         "client_id": schedule.client_id,
@@ -105,6 +136,8 @@ def _schedule_to_dict(schedule: RecurringSchedule) -> dict:
         "name": schedule.name,
         "frequency": schedule.frequency,
         "schedule_day": schedule.schedule_day,
+        "schedule_month": schedule.schedule_month,
+        "quarter_month": schedule.quarter_month,
         "currency_code": schedule.currency_code,
         "payment_terms_days": schedule.payment_terms_days,
         "notes": schedule.notes,
@@ -112,6 +145,12 @@ def _schedule_to_dict(schedule: RecurringSchedule) -> dict:
         "tax_enabled": bool(schedule.tax_enabled) if schedule.tax_enabled is not None else None,
         "tax_rate": str(schedule.tax_rate) if schedule.tax_rate is not None else None,
         "tax_name": schedule.tax_name,
+        "show_payment_instructions": bool(schedule.show_payment_instructions),
+        "selected_payment_methods": selected_payment_methods,
+        "auto_email_enabled": bool(schedule.auto_email_enabled),
+        "email_subject_template": schedule.email_subject_template,
+        "email_body_template": schedule.email_body_template,
+        "use_default_notes": bool(schedule.use_default_notes),
         "is_active": bool(schedule.is_active),
         "next_invoice_date": schedule.next_invoice_date.isoformat(),
         "last_invoice_id": schedule.last_invoice_id,
@@ -155,6 +194,8 @@ async def create_schedule(
             name=data.name,
             frequency=data.frequency,
             schedule_day=data.schedule_day,
+            schedule_month=data.schedule_month,
+            quarter_month=data.quarter_month,
             currency_code=data.currency_code,
             payment_terms_days=data.payment_terms_days,
             notes=data.notes,
@@ -162,6 +203,12 @@ async def create_schedule(
             tax_enabled=int(data.tax_enabled) if data.tax_enabled is not None else None,
             tax_rate=data.tax_rate,
             tax_name=data.tax_name,
+            show_payment_instructions=data.show_payment_instructions,
+            selected_payment_methods=data.selected_payment_methods,
+            auto_email_enabled=data.auto_email_enabled,
+            email_subject_template=data.email_subject_template,
+            email_body_template=data.email_body_template,
+            use_default_notes=data.use_default_notes,
             next_invoice_date=data.next_invoice_date,
         )
         return _schedule_to_dict(schedule)
@@ -192,6 +239,8 @@ async def update_schedule(
     session: AsyncSession = Depends(get_session),
 ) -> dict:
     """Update a recurring schedule."""
+    import json
+
     # Build update kwargs
     update_data = data.model_dump(exclude_unset=True)
 
@@ -209,6 +258,15 @@ async def update_schedule(
     # Convert is_active to int
     if "is_active" in update_data and update_data["is_active"] is not None:
         update_data["is_active"] = int(update_data["is_active"])
+
+    # Convert boolean fields to int
+    for bool_field in ["show_payment_instructions", "auto_email_enabled", "use_default_notes"]:
+        if bool_field in update_data and update_data[bool_field] is not None:
+            update_data[bool_field] = int(update_data[bool_field])
+
+    # Convert selected_payment_methods list to JSON string
+    if "selected_payment_methods" in update_data and update_data["selected_payment_methods"] is not None:
+        update_data["selected_payment_methods"] = json.dumps(update_data["selected_payment_methods"])
 
     schedule = await RecurringService.update_schedule(session, schedule_id, **update_data)
     if not schedule:

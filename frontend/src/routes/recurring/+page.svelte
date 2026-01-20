@@ -1,6 +1,6 @@
 <script>
   import { onMount } from 'svelte';
-  import { recurringApi, clientsApi } from '$lib/api';
+  import { recurringApi, clientsApi, profileApi } from '$lib/api';
   import { toast } from '$lib/stores';
   import { currencies } from '$lib/data/currencies';
   import Header from '$lib/components/Header.svelte';
@@ -9,6 +9,7 @@
 
   let schedules = [];
   let clients = [];
+  let profile = null;
   let loading = true;
   let showModal = false;
   let editingSchedule = null;
@@ -19,11 +20,26 @@
     name: '',
     frequency: 'monthly',
     schedule_day: 1,
+    schedule_month: 1,
+    quarter_month: 1,
     currency_code: 'USD',
     payment_terms_days: 30,
     notes: '',
     line_items: [],
-    is_active: true
+    is_active: true,
+    // Tax settings
+    tax_enabled: null,
+    tax_rate: '',
+    tax_name: 'Tax',
+    // Payment method selection
+    show_payment_instructions: true,
+    selected_payment_methods: [],
+    // Auto-email settings
+    auto_email_enabled: false,
+    email_subject_template: '',
+    email_body_template: '',
+    // Notes toggle
+    use_default_notes: true
   };
 
   // Line item being edited
@@ -37,8 +53,21 @@
   // Trigger modal
   let triggering = null;
 
+  // Computed: Available payment methods from profile
+  $: availablePaymentMethods = (() => {
+    if (!profile?.payment_methods) return [];
+    try {
+      return JSON.parse(profile.payment_methods);
+    } catch {
+      return [];
+    }
+  })();
+
+  // Computed: Default notes from profile
+  $: defaultNotesText = profile?.default_notes || '';
+
   onMount(async () => {
-    await Promise.all([loadSchedules(), loadClients()]);
+    await Promise.all([loadSchedules(), loadClients(), loadProfile()]);
   });
 
   async function loadSchedules() {
@@ -60,6 +89,14 @@
     }
   }
 
+  async function loadProfile() {
+    try {
+      profile = await profileApi.get();
+    } catch (error) {
+      console.error('Failed to load profile:', error);
+    }
+  }
+
   function openCreateModal() {
     editingSchedule = null;
     formData = {
@@ -67,11 +104,22 @@
       name: '',
       frequency: 'monthly',
       schedule_day: 1,
+      schedule_month: 1,
+      quarter_month: 1,
       currency_code: 'USD',
       payment_terms_days: 30,
       notes: '',
       line_items: [],
-      is_active: true
+      is_active: true,
+      tax_enabled: null,
+      tax_rate: '',
+      tax_name: 'Tax',
+      show_payment_instructions: true,
+      selected_payment_methods: [],
+      auto_email_enabled: false,
+      email_subject_template: '',
+      email_body_template: '',
+      use_default_notes: true
     };
     newItem = { description: '', quantity: 1, unit_price: '', unit_type: 'qty' };
     showModal = true;
@@ -84,11 +132,22 @@
       name: schedule.name,
       frequency: schedule.frequency,
       schedule_day: schedule.schedule_day,
+      schedule_month: schedule.schedule_month || 1,
+      quarter_month: schedule.quarter_month || 1,
       currency_code: schedule.currency_code,
       payment_terms_days: schedule.payment_terms_days,
       notes: schedule.notes || '',
       line_items: schedule.line_items ? [...schedule.line_items] : [],
-      is_active: schedule.is_active
+      is_active: schedule.is_active,
+      tax_enabled: schedule.tax_enabled,
+      tax_rate: schedule.tax_rate || '',
+      tax_name: schedule.tax_name || 'Tax',
+      show_payment_instructions: schedule.show_payment_instructions !== false,
+      selected_payment_methods: schedule.selected_payment_methods || [],
+      auto_email_enabled: schedule.auto_email_enabled || false,
+      email_subject_template: schedule.email_subject_template || '',
+      email_body_template: schedule.email_body_template || '',
+      use_default_notes: schedule.use_default_notes !== false
     };
     newItem = { description: '', quantity: 1, unit_price: '', unit_type: 'qty' };
     showModal = true;
@@ -127,7 +186,13 @@
         ...formData,
         client_id: parseInt(formData.client_id),
         schedule_day: parseInt(formData.schedule_day),
-        payment_terms_days: parseInt(formData.payment_terms_days)
+        schedule_month: formData.frequency === 'yearly' ? parseInt(formData.schedule_month) : null,
+        quarter_month: formData.frequency === 'quarterly' ? parseInt(formData.quarter_month) : 1,
+        payment_terms_days: parseInt(formData.payment_terms_days),
+        // Handle tax_rate conversion
+        tax_rate: formData.tax_enabled && formData.tax_rate ? parseFloat(formData.tax_rate) : null,
+        // If using default notes, send empty notes so backend will use profile default
+        notes: formData.use_default_notes ? '' : formData.notes
       };
 
       if (editingSchedule) {
@@ -351,32 +416,100 @@
           </div>
         </div>
 
-        <div class="form-row">
+        <div class="form-group">
+          <label for="frequency" class="label">Frequency</label>
+          <select id="frequency" class="input" bind:value={formData.frequency}>
+            <option value="daily">Daily</option>
+            <option value="weekly">Weekly</option>
+            <option value="monthly">Monthly</option>
+            <option value="quarterly">Quarterly</option>
+            <option value="yearly">Yearly</option>
+          </select>
+        </div>
+
+        <!-- Schedule timing based on frequency -->
+        {#if formData.frequency === 'daily'}
+          <p class="form-hint">Invoice will generate every day.</p>
+        {:else if formData.frequency === 'weekly'}
           <div class="form-group">
-            <label for="frequency" class="label">Frequency</label>
-            <select id="frequency" class="input" bind:value={formData.frequency}>
-              <option value="daily">Daily</option>
-              <option value="weekly">Weekly</option>
-              <option value="monthly">Monthly</option>
-              <option value="quarterly">Quarterly</option>
-              <option value="yearly">Yearly</option>
+            <label for="schedule_day" class="label">Day of Week</label>
+            <select id="schedule_day" class="input" bind:value={formData.schedule_day}>
+              <option value={0}>Monday</option>
+              <option value={1}>Tuesday</option>
+              <option value={2}>Wednesday</option>
+              <option value={3}>Thursday</option>
+              <option value={4}>Friday</option>
+              <option value={5}>Saturday</option>
+              <option value={6}>Sunday</option>
             </select>
           </div>
-
+        {:else if formData.frequency === 'monthly'}
           <div class="form-group">
-            <label for="schedule_day" class="label">
-              {formData.frequency === 'weekly' ? 'Day of Week (0=Mon)' : 'Day of Month'}
-            </label>
+            <label for="schedule_day" class="label">Day of Month</label>
             <input
               id="schedule_day"
               type="number"
               class="input"
-              min={formData.frequency === 'weekly' ? 0 : 1}
-              max={formData.frequency === 'weekly' ? 6 : 31}
+              min="1"
+              max="31"
               bind:value={formData.schedule_day}
             />
+            <p class="form-hint">If month has fewer days, last day will be used.</p>
           </div>
-        </div>
+        {:else if formData.frequency === 'quarterly'}
+          <div class="form-row">
+            <div class="form-group">
+              <label for="quarter_month" class="label">Month in Quarter</label>
+              <select id="quarter_month" class="input" bind:value={formData.quarter_month}>
+                <option value={1}>1st month (Jan, Apr, Jul, Oct)</option>
+                <option value={2}>2nd month (Feb, May, Aug, Nov)</option>
+                <option value={3}>3rd month (Mar, Jun, Sep, Dec)</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="schedule_day" class="label">Day of Month</label>
+              <input
+                id="schedule_day"
+                type="number"
+                class="input"
+                min="1"
+                max="31"
+                bind:value={formData.schedule_day}
+              />
+            </div>
+          </div>
+        {:else if formData.frequency === 'yearly'}
+          <div class="form-row">
+            <div class="form-group">
+              <label for="schedule_month" class="label">Month</label>
+              <select id="schedule_month" class="input" bind:value={formData.schedule_month}>
+                <option value={1}>January</option>
+                <option value={2}>February</option>
+                <option value={3}>March</option>
+                <option value={4}>April</option>
+                <option value={5}>May</option>
+                <option value={6}>June</option>
+                <option value={7}>July</option>
+                <option value={8}>August</option>
+                <option value={9}>September</option>
+                <option value={10}>October</option>
+                <option value={11}>November</option>
+                <option value={12}>December</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="schedule_day" class="label">Day</label>
+              <input
+                id="schedule_day"
+                type="number"
+                class="input"
+                min="1"
+                max="31"
+                bind:value={formData.schedule_day}
+              />
+            </div>
+          </div>
+        {/if}
 
         <div class="form-row">
           <div class="form-group">
@@ -417,7 +550,7 @@
                 <div class="line-item-info">
                   <span class="line-item-desc">{item.description}</span>
                   <span class="line-item-details">
-                    {item.quantity} x ${item.unit_price}
+                    {item.quantity} {item.unit_type === 'hours' ? 'hrs' : 'x'} ${item.unit_price}{item.unit_type === 'hours' ? '/hr' : ''}
                   </span>
                 </div>
                 <button class="btn btn-ghost btn-icon btn-sm" on:click={() => removeLineItem(index)}>
@@ -435,17 +568,22 @@
             placeholder="Description"
             bind:value={newItem.description}
           />
+          <select class="input input-sm" bind:value={newItem.unit_type}>
+            <option value="qty">Qty</option>
+            <option value="hours">Hours</option>
+          </select>
           <input
             type="number"
             class="input input-sm"
-            placeholder="Qty"
+            placeholder={newItem.unit_type === 'hours' ? 'Hours' : 'Qty'}
             min="1"
+            step={newItem.unit_type === 'hours' ? '0.5' : '1'}
             bind:value={newItem.quantity}
           />
           <input
             type="number"
             class="input input-sm"
-            placeholder="Price"
+            placeholder={newItem.unit_type === 'hours' ? 'Rate' : 'Price'}
             step="0.01"
             bind:value={newItem.unit_price}
           />
@@ -454,16 +592,148 @@
           </button>
         </div>
 
-        <div class="form-group">
-          <label for="notes" class="label">Notes</label>
+        <!-- Tax Settings Section -->
+        <div class="section-divider">
+          <span>Tax Settings</span>
+        </div>
+
+        <label class="checkbox-label">
+          <input type="checkbox" bind:checked={formData.tax_enabled} />
+          <span>Apply Tax</span>
+        </label>
+
+        {#if formData.tax_enabled}
+          <div class="form-row tax-fields">
+            <div class="form-group">
+              <label for="tax-rate" class="label">Tax Rate (%)</label>
+              <input
+                id="tax-rate"
+                type="number"
+                class="input"
+                step="0.01"
+                min="0"
+                max="100"
+                placeholder="e.g., 8.5"
+                bind:value={formData.tax_rate}
+              />
+            </div>
+            <div class="form-group">
+              <label for="tax-name" class="label">Tax Name</label>
+              <input
+                id="tax-name"
+                type="text"
+                class="input"
+                placeholder="Tax, VAT, GST, etc."
+                bind:value={formData.tax_name}
+              />
+            </div>
+          </div>
+        {:else}
+          <p class="form-hint">Leave unchecked to use client or global default tax settings.</p>
+        {/if}
+
+        <!-- Payment Methods Section -->
+        <div class="section-divider">
+          <span>Payment Instructions</span>
+        </div>
+
+        {#if availablePaymentMethods.length > 0}
+          <p class="form-hint">Select which payment methods to show on generated invoices.</p>
+          <div class="payment-methods-list">
+            {#each availablePaymentMethods as method}
+              <label class="checkbox-label payment-method-option">
+                <input
+                  type="checkbox"
+                  checked={formData.selected_payment_methods.includes(method.id)}
+                  on:change={(e) => {
+                    if (e.target.checked) {
+                      formData.selected_payment_methods = [...formData.selected_payment_methods, method.id];
+                    } else {
+                      formData.selected_payment_methods = formData.selected_payment_methods.filter(id => id !== method.id);
+                    }
+                  }}
+                />
+                <span>{method.name}</span>
+              </label>
+            {/each}
+          </div>
+        {:else}
+          <label class="checkbox-label">
+            <input type="checkbox" bind:checked={formData.show_payment_instructions} />
+            <span>Include Payment Instructions</span>
+          </label>
+          <p class="form-hint">Configure payment methods in Settings to select specific ones.</p>
+        {/if}
+
+        <!-- Notes Section -->
+        <div class="section-divider">
+          <span>Notes</span>
+        </div>
+
+        {#if formData.use_default_notes && defaultNotesText}
+          <div class="default-notes-display">
+            <div class="default-notes-header">
+              <span class="default-notes-label">Using default notes from Settings</span>
+              <button type="button" class="btn btn-ghost btn-sm" on:click={() => { formData.use_default_notes = false; }}>
+                Customize
+              </button>
+            </div>
+            <div class="default-notes-content">{defaultNotesText}</div>
+          </div>
+        {:else}
           <textarea
             id="notes"
             class="textarea"
             rows="2"
-            placeholder="Optional notes for invoices"
+            placeholder="Payment terms, thank you message, etc."
             bind:value={formData.notes}
           ></textarea>
+          {#if defaultNotesText}
+            <button type="button" class="btn btn-ghost btn-sm mt-2" on:click={() => { formData.use_default_notes = true; formData.notes = ''; }}>
+              Use default notes
+            </button>
+          {/if}
+        {/if}
+
+        <!-- Auto-Email Section -->
+        <div class="section-divider">
+          <span>Automatic Email</span>
         </div>
+
+        {#if profile?.smtp_enabled}
+          <label class="checkbox-label">
+            <input type="checkbox" bind:checked={formData.auto_email_enabled} />
+            <span>Automatically email invoice when generated</span>
+          </label>
+
+          {#if formData.auto_email_enabled}
+            <p class="form-hint">Custom email templates (leave blank to use defaults from Settings):</p>
+            <div class="form-group">
+              <label for="email-subject" class="label">Subject (optional)</label>
+              <input
+                id="email-subject"
+                type="text"
+                class="input"
+                placeholder="e.g., Invoice {invoice_number} from {business_name}"
+                bind:value={formData.email_subject_template}
+              />
+            </div>
+            <div class="form-group">
+              <label for="email-body" class="label">Body (optional)</label>
+              <textarea
+                id="email-body"
+                class="textarea"
+                rows="3"
+                placeholder="Custom email message..."
+                bind:value={formData.email_body_template}
+              ></textarea>
+            </div>
+          {/if}
+        {:else}
+          <p class="form-hint">
+            Configure SMTP in <a href="/settings" class="link">Settings</a> to enable automatic invoice emailing.
+          </p>
+        {/if}
       </div>
 
       <div class="modal-footer">
@@ -532,7 +802,7 @@
   .empty-state {
     text-align: center;
     padding: var(--space-10);
-    background: var(--color-surface);
+    background: var(--color-bg-elevated);
     border: 1px solid var(--color-border);
     border-radius: var(--radius-lg);
   }
@@ -559,7 +829,7 @@
   }
 
   .schedule-card {
-    background: var(--color-surface);
+    background: var(--color-bg-elevated);
     border: 1px solid var(--color-border);
     border-radius: var(--radius-lg);
     padding: var(--space-5);
@@ -645,10 +915,10 @@
   }
 
   .modal {
-    background: var(--color-surface);
+    background: var(--color-bg-elevated);
     border-radius: var(--radius-xl);
     width: 100%;
-    max-width: 560px;
+    max-width: 600px;
     max-height: 90vh;
     overflow: hidden;
     display: flex;
@@ -748,8 +1018,90 @@
   }
 
   .add-item-form .input-sm {
-    width: 80px;
+    width: 70px;
     flex: none;
+  }
+
+  /* Form hint text */
+  .form-hint {
+    font-size: 0.8125rem;
+    color: var(--color-text-muted);
+    margin: var(--space-2) 0;
+  }
+
+  .form-hint a {
+    color: var(--color-primary);
+    text-decoration: none;
+  }
+
+  .form-hint a:hover {
+    text-decoration: underline;
+  }
+
+  /* Checkbox label */
+  .checkbox-label {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    cursor: pointer;
+    font-size: 0.9375rem;
+    margin-bottom: var(--space-2);
+  }
+
+  .checkbox-label input[type="checkbox"] {
+    width: 18px;
+    height: 18px;
+    accent-color: var(--color-primary);
+    cursor: pointer;
+  }
+
+  /* Tax fields row */
+  .tax-fields {
+    margin-top: var(--space-3);
+  }
+
+  /* Payment methods list */
+  .payment-methods-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    margin-top: var(--space-2);
+  }
+
+  .payment-method-option {
+    padding: var(--space-2) var(--space-3);
+    background: var(--color-bg-sunken);
+    border-radius: var(--radius-md);
+  }
+
+  /* Default notes display */
+  .default-notes-display {
+    background: var(--color-bg-sunken);
+    border-radius: var(--radius-md);
+    padding: var(--space-3);
+  }
+
+  .default-notes-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: var(--space-2);
+  }
+
+  .default-notes-label {
+    font-size: 0.8125rem;
+    color: var(--color-text-muted);
+  }
+
+  .default-notes-content {
+    font-size: 0.875rem;
+    color: var(--color-text-secondary);
+    white-space: pre-wrap;
+  }
+
+  /* Utility */
+  .mt-2 {
+    margin-top: var(--space-2);
   }
 
   .spinner-sm {

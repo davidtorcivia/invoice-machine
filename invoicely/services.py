@@ -1129,12 +1129,34 @@ class RecurringService:
     """Service for managing recurring invoice schedules."""
 
     @staticmethod
+    def _get_valid_day(year: int, month: int, schedule_day: int) -> int:
+        """Get valid day for a month, handling Feb 29, months with 30/31 days."""
+        import calendar
+        max_day = calendar.monthrange(year, month)[1]
+        return min(schedule_day, max_day)
+
+    @staticmethod
+    def _get_quarter_month(base_month: int, quarter_month: int) -> int:
+        """Get the target month for a quarterly schedule.
+
+        Args:
+            base_month: The starting month of the quarter (1, 4, 7, or 10)
+            quarter_month: Which month within the quarter (1, 2, or 3)
+
+        Returns:
+            The target month (1-12)
+        """
+        return base_month + (quarter_month - 1)
+
+    @staticmethod
     async def create_schedule(
         session: AsyncSession,
         client_id: int,
         name: str,
         frequency: str,
         schedule_day: int = 1,
+        schedule_month: Optional[int] = None,
+        quarter_month: int = 1,
         currency_code: str = "USD",
         payment_terms_days: int = 30,
         notes: Optional[str] = None,
@@ -1142,6 +1164,12 @@ class RecurringService:
         tax_enabled: Optional[int] = None,
         tax_rate: Optional[Decimal] = None,
         tax_name: Optional[str] = None,
+        show_payment_instructions: bool = True,
+        selected_payment_methods: Optional[list] = None,
+        auto_email_enabled: bool = False,
+        email_subject_template: Optional[str] = None,
+        email_body_template: Optional[str] = None,
+        use_default_notes: bool = True,
         next_invoice_date: Optional[date] = None,
     ) -> "RecurringSchedule":
         """Create a new recurring schedule."""
@@ -1159,6 +1187,15 @@ class RecurringService:
             raise ValueError("For weekly frequency, schedule_day must be 0-6 (Monday-Sunday)")
         elif frequency in ["monthly", "quarterly", "yearly"] and not (1 <= schedule_day <= 31):
             raise ValueError("For monthly/quarterly/yearly frequency, schedule_day must be 1-31")
+
+        # Validate schedule_month for yearly
+        if frequency == "yearly" and schedule_month is not None:
+            if not (1 <= schedule_month <= 12):
+                raise ValueError("For yearly frequency, schedule_month must be 1-12")
+
+        # Validate quarter_month for quarterly
+        if frequency == "quarterly" and not (1 <= quarter_month <= 3):
+            raise ValueError("For quarterly frequency, quarter_month must be 1-3")
 
         # Validate payment_terms_days
         if payment_terms_days < 0 or payment_terms_days > 365:
@@ -1181,25 +1218,39 @@ class RecurringService:
                 next_invoice_date = today + timedelta(days=days_ahead)
             elif frequency == "monthly":
                 # Next month on schedule_day
-                next_invoice_date = (today.replace(day=1) + relativedelta(months=1)).replace(
-                    day=min(schedule_day, 28)
-                )
+                next_month = today.replace(day=1) + relativedelta(months=1)
+                valid_day = RecurringService._get_valid_day(next_month.year, next_month.month, schedule_day)
+                next_invoice_date = next_month.replace(day=valid_day)
             elif frequency == "quarterly":
-                # Next quarter on schedule_day
-                next_invoice_date = (today.replace(day=1) + relativedelta(months=3)).replace(
-                    day=min(schedule_day, 28)
-                )
+                # Calculate next quarter start month
+                current_quarter_start = ((today.month - 1) // 3) * 3 + 1
+                next_quarter_start = current_quarter_start + 3
+                if next_quarter_start > 12:
+                    next_quarter_start = 1
+                    next_year = today.year + 1
+                else:
+                    next_year = today.year
+                # Apply quarter_month offset (1, 2, or 3)
+                target_month = RecurringService._get_quarter_month(next_quarter_start, quarter_month)
+                if target_month > 12:
+                    target_month -= 12
+                    next_year += 1
+                valid_day = RecurringService._get_valid_day(next_year, target_month, schedule_day)
+                next_invoice_date = date(next_year, target_month, valid_day)
             elif frequency == "yearly":
-                # Next year on schedule_day (of current month)
-                next_invoice_date = (today.replace(day=1) + relativedelta(years=1)).replace(
-                    day=min(schedule_day, 28)
-                )
+                # Use schedule_month if provided, otherwise use current month
+                target_month = schedule_month if schedule_month else today.month
+                next_year = today.year + 1
+                valid_day = RecurringService._get_valid_day(next_year, target_month, schedule_day)
+                next_invoice_date = date(next_year, target_month, valid_day)
 
         schedule = RecurringSchedule(
             client_id=client_id,
             name=name,
             frequency=frequency,
             schedule_day=schedule_day,
+            schedule_month=schedule_month,
+            quarter_month=quarter_month,
             currency_code=currency_code,
             payment_terms_days=payment_terms_days,
             notes=notes,
@@ -1207,6 +1258,12 @@ class RecurringService:
             tax_enabled=tax_enabled,
             tax_rate=tax_rate,
             tax_name=tax_name,
+            show_payment_instructions=1 if show_payment_instructions else 0,
+            selected_payment_methods=json.dumps(selected_payment_methods) if selected_payment_methods else None,
+            auto_email_enabled=1 if auto_email_enabled else 0,
+            email_subject_template=email_subject_template,
+            email_body_template=email_body_template,
+            use_default_notes=1 if use_default_notes else 0,
             next_invoice_date=next_invoice_date,
         )
         session.add(schedule)
@@ -1309,8 +1366,22 @@ class RecurringService:
         return True
 
     @staticmethod
-    def calculate_next_date(current_date: date, frequency: str, schedule_day: int) -> date:
-        """Calculate the next invoice date based on frequency."""
+    def calculate_next_date(
+        current_date: date,
+        frequency: str,
+        schedule_day: int,
+        schedule_month: Optional[int] = None,
+        quarter_month: int = 1,
+    ) -> date:
+        """Calculate the next invoice date based on frequency.
+
+        Args:
+            current_date: The current invoice date
+            frequency: One of daily, weekly, monthly, quarterly, yearly
+            schedule_day: Day of month (1-31) or day of week (0-6 for weekly)
+            schedule_month: Target month (1-12) for yearly frequency
+            quarter_month: Which month in quarter (1-3) for quarterly frequency
+        """
         from dateutil.relativedelta import relativedelta
 
         if frequency == "daily":
@@ -1319,33 +1390,38 @@ class RecurringService:
             return current_date + timedelta(weeks=1)
         elif frequency == "monthly":
             next_date = current_date + relativedelta(months=1)
-            # Handle months with fewer days
-            try:
-                return next_date.replace(day=schedule_day)
-            except ValueError:
-                # Day doesn't exist in this month, use last day
-                return (next_date.replace(day=1) + relativedelta(months=1)) - timedelta(days=1)
+            valid_day = RecurringService._get_valid_day(next_date.year, next_date.month, schedule_day)
+            return next_date.replace(day=valid_day)
         elif frequency == "quarterly":
+            # Move to next quarter's target month
+            # Calculate the next occurrence of the quarter_month within a quarter
             next_date = current_date + relativedelta(months=3)
-            try:
-                return next_date.replace(day=schedule_day)
-            except ValueError:
-                return (next_date.replace(day=1) + relativedelta(months=1)) - timedelta(days=1)
+            # Adjust to the correct month within the quarter based on quarter_month
+            quarter_start = ((next_date.month - 1) // 3) * 3 + 1
+            target_month = RecurringService._get_quarter_month(quarter_start, quarter_month)
+            if target_month > 12:
+                target_month -= 12
+                next_date = next_date.replace(year=next_date.year + 1)
+            next_date = next_date.replace(month=target_month)
+            valid_day = RecurringService._get_valid_day(next_date.year, next_date.month, schedule_day)
+            return next_date.replace(day=valid_day)
         elif frequency == "yearly":
             next_date = current_date + relativedelta(years=1)
-            try:
-                return next_date.replace(day=schedule_day)
-            except ValueError:
-                return (next_date.replace(day=1) + relativedelta(months=1)) - timedelta(days=1)
+            # Use schedule_month if provided
+            if schedule_month:
+                next_date = next_date.replace(month=schedule_month)
+            valid_day = RecurringService._get_valid_day(next_date.year, next_date.month, schedule_day)
+            return next_date.replace(day=valid_day)
         else:
             raise ValueError(f"Unknown frequency: {frequency}")
 
     @staticmethod
     async def process_due_schedules(session: AsyncSession) -> list[dict]:
         """Process all schedules due today or earlier and create invoices."""
-        from invoicely.database import RecurringSchedule
+        from invoicely.database import RecurringSchedule, BusinessProfile
         from sqlalchemy import select
         import json
+        import logging
 
         today = date.today()
         results = []
@@ -1358,10 +1434,18 @@ class RecurringService:
         result = await session.execute(query)
         due_schedules = list(result.scalars().all())
 
+        # Get business profile for auto-email feature
+        profile = await BusinessProfile.get_or_create(session)
+
         for schedule in due_schedules:
             try:
                 # Parse line items
                 line_items = json.loads(schedule.line_items) if schedule.line_items else []
+
+                # Determine notes to use
+                notes = schedule.notes
+                if schedule.use_default_notes and profile.default_notes:
+                    notes = profile.default_notes
 
                 # Create invoice
                 invoice = await InvoiceService.create_invoice(
@@ -1370,19 +1454,55 @@ class RecurringService:
                     issue_date=today,
                     currency_code=schedule.currency_code,
                     payment_terms_days=schedule.payment_terms_days,
-                    notes=schedule.notes,
+                    notes=notes,
                     items=line_items,
                     tax_enabled=schedule.tax_enabled,
                     tax_rate=schedule.tax_rate,
                     tax_name=schedule.tax_name,
+                    show_payment_instructions=bool(schedule.show_payment_instructions),
+                    selected_payment_methods=schedule.selected_payment_methods,
                 )
 
                 # Update schedule with next date and last invoice
                 schedule.last_invoice_id = invoice.id
                 schedule.next_invoice_date = RecurringService.calculate_next_date(
-                    today, schedule.frequency, schedule.schedule_day
+                    today,
+                    schedule.frequency,
+                    schedule.schedule_day,
+                    schedule.schedule_month,
+                    schedule.quarter_month,
                 )
                 schedule.updated_at = datetime.utcnow()
+
+                email_sent = False
+                email_error = None
+
+                # Handle auto-email if enabled
+                if schedule.auto_email_enabled and profile.smtp_enabled:
+                    try:
+                        from invoicely.email import EmailService
+                        from invoicely.pdf.generator import generate_pdf
+
+                        # Generate PDF first
+                        await generate_pdf(invoice, profile, session)
+                        await session.refresh(invoice)
+
+                        # Prepare email with schedule's custom templates or profile defaults
+                        email_service = EmailService(profile)
+                        email_result = await email_service.send_invoice(
+                            invoice,
+                            subject=schedule.email_subject_template or None,
+                            body=schedule.email_body_template or None,
+                        )
+
+                        if email_result.get("success"):
+                            email_sent = True
+                            invoice.status = "sent"
+                        else:
+                            email_error = email_result.get("error", "Unknown error")
+                    except Exception as e:
+                        logging.error(f"Auto-email failed for schedule {schedule.id}: {e}")
+                        email_error = str(e)
 
                 results.append({
                     "schedule_id": schedule.id,
@@ -1390,6 +1510,8 @@ class RecurringService:
                     "invoice_id": invoice.id,
                     "invoice_number": invoice.invoice_number,
                     "success": True,
+                    "email_sent": email_sent,
+                    "email_error": email_error,
                 })
 
             except Exception as e:
@@ -1406,18 +1528,26 @@ class RecurringService:
     @staticmethod
     async def trigger_schedule(session: AsyncSession, schedule_id: int) -> dict:
         """Manually trigger a schedule to create an invoice now."""
-        from invoicely.database import RecurringSchedule
+        from invoicely.database import RecurringSchedule, BusinessProfile
         import json
+        import logging
 
         schedule = await RecurringService.get_schedule(session, schedule_id)
         if not schedule:
             return {"success": False, "error": "Schedule not found"}
 
+        # Get business profile for default notes and auto-email
+        profile = await BusinessProfile.get_or_create(session)
         today = date.today()
 
         try:
             # Parse line items
             line_items = json.loads(schedule.line_items) if schedule.line_items else []
+
+            # Determine notes to use
+            notes = schedule.notes
+            if schedule.use_default_notes and profile.default_notes:
+                notes = profile.default_notes
 
             # Create invoice
             invoice = await InvoiceService.create_invoice(
@@ -1426,19 +1556,56 @@ class RecurringService:
                 issue_date=today,
                 currency_code=schedule.currency_code,
                 payment_terms_days=schedule.payment_terms_days,
-                notes=schedule.notes,
+                notes=notes,
                 items=line_items,
                 tax_enabled=schedule.tax_enabled,
                 tax_rate=schedule.tax_rate,
                 tax_name=schedule.tax_name,
+                show_payment_instructions=bool(schedule.show_payment_instructions),
+                selected_payment_methods=schedule.selected_payment_methods,
             )
 
             # Update schedule with next date and last invoice
             schedule.last_invoice_id = invoice.id
             schedule.next_invoice_date = RecurringService.calculate_next_date(
-                today, schedule.frequency, schedule.schedule_day
+                today,
+                schedule.frequency,
+                schedule.schedule_day,
+                schedule.schedule_month,
+                schedule.quarter_month,
             )
             schedule.updated_at = datetime.utcnow()
+
+            email_sent = False
+            email_error = None
+
+            # Handle auto-email if enabled
+            if schedule.auto_email_enabled and profile.smtp_enabled:
+                try:
+                    from invoicely.email import EmailService
+                    from invoicely.pdf.generator import generate_pdf
+
+                    # Generate PDF first
+                    await generate_pdf(invoice, profile, session)
+                    await session.refresh(invoice)
+
+                    # Prepare email with schedule's custom templates or profile defaults
+                    email_service = EmailService(profile)
+                    email_result = await email_service.send_invoice(
+                        invoice,
+                        subject=schedule.email_subject_template or None,
+                        body=schedule.email_body_template or None,
+                    )
+
+                    if email_result.get("success"):
+                        email_sent = True
+                        invoice.status = "sent"
+                    else:
+                        email_error = email_result.get("error", "Unknown error")
+                except Exception as e:
+                    logging.error(f"Auto-email failed for schedule {schedule.id}: {e}")
+                    email_error = str(e)
+
             await session.commit()
 
             return {
@@ -1446,6 +1613,8 @@ class RecurringService:
                 "invoice_id": invoice.id,
                 "invoice_number": invoice.invoice_number,
                 "next_invoice_date": schedule.next_invoice_date.isoformat(),
+                "email_sent": email_sent,
+                "email_error": email_error,
             }
 
         except Exception as e:

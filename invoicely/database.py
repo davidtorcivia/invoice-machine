@@ -330,6 +330,18 @@ class RecurringSchedule(Base):
     tax_enabled: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     tax_rate: Mapped[Optional[Decimal]] = mapped_column(DECIMAL(5, 2), nullable=True)
     tax_name: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    # Scheduling improvements
+    schedule_month: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)  # 1-12 for yearly
+    quarter_month: Mapped[int] = mapped_column(Integer, default=1)  # 1-3 for quarterly
+    # Payment method selection (like invoices)
+    show_payment_instructions: Mapped[int] = mapped_column(Integer, default=1)
+    selected_payment_methods: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # JSON array
+    # Auto-email feature
+    auto_email_enabled: Mapped[int] = mapped_column(Integer, default=0)
+    email_subject_template: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    email_body_template: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # Notes toggle
+    use_default_notes: Mapped[int] = mapped_column(Integer, default=1)
     # Schedule status
     is_active: Mapped[int] = mapped_column(Integer, default=1)
     next_invoice_date: Mapped[date] = mapped_column(Date, nullable=False)
