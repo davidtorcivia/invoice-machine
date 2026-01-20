@@ -1780,6 +1780,25 @@ class SearchService:
                 match_rows = match_check.fetchall()
                 print(f"LINE_ITEMS_DEBUG: MATCH '{fts_query}' found rowids: {[r[0] for r in match_rows]}", flush=True)
 
+                # Debug: Check invoices table
+                inv_check = await session.execute(text("SELECT id, invoice_number, deleted_at FROM invoices"))
+                inv_rows = inv_check.fetchall()
+                print(f"LINE_ITEMS_DEBUG: Invoices table has {len(inv_rows)} rows:", flush=True)
+                for inv in inv_rows:
+                    print(f"  Invoice id={inv[0]}, number={inv[1]}, deleted_at={inv[2]}", flush=True)
+
+                # Debug: Test the full JOIN query
+                test_sql = text("""
+                    SELECT ii.id, ii.invoice_id, i.id as inv_id
+                    FROM invoice_items_fts
+                    JOIN invoice_items ii ON invoice_items_fts.rowid = ii.id
+                    JOIN invoices i ON ii.invoice_id = i.id
+                    WHERE invoice_items_fts MATCH :query
+                """)
+                test_result = await session.execute(test_sql, {"query": fts_query})
+                test_rows = test_result.fetchall()
+                print(f"LINE_ITEMS_DEBUG: Full JOIN returned {len(test_rows)} rows", flush=True)
+
                 # Search line items using FTS5, joining to get invoice context
                 line_items_sql = text("""
                     SELECT ii.id, ii.invoice_id, ii.description, ii.quantity, ii.unit_type,
