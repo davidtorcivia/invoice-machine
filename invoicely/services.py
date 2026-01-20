@@ -7,7 +7,7 @@ import tempfile
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Union
 
 import boto3
 from botocore.config import Config
@@ -150,7 +150,7 @@ async def snapshot_client_info(
     invoice.client_address = "\n".join(address_lines) if address_lines else None
 
 
-def format_currency(amount: Decimal | float, currency_code: str = "USD") -> str:
+def format_currency(amount: Union[Decimal, float], currency_code: str = "USD") -> str:
     """Format amount as currency string."""
     amount = Decimal(str(amount))
     if currency_code == "USD":
@@ -581,7 +581,7 @@ class InvoiceService:
         invoice_id: int,
         description: str,
         quantity: int = 1,
-        unit_price: Decimal | float | str = 0,
+        unit_price: Union[Decimal, float, str] = 0,
         sort_order: int = 0,
         unit_type: str = "qty",
     ) -> InvoiceItem:
@@ -627,7 +627,7 @@ class InvoiceService:
         item_id: int,
         description: Optional[str] = None,
         quantity: Optional[int] = None,
-        unit_price: Optional[Decimal | float | str] = None,
+        unit_price: Optional[Union[Decimal, float, str]] = None,
         sort_order: Optional[int] = None,
         unit_type: Optional[str] = None,
         invoice_id: Optional[int] = None,
@@ -1477,54 +1477,124 @@ class SearchService:
         result = {"invoices_indexed": 0, "clients_indexed": 0, "line_items_indexed": 0, "skipped": False, "rebuilt": False}
 
         try:
-            # Check if FTS tables exist
-            tables_check = await session.execute(
-                text("SELECT name FROM sqlite_master WHERE type='table' AND name IN ('invoices_fts', 'clients_fts', 'invoice_items_fts')")
+            # Check if base tables exist (required)
+            base_tables_check = await session.execute(
+                text("SELECT name FROM sqlite_master WHERE type='table' AND name IN ('invoices', 'clients', 'invoice_items')")
             )
-            existing_tables = {row[0] for row in tables_check.fetchall()}
+            base_tables = {row[0] for row in base_tables_check.fetchall()}
 
-            if "invoices_fts" not in existing_tables or "clients_fts" not in existing_tables:
+            if "invoices" not in base_tables or "clients" not in base_tables:
                 result["skipped"] = True
-                result["reason"] = "FTS tables don't exist"
+                result["reason"] = "Base tables don't exist"
                 return result
 
-            # Create invoice_items_fts if it doesn't exist (migration may have failed)
-            # Using a regular FTS5 table (not external content) for simplicity
-            if "invoice_items_fts" not in existing_tables:
-                # Drop any existing table/triggers first to ensure clean state
-                await session.execute(text("DROP TABLE IF EXISTS invoice_items_fts"))
-                await session.execute(text("DROP TRIGGER IF EXISTS invoice_items_fts_insert"))
-                await session.execute(text("DROP TRIGGER IF EXISTS invoice_items_fts_delete"))
-                await session.execute(text("DROP TRIGGER IF EXISTS invoice_items_fts_update"))
+            # Check if FTS tables exist
+            fts_tables_check = await session.execute(
+                text("SELECT name FROM sqlite_master WHERE type='table' AND name IN ('invoices_fts', 'clients_fts', 'invoice_items_fts')")
+            )
+            existing_fts_tables = {row[0] for row in fts_tables_check.fetchall()}
 
-                # Create regular FTS5 table (stores its own content)
+            # Create invoices_fts if it doesn't exist
+            if "invoices_fts" not in existing_fts_tables:
                 await session.execute(text("""
-                    CREATE VIRTUAL TABLE invoice_items_fts USING fts5(
-                        description
+                    CREATE VIRTUAL TABLE invoices_fts USING fts5(
+                        invoice_number,
+                        client_name,
+                        client_business,
+                        notes,
+                        content='invoices',
+                        content_rowid='id'
                     )
                 """))
-                # Triggers to keep it in sync
                 await session.execute(text("""
-                    CREATE TRIGGER invoice_items_fts_insert AFTER INSERT ON invoice_items BEGIN
-                        INSERT INTO invoice_items_fts(rowid, description)
-                        VALUES (new.id, new.description);
+                    CREATE TRIGGER invoices_fts_insert AFTER INSERT ON invoices BEGIN
+                        INSERT INTO invoices_fts(rowid, invoice_number, client_name, client_business, notes)
+                        VALUES (new.id, new.invoice_number, new.client_name, new.client_business, new.notes);
                     END
                 """))
                 await session.execute(text("""
-                    CREATE TRIGGER invoice_items_fts_delete AFTER DELETE ON invoice_items BEGIN
-                        DELETE FROM invoice_items_fts WHERE rowid = old.id;
+                    CREATE TRIGGER invoices_fts_delete AFTER DELETE ON invoices BEGIN
+                        INSERT INTO invoices_fts(invoices_fts, rowid, invoice_number, client_name, client_business, notes)
+                        VALUES ('delete', old.id, old.invoice_number, old.client_name, old.client_business, old.notes);
                     END
                 """))
                 await session.execute(text("""
-                    CREATE TRIGGER invoice_items_fts_update AFTER UPDATE ON invoice_items BEGIN
-                        DELETE FROM invoice_items_fts WHERE rowid = old.id;
-                        INSERT INTO invoice_items_fts(rowid, description)
-                        VALUES (new.id, new.description);
+                    CREATE TRIGGER invoices_fts_update AFTER UPDATE ON invoices BEGIN
+                        INSERT INTO invoices_fts(invoices_fts, rowid, invoice_number, client_name, client_business, notes)
+                        VALUES ('delete', old.id, old.invoice_number, old.client_name, old.client_business, old.notes);
+                        INSERT INTO invoices_fts(rowid, invoice_number, client_name, client_business, notes)
+                        VALUES (new.id, new.invoice_number, new.client_name, new.client_business, new.notes);
                     END
                 """))
                 await session.commit()
-                # Mark that we need to populate the new table
-                existing_tables.add("invoice_items_fts_needs_populate")
+
+            # Create clients_fts if it doesn't exist
+            if "clients_fts" not in existing_fts_tables:
+                await session.execute(text("""
+                    CREATE VIRTUAL TABLE clients_fts USING fts5(
+                        name,
+                        business_name,
+                        email,
+                        notes,
+                        content='clients',
+                        content_rowid='id'
+                    )
+                """))
+                await session.execute(text("""
+                    CREATE TRIGGER clients_fts_insert AFTER INSERT ON clients BEGIN
+                        INSERT INTO clients_fts(rowid, name, business_name, email, notes)
+                        VALUES (new.id, new.name, new.business_name, new.email, new.notes);
+                    END
+                """))
+                await session.execute(text("""
+                    CREATE TRIGGER clients_fts_delete AFTER DELETE ON clients BEGIN
+                        INSERT INTO clients_fts(clients_fts, rowid, name, business_name, email, notes)
+                        VALUES ('delete', old.id, old.name, old.business_name, old.email, old.notes);
+                    END
+                """))
+                await session.execute(text("""
+                    CREATE TRIGGER clients_fts_update AFTER UPDATE ON clients BEGIN
+                        INSERT INTO clients_fts(clients_fts, rowid, name, business_name, email, notes)
+                        VALUES ('delete', old.id, old.name, old.business_name, old.email, old.notes);
+                        INSERT INTO clients_fts(rowid, name, business_name, email, notes)
+                        VALUES (new.id, new.name, new.business_name, new.email, new.notes);
+                    END
+                """))
+                await session.commit()
+
+            # Always drop and recreate invoice_items_fts to ensure correct schema
+            # The table may have been created with external content option which is incompatible
+            await session.execute(text("DROP TABLE IF EXISTS invoice_items_fts"))
+            await session.execute(text("DROP TRIGGER IF EXISTS invoice_items_fts_insert"))
+            await session.execute(text("DROP TRIGGER IF EXISTS invoice_items_fts_delete"))
+            await session.execute(text("DROP TRIGGER IF EXISTS invoice_items_fts_update"))
+
+            # Create regular FTS5 table (stores its own content)
+            await session.execute(text("""
+                CREATE VIRTUAL TABLE invoice_items_fts USING fts5(
+                    description
+                )
+            """))
+            # Triggers to keep it in sync
+            await session.execute(text("""
+                CREATE TRIGGER invoice_items_fts_insert AFTER INSERT ON invoice_items BEGIN
+                    INSERT INTO invoice_items_fts(rowid, description)
+                    VALUES (new.id, new.description);
+                END
+            """))
+            await session.execute(text("""
+                CREATE TRIGGER invoice_items_fts_delete AFTER DELETE ON invoice_items BEGIN
+                    DELETE FROM invoice_items_fts WHERE rowid = old.id;
+                END
+            """))
+            await session.execute(text("""
+                CREATE TRIGGER invoice_items_fts_update AFTER UPDATE ON invoice_items BEGIN
+                    DELETE FROM invoice_items_fts WHERE rowid = old.id;
+                    INSERT INTO invoice_items_fts(rowid, description)
+                    VALUES (new.id, new.description);
+                END
+            """))
+            await session.commit()
 
             # Get counts from main tables
             invoices_count = (await session.execute(text("SELECT COUNT(*) FROM invoices"))).scalar()
@@ -1548,10 +1618,8 @@ class SearchService:
                 await session.execute(text("INSERT INTO clients_fts(clients_fts) VALUES('rebuild')"))
                 result["clients_indexed"] = clients_count
 
-            # Reindex line items - clear and repopulate with direct INSERT
+            # Reindex line items - table was just recreated, so just populate
             if line_items_count > 0:
-                # Clear existing data
-                await session.execute(text("DELETE FROM invoice_items_fts"))
                 # Repopulate from invoice_items
                 await session.execute(text("""
                     INSERT INTO invoice_items_fts(rowid, description)
@@ -1693,23 +1761,6 @@ class SearchService:
 
         if search_line_items:
             try:
-                # Debug: Check FTS table contents
-                debug_sql = text("SELECT rowid, description FROM invoice_items_fts LIMIT 10")
-                debug_result = await session.execute(debug_sql)
-                debug_rows = debug_result.fetchall()
-                print(f"DEBUG: FTS table has {len(debug_rows)} rows, query='{fts_query}'", flush=True)
-                for dr in debug_rows:
-                    print(f"DEBUG: FTS row {dr[0]}: {dr[1][:50] if dr[1] else 'NULL'}...", flush=True)
-
-                # Debug: Test MATCH query directly
-                try:
-                    match_test_sql = text("SELECT rowid FROM invoice_items_fts WHERE invoice_items_fts MATCH :query")
-                    match_result = await session.execute(match_test_sql, {"query": fts_query})
-                    match_rows = match_result.fetchall()
-                    print(f"DEBUG: Direct MATCH found {len(match_rows)} rows: {[r[0] for r in match_rows]}", flush=True)
-                except Exception as match_err:
-                    print(f"DEBUG: Direct MATCH error: {match_err}", flush=True)
-
                 # Search line items using FTS5, joining to get invoice context
                 line_items_sql = text("""
                     SELECT ii.id, ii.invoice_id, ii.description, ii.quantity, ii.unit_type,

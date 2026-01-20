@@ -19,16 +19,16 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     # Create FTS5 virtual table for invoice line items
-    # We include invoice_id so we can efficiently join back to the invoice
+    # Using a regular FTS5 table (not external content) for simplicity
+    # This stores its own content, which is easier to manage
     op.execute("""
         CREATE VIRTUAL TABLE IF NOT EXISTS invoice_items_fts USING fts5(
-            description,
-            content='invoice_items',
-            content_rowid='id'
+            description
         )
     """)
 
     # Triggers to keep invoice_items_fts in sync
+    # Using simple DELETE/INSERT for regular FTS5 table (not external content)
     op.execute("""
         CREATE TRIGGER IF NOT EXISTS invoice_items_fts_insert AFTER INSERT ON invoice_items BEGIN
             INSERT INTO invoice_items_fts(rowid, description)
@@ -38,15 +38,13 @@ def upgrade() -> None:
 
     op.execute("""
         CREATE TRIGGER IF NOT EXISTS invoice_items_fts_delete AFTER DELETE ON invoice_items BEGIN
-            INSERT INTO invoice_items_fts(invoice_items_fts, rowid, description)
-            VALUES ('delete', old.id, old.description);
+            DELETE FROM invoice_items_fts WHERE rowid = old.id;
         END
     """)
 
     op.execute("""
         CREATE TRIGGER IF NOT EXISTS invoice_items_fts_update AFTER UPDATE ON invoice_items BEGIN
-            INSERT INTO invoice_items_fts(invoice_items_fts, rowid, description)
-            VALUES ('delete', old.id, old.description);
+            DELETE FROM invoice_items_fts WHERE rowid = old.id;
             INSERT INTO invoice_items_fts(rowid, description)
             VALUES (new.id, new.description);
         END
