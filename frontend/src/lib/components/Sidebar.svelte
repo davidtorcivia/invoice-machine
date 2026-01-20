@@ -56,9 +56,9 @@
       sidebarOpen.set(false);
     }
     if (type === 'invoice') {
-      goto(`/invoices/${id}`);
+      goto(`/invoices/${id}`, { invalidateAll: true });
     } else {
-      goto(`/clients/${id}`);
+      goto(`/clients/${id}`, { invalidateAll: true });
     }
   }
 
