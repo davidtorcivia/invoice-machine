@@ -1,5 +1,4 @@
 <script>
-  import { onMount } from 'svelte';
   import { page } from '$app/stores';
   import { goto } from '$app/navigation';
   import { clientsApi, invoicesApi } from '$lib/api';
@@ -26,9 +25,8 @@
     cancelled: { class: 'badge-cancelled', label: 'Cancelled' },
   };
 
-  onMount(async () => {
-    await loadData();
-  });
+  // Reactively load when id changes (handles both initial load and navigation)
+  $: if (id) loadData();
 
   async function loadData() {
     loading = true;
