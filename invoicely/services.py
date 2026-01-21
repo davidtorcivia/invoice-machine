@@ -158,6 +158,26 @@ def format_currency(amount: Union[Decimal, float], currency_code: str = "USD") -
     return f"{amount:,.2f} {currency_code}"
 
 
+# Valid sort fields for invoices and clients
+INVOICE_SORT_FIELDS = {
+    "invoice_number": Invoice.invoice_number,
+    "client": Invoice.client_business,  # Falls back to client_name in query
+    "issue_date": Invoice.issue_date,
+    "due_date": Invoice.due_date,
+    "status": Invoice.status,
+    "total": Invoice.total,
+    "created_at": Invoice.created_at,
+}
+
+CLIENT_SORT_FIELDS = {
+    "name": Client.business_name,  # Falls back to name in query
+    "email": Client.email,
+    "city": Client.city,
+    "payment_terms": Client.payment_terms_days,
+    "created_at": Client.created_at,
+}
+
+
 class ClientService:
     """Service for client operations."""
 
@@ -248,8 +268,12 @@ class ClientService:
         session: AsyncSession,
         search: Optional[str] = None,
         include_deleted: bool = False,
+        sort_by: Optional[str] = None,
+        sort_dir: str = "desc",
     ) -> list[Client]:
-        """List clients with optional search."""
+        """List clients with optional search and sorting."""
+        from sqlalchemy import func
+
         query = select(Client)
 
         if not include_deleted:
@@ -261,7 +285,30 @@ class ClientService:
                 (Client.name.ilike(search_term)) | (Client.business_name.ilike(search_term))
             )
 
-        query = query.order_by(Client.created_at.desc())
+        # Apply sorting
+        sort_dir = sort_dir.lower() if sort_dir else "desc"
+        if sort_dir not in ("asc", "desc"):
+            sort_dir = "desc"
+
+        if sort_by and sort_by in CLIENT_SORT_FIELDS:
+            sort_column = CLIENT_SORT_FIELDS[sort_by]
+            # Special case for name: sort by business_name, then name as fallback
+            if sort_by == "name":
+                # Use COALESCE to prefer business_name over name
+                sort_expr = func.coalesce(Client.business_name, Client.name)
+                if sort_dir == "asc":
+                    query = query.order_by(sort_expr.asc())
+                else:
+                    query = query.order_by(sort_expr.desc())
+            else:
+                if sort_dir == "asc":
+                    query = query.order_by(sort_column.asc())
+                else:
+                    query = query.order_by(sort_column.desc())
+        else:
+            # Default sort
+            query = query.order_by(Client.created_at.desc())
+
         result = await session.execute(query)
         return list(result.scalars().all())
 
@@ -339,8 +386,12 @@ class InvoiceService:
         to_date: Optional[date] = None,
         include_deleted: bool = False,
         limit: int = 50,
+        sort_by: Optional[str] = None,
+        sort_dir: str = "desc",
     ) -> list[Invoice]:
-        """List invoices with filters."""
+        """List invoices with filters and sorting."""
+        from sqlalchemy import func
+
         query = select(Invoice)
 
         if not include_deleted:
@@ -358,7 +409,30 @@ class InvoiceService:
         if to_date:
             query = query.where(Invoice.issue_date <= to_date)
 
-        query = query.order_by(Invoice.created_at.desc()).limit(limit)
+        # Apply sorting
+        sort_dir = sort_dir.lower() if sort_dir else "desc"
+        if sort_dir not in ("asc", "desc"):
+            sort_dir = "desc"
+
+        if sort_by and sort_by in INVOICE_SORT_FIELDS:
+            sort_column = INVOICE_SORT_FIELDS[sort_by]
+            # Special case for client: sort by business name, then client name as fallback
+            if sort_by == "client":
+                sort_expr = func.coalesce(Invoice.client_business, Invoice.client_name)
+                if sort_dir == "asc":
+                    query = query.order_by(sort_expr.asc())
+                else:
+                    query = query.order_by(sort_expr.desc())
+            else:
+                if sort_dir == "asc":
+                    query = query.order_by(sort_column.asc())
+                else:
+                    query = query.order_by(sort_column.desc())
+        else:
+            # Default sort by issue_date descending (newest first)
+            query = query.order_by(Invoice.issue_date.desc())
+
+        query = query.limit(limit)
         result = await session.execute(query)
         return list(result.scalars().all())
 

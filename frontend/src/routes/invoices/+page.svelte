@@ -12,6 +12,32 @@
   let loading = true;
   let filterStatus = '';
   let filterClient = '';
+  let filterYear = '';
+  let filterFromDate = '';
+  let filterToDate = '';
+  let sortBy = 'issue_date';
+  let sortDir = 'desc';
+
+  // Sort options for mobile dropdown
+  const sortOptions = [
+    { value: 'issue_date-desc', label: 'Date (newest)', field: 'issue_date', dir: 'desc' },
+    { value: 'issue_date-asc', label: 'Date (oldest)', field: 'issue_date', dir: 'asc' },
+    { value: 'due_date-desc', label: 'Due Date (newest)', field: 'due_date', dir: 'desc' },
+    { value: 'due_date-asc', label: 'Due Date (oldest)', field: 'due_date', dir: 'asc' },
+    { value: 'client-asc', label: 'Client (A-Z)', field: 'client', dir: 'asc' },
+    { value: 'client-desc', label: 'Client (Z-A)', field: 'client', dir: 'desc' },
+    { value: 'invoice_number-desc', label: 'Invoice # (newest)', field: 'invoice_number', dir: 'desc' },
+    { value: 'invoice_number-asc', label: 'Invoice # (oldest)', field: 'invoice_number', dir: 'asc' },
+    { value: 'total-desc', label: 'Total (high-low)', field: 'total', dir: 'desc' },
+    { value: 'total-asc', label: 'Total (low-high)', field: 'total', dir: 'asc' },
+    { value: 'status-asc', label: 'Status (A-Z)', field: 'status', dir: 'asc' },
+  ];
+
+  // Generate year options (current year down to 5 years ago)
+  const currentYear = new Date().getFullYear();
+  const yearOptions = Array.from({ length: 6 }, (_, i) => currentYear - i);
+
+  $: selectedSortOption = `${sortBy}-${sortDir}`;
 
   // Delete modal state
   let showDeleteModal = false;
@@ -52,9 +78,21 @@
   async function loadData() {
     loading = true;
     try {
-      const params = {};
+      const params = {
+        sort_by: sortBy,
+        sort_dir: sortDir,
+      };
       if (filterStatus) params.status = filterStatus;
       if (filterClient) params.client_id = filterClient;
+
+      // Handle date filtering - year takes precedence over manual date range
+      if (filterYear) {
+        params.from_date = `${filterYear}-01-01`;
+        params.to_date = `${filterYear}-12-31`;
+      } else {
+        if (filterFromDate) params.from_date = filterFromDate;
+        if (filterToDate) params.to_date = filterToDate;
+      }
 
       [invoices, clients] = await Promise.all([
         invoicesApi.list(params),
@@ -66,6 +104,57 @@
       loading = false;
     }
   }
+
+  function handleSort(field) {
+    if (sortBy === field) {
+      // Toggle direction if same field
+      sortDir = sortDir === 'asc' ? 'desc' : 'asc';
+    } else {
+      // New field, default to descending for dates/totals, ascending for text
+      sortBy = field;
+      sortDir = ['client', 'status'].includes(field) ? 'asc' : 'desc';
+    }
+    loadData();
+  }
+
+  function handleSortDropdown(e) {
+    const option = sortOptions.find(o => o.value === e.target.value);
+    if (option) {
+      sortBy = option.field;
+      sortDir = option.dir;
+      loadData();
+    }
+  }
+
+  function handleYearChange() {
+    // Clear manual date range when year is selected
+    if (filterYear) {
+      filterFromDate = '';
+      filterToDate = '';
+    }
+    loadData();
+  }
+
+  function handleDateChange() {
+    // Clear year filter when manual dates are used
+    if (filterFromDate || filterToDate) {
+      filterYear = '';
+    }
+    loadData();
+  }
+
+  function clearAllFilters() {
+    filterStatus = '';
+    filterClient = '';
+    filterYear = '';
+    filterFromDate = '';
+    filterToDate = '';
+    sortBy = 'issue_date';
+    sortDir = 'desc';
+    loadData();
+  }
+
+  $: hasFilters = filterStatus || filterClient || filterYear || filterFromDate || filterToDate;
 
   function openDeleteModal(e, invoice) {
     e.stopPropagation();
@@ -125,42 +214,95 @@
 
   <!-- Filters -->
   <div class="filters-bar">
-    <div class="filter-group">
-      <label for="status-filter" class="filter-label">Status</label>
-      <select
-        id="status-filter"
-        class="select"
-        bind:value={filterStatus}
-        on:change={loadData}
-      >
-        <option value="">All Statuses</option>
-        <option value="draft">Draft</option>
-        <option value="sent">Sent</option>
-        <option value="paid">Paid</option>
-        <option value="overdue">Overdue</option>
-        <option value="cancelled">Cancelled</option>
-      </select>
+    <div class="filters-row">
+      <div class="filter-group">
+        <label for="status-filter" class="filter-label">Status</label>
+        <select
+          id="status-filter"
+          class="select"
+          bind:value={filterStatus}
+          on:change={loadData}
+        >
+          <option value="">All Statuses</option>
+          <option value="draft">Draft</option>
+          <option value="sent">Sent</option>
+          <option value="paid">Paid</option>
+          <option value="overdue">Overdue</option>
+          <option value="cancelled">Cancelled</option>
+        </select>
+      </div>
+
+      <div class="filter-group">
+        <label for="client-filter" class="filter-label">Client</label>
+        <select
+          id="client-filter"
+          class="select"
+          bind:value={filterClient}
+          on:change={loadData}
+        >
+          <option value="">All Clients</option>
+          {#each clients as client}
+            <option value={client.id}>{client.business_name || client.name}</option>
+          {/each}
+        </select>
+      </div>
+
+      <div class="filter-group">
+        <label for="year-filter" class="filter-label">Year</label>
+        <select
+          id="year-filter"
+          class="select"
+          bind:value={filterYear}
+          on:change={handleYearChange}
+        >
+          <option value="">All Years</option>
+          {#each yearOptions as year}
+            <option value={year}>{year}</option>
+          {/each}
+        </select>
+      </div>
+
+      <div class="filter-group date-range-group">
+        <label class="filter-label">Date Range</label>
+        <div class="date-range-inputs">
+          <input
+            type="date"
+            class="input input-sm"
+            bind:value={filterFromDate}
+            on:change={handleDateChange}
+            placeholder="From"
+          />
+          <span class="date-range-separator">to</span>
+          <input
+            type="date"
+            class="input input-sm"
+            bind:value={filterToDate}
+            on:change={handleDateChange}
+            placeholder="To"
+          />
+        </div>
+      </div>
+
+      <!-- Sort dropdown (visible on mobile) -->
+      <div class="filter-group sort-dropdown-mobile">
+        <label for="sort-select" class="filter-label">Sort</label>
+        <select
+          id="sort-select"
+          class="select"
+          value={selectedSortOption}
+          on:change={handleSortDropdown}
+        >
+          {#each sortOptions as option}
+            <option value={option.value}>{option.label}</option>
+          {/each}
+        </select>
+      </div>
     </div>
 
-    <div class="filter-group">
-      <label for="client-filter" class="filter-label">Client</label>
-      <select
-        id="client-filter"
-        class="select"
-        bind:value={filterClient}
-        on:change={loadData}
-      >
-        <option value="">All Clients</option>
-        {#each clients as client}
-          <option value={client.id}>{client.business_name || client.name}</option>
-        {/each}
-      </select>
-    </div>
-
-    {#if filterStatus || filterClient}
+    {#if hasFilters}
       <button
         class="btn btn-ghost btn-sm clear-filters"
-        on:click={() => { filterStatus = ''; filterClient = ''; loadData(); }}
+        on:click={clearAllFilters}
       >
         <Icon name="x" size="sm" />
         Clear filters
@@ -178,12 +320,54 @@
       <table class="table">
         <thead>
           <tr>
-            <th>Invoice</th>
-            <th>Client</th>
-            <th>Date</th>
-            <th>Due Date</th>
-            <th>Status</th>
-            <th class="text-right">Total</th>
+            <th>
+              <button class="sortable-header" class:active={sortBy === 'invoice_number'} on:click={() => handleSort('invoice_number')}>
+                Invoice
+                {#if sortBy === 'invoice_number'}
+                  <Icon name={sortDir === 'asc' ? 'chevronUp' : 'chevronDown'} size="xs" />
+                {/if}
+              </button>
+            </th>
+            <th>
+              <button class="sortable-header" class:active={sortBy === 'client'} on:click={() => handleSort('client')}>
+                Client
+                {#if sortBy === 'client'}
+                  <Icon name={sortDir === 'asc' ? 'chevronUp' : 'chevronDown'} size="xs" />
+                {/if}
+              </button>
+            </th>
+            <th>
+              <button class="sortable-header" class:active={sortBy === 'issue_date'} on:click={() => handleSort('issue_date')}>
+                Date
+                {#if sortBy === 'issue_date'}
+                  <Icon name={sortDir === 'asc' ? 'chevronUp' : 'chevronDown'} size="xs" />
+                {/if}
+              </button>
+            </th>
+            <th>
+              <button class="sortable-header" class:active={sortBy === 'due_date'} on:click={() => handleSort('due_date')}>
+                Due Date
+                {#if sortBy === 'due_date'}
+                  <Icon name={sortDir === 'asc' ? 'chevronUp' : 'chevronDown'} size="xs" />
+                {/if}
+              </button>
+            </th>
+            <th>
+              <button class="sortable-header" class:active={sortBy === 'status'} on:click={() => handleSort('status')}>
+                Status
+                {#if sortBy === 'status'}
+                  <Icon name={sortDir === 'asc' ? 'chevronUp' : 'chevronDown'} size="xs" />
+                {/if}
+              </button>
+            </th>
+            <th class="text-right">
+              <button class="sortable-header justify-end" class:active={sortBy === 'total'} on:click={() => handleSort('total')}>
+                Total
+                {#if sortBy === 'total'}
+                  <Icon name={sortDir === 'asc' ? 'chevronUp' : 'chevronDown'} size="xs" />
+                {/if}
+              </button>
+            </th>
             <th class="actions-col">Actions</th>
           </tr>
         </thead>
@@ -347,8 +531,8 @@
 
   .filters-bar {
     display: flex;
-    align-items: flex-end;
-    gap: var(--space-4);
+    flex-direction: column;
+    gap: var(--space-3);
     margin-bottom: var(--space-6);
     padding: var(--space-5);
     background: var(--color-bg-elevated);
@@ -356,11 +540,18 @@
     border-radius: var(--radius-lg);
   }
 
+  .filters-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: var(--space-4);
+  }
+
   .filter-group {
     display: flex;
     flex-direction: column;
     gap: var(--space-2);
-    min-width: 180px;
+    min-width: 140px;
   }
 
   .filter-label {
@@ -369,9 +560,64 @@
     color: var(--color-text-secondary);
   }
 
+  .date-range-group {
+    min-width: auto;
+  }
+
+  .date-range-inputs {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+  }
+
+  .date-range-inputs .input {
+    width: 140px;
+  }
+
+  .date-range-separator {
+    color: var(--color-text-tertiary);
+    font-size: 0.8125rem;
+  }
+
+  .sort-dropdown-mobile {
+    display: none;
+  }
+
   .clear-filters {
-    margin-left: auto;
+    align-self: flex-start;
     color: var(--color-text-secondary);
+  }
+
+  /* Sortable table headers */
+  .sortable-header {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    background: none;
+    border: none;
+    padding: 0;
+    font: inherit;
+    font-weight: 600;
+    color: var(--color-text-secondary);
+    cursor: pointer;
+    transition: color var(--transition-fast);
+  }
+
+  .sortable-header:hover {
+    color: var(--color-text);
+  }
+
+  .sortable-header.active {
+    color: var(--color-primary);
+  }
+
+  .sortable-header.justify-end {
+    justify-content: flex-end;
+    width: 100%;
+  }
+
+  .sortable-header :global(.icon) {
+    flex-shrink: 0;
   }
 
   .loading-container {
@@ -519,23 +765,39 @@
     background: var(--color-bg);
   }
 
+  @media (max-width: 900px) {
+    .date-range-group {
+      order: 10;
+      flex-basis: 100%;
+    }
+  }
+
   @media (max-width: 768px) {
     .page-content {
       padding: var(--space-4);
     }
 
     .filters-bar {
-      flex-direction: column;
-      align-items: stretch;
       padding: var(--space-4);
     }
 
-    .filter-group {
-      min-width: 100%;
+    .filters-row {
+      gap: var(--space-3);
     }
 
-    .clear-filters {
-      margin-left: 0;
+    .filter-group {
+      flex: 1 1 calc(50% - var(--space-3));
+      min-width: 140px;
+    }
+
+    .date-range-group {
+      flex-basis: 100%;
+    }
+
+    .date-range-inputs .input {
+      flex: 1;
+      width: auto;
+      min-width: 0;
     }
   }
 
@@ -553,7 +815,14 @@
 
     .filters-bar {
       padding: var(--space-3);
-      gap: var(--space-3);
+    }
+
+    .filter-group {
+      flex: 1 1 100%;
+    }
+
+    .sort-dropdown-mobile {
+      display: flex;
     }
 
     /* Switch to card view on small screens */

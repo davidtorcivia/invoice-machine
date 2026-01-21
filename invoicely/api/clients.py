@@ -97,11 +97,20 @@ async def list_clients(
     request: Request,
     search: Optional[str] = Query(None, description="Search by name or business name"),
     include_deleted: bool = Query(False, description="Include soft-deleted clients"),
+    sort_by: Optional[str] = Query(
+        None,
+        description="Sort field: name, email, city, payment_terms, created_at",
+    ),
+    sort_dir: str = Query("desc", description="Sort direction: asc or desc"),
     session: AsyncSession = Depends(get_session),
 ) -> List[Client]:
-    """List all clients."""
+    """List all clients with optional sorting."""
     return await ClientService.list_clients(
-        session, search=search, include_deleted=include_deleted
+        session,
+        search=search,
+        include_deleted=include_deleted,
+        sort_by=sort_by,
+        sort_dir=sort_dir,
     )
 
 

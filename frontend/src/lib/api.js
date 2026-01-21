@@ -104,6 +104,8 @@ export const clientsApi = {
     const search = new URLSearchParams();
     if (params.search) search.append('search', params.search);
     if (params.include_deleted) search.append('include_deleted', 'true');
+    if (params.sort_by) search.append('sort_by', params.sort_by);
+    if (params.sort_dir) search.append('sort_dir', params.sort_dir);
     const query = search.toString() ? `?${search}` : '';
     return get(`/clients${query}`);
   },
@@ -129,7 +131,9 @@ export const invoicesApi = {
     if (params.from_date) search.append('from_date', params.from_date);
     if (params.to_date) search.append('to_date', params.to_date);
     if (params.include_deleted) search.append('include_deleted', 'true');
-    search.append('limit', params.limit || '50');
+    if (params.sort_by) search.append('sort_by', params.sort_by);
+    if (params.sort_dir) search.append('sort_dir', params.sort_dir);
+    search.append('limit', params.limit || '100');
     const query = search.toString() ? `?${search}` : '';
     return get(`/invoices${query}`);
   },

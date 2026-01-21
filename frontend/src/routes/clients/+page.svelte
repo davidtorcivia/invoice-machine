@@ -30,6 +30,22 @@
   let clients = [];
   let loading = true;
   let searchQuery = '';
+  let sortBy = 'created_at';
+  let sortDir = 'desc';
+
+  // Sort options for dropdown
+  const sortOptions = [
+    { value: 'created_at-desc', label: 'Newest first', field: 'created_at', dir: 'desc' },
+    { value: 'created_at-asc', label: 'Oldest first', field: 'created_at', dir: 'asc' },
+    { value: 'name-asc', label: 'Name (A-Z)', field: 'name', dir: 'asc' },
+    { value: 'name-desc', label: 'Name (Z-A)', field: 'name', dir: 'desc' },
+    { value: 'city-asc', label: 'City (A-Z)', field: 'city', dir: 'asc' },
+    { value: 'city-desc', label: 'City (Z-A)', field: 'city', dir: 'desc' },
+    { value: 'payment_terms-asc', label: 'Payment terms (shortest)', field: 'payment_terms', dir: 'asc' },
+    { value: 'payment_terms-desc', label: 'Payment terms (longest)', field: 'payment_terms', dir: 'desc' },
+  ];
+
+  $: selectedSortOption = `${sortBy}-${sortDir}`;
 
   // Delete modal state
   let showDeleteModal = false;
@@ -44,13 +60,25 @@
   async function loadClients() {
     loading = true;
     try {
-      const params = {};
+      const params = {
+        sort_by: sortBy,
+        sort_dir: sortDir,
+      };
       if (searchQuery) params.search = searchQuery;
       clients = await clientsApi.list(params);
     } catch (error) {
       toast.error('Failed to load clients');
     } finally {
       loading = false;
+    }
+  }
+
+  function handleSortChange(e) {
+    const option = sortOptions.find(o => o.value === e.target.value);
+    if (option) {
+      sortBy = option.field;
+      sortDir = option.dir;
+      loadClients();
     }
   }
 
@@ -99,7 +127,7 @@
     </a>
   </div>
 
-  <!-- Search -->
+  <!-- Search and Sort -->
   <div class="search-bar">
     <div class="search-input-wrapper">
       <Icon name="search" size="md" />
@@ -120,6 +148,19 @@
           <Icon name="x" size="sm" />
         </button>
       {/if}
+    </div>
+    <div class="sort-group">
+      <label for="sort-select" class="sort-label">Sort</label>
+      <select
+        id="sort-select"
+        class="select"
+        value={selectedSortOption}
+        on:change={handleSortChange}
+      >
+        {#each sortOptions as option}
+          <option value={option.value}>{option.label}</option>
+        {/each}
+      </select>
     </div>
     <button class="btn btn-secondary" on:click={loadClients}>Search</button>
   </div>
@@ -257,8 +298,25 @@
 
   .search-bar {
     display: flex;
+    align-items: flex-end;
     gap: var(--space-3);
     margin-bottom: var(--space-6);
+  }
+
+  .sort-group {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+  }
+
+  .sort-label {
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: var(--color-text-tertiary);
+  }
+
+  .sort-group .select {
+    min-width: 180px;
   }
 
   .search-input-wrapper {
@@ -430,11 +488,27 @@
     }
 
     .search-bar {
-      flex-direction: column;
+      flex-wrap: wrap;
     }
 
     .search-input-wrapper {
+      flex: 1 1 100%;
       max-width: none;
+      order: 1;
+    }
+
+    .sort-group {
+      flex: 1;
+      order: 2;
+    }
+
+    .sort-group .select {
+      min-width: 0;
+      width: 100%;
+    }
+
+    .search-bar > .btn {
+      order: 3;
     }
 
     .clients-grid {

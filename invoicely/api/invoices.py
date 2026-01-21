@@ -182,9 +182,14 @@ async def list_invoices(
     to_date: Optional[date] = Query(None, description="Filter to this date"),
     include_deleted: bool = Query(False, description="Include soft-deleted invoices"),
     limit: int = Query(50, ge=1, le=100),
+    sort_by: Optional[str] = Query(
+        None,
+        description="Sort field: invoice_number, client, issue_date, due_date, status, total",
+    ),
+    sort_dir: str = Query("desc", description="Sort direction: asc or desc"),
     session: AsyncSession = Depends(get_session),
 ) -> List[dict]:
-    """List invoices with optional filters."""
+    """List invoices with optional filters and sorting."""
     invoices = await InvoiceService.list_invoices(
         session,
         status=status,
@@ -193,6 +198,8 @@ async def list_invoices(
         to_date=to_date,
         include_deleted=include_deleted,
         limit=limit,
+        sort_by=sort_by,
+        sort_dir=sort_dir,
     )
     return [_serialize_invoice(inv) for inv in invoices]
 
