@@ -571,7 +571,7 @@
   }
 
   .date-range-inputs .input {
-    width: 140px;
+    width: 155px;
   }
 
   .date-range-separator {
