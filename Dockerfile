@@ -2,6 +2,7 @@
 FROM python:3.11-slim-bookworm
 
 # WeasyPrint requires these system libraries (Cairo, Pango, GDK-Pixbuf)
+# gosu is used for proper privilege dropping in entrypoint
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     python3-dev \
@@ -17,6 +18,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     ca-certificates \
     gnupg \
+    gosu \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Node.js 20.x via NodeSource
@@ -71,8 +73,9 @@ RUN groupadd --gid 1000 appuser && \
 RUN mkdir -p /app/data/pdfs /app/data/logos /app/data/backups && \
     chown -R appuser:appuser /app/data
 
-# Switch to non-root user
-USER appuser
+# Copy and setup entrypoint script
+COPY docker-entrypoint.sh /usr/local/bin/
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
 # Expose port
 EXPOSE 8080
@@ -81,5 +84,6 @@ EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"
 
-# Run the application
+# Use entrypoint to handle permissions, then run as appuser
+ENTRYPOINT ["docker-entrypoint.sh"]
 CMD ["uvicorn", "invoice_machine.main:app", "--host", "0.0.0.0", "--port", "8080"]
