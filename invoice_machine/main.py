@@ -167,6 +167,14 @@ def run_alembic_migrations():
     from pathlib import Path
     import sqlite3
 
+    # Mapping of old revision IDs (from invoicely) to new ones (invoice_machine)
+    # This handles database migrations from the renamed package
+    OLD_TO_NEW_REVISIONS = {
+        "007_add_default_currency": "007_default_currency",
+        "008_add_line_items_fts": "008_line_items_fts",
+        "009_add_sessions": "009_recurring_enhancements",  # ID changed
+    }
+
     # Get the alembic.ini path relative to project root
     project_root = Path(__file__).parent.parent
     alembic_cfg = Config(str(project_root / "alembic.ini"))
@@ -186,9 +194,24 @@ def run_alembic_migrations():
             has_alembic_table = cursor.fetchone() is not None
 
             has_valid_version = False
+            current_version = None
             if has_alembic_table:
                 cursor.execute("SELECT version_num FROM alembic_version LIMIT 1")
-                has_valid_version = cursor.fetchone() is not None
+                row = cursor.fetchone()
+                if row:
+                    has_valid_version = True
+                    current_version = row[0]
+
+            # Update old revision IDs to new ones
+            if current_version and current_version in OLD_TO_NEW_REVISIONS:
+                new_version = OLD_TO_NEW_REVISIONS[current_version]
+                print(f"Updating alembic version from {current_version} to {new_version}...")
+                cursor.execute(
+                    "UPDATE alembic_version SET version_num = ?",
+                    (new_version,)
+                )
+                conn.commit()
+                print(f"Alembic version updated successfully")
 
             # Check if users table exists (indicates existing database)
             cursor.execute(
