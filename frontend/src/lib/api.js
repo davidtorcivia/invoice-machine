@@ -1,5 +1,5 @@
 /**
- * API client for Invoicely backend
+ * API client for Invoice Machine backend
  */
 
 const API_BASE = '/api';

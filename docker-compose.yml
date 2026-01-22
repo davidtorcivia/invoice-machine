@@ -8,12 +8,13 @@ services:
       - ${DATA_DIR:-./data}:/app/data
     environment:
       # Core settings
-      - DATABASE_URL=sqlite+aiosqlite:////app/data/invoicely.db
+      - DATABASE_URL=sqlite+aiosqlite:////app/data/invoice_machine.db
       - DATA_DIR=/app/data
       - APP_BASE_URL=${APP_BASE_URL:-http://localhost:8080}
       - ENVIRONMENT=${ENVIRONMENT:-development}
       - TRASH_RETENTION_DAYS=${TRASH_RETENTION_DAYS:-90}
-      # Security settings
+      # Security settings (INVOICE_MACHINE_ENCRYPTION_KEY required in production)
+      - INVOICE_MACHINE_ENCRYPTION_KEY=${INVOICE_MACHINE_ENCRYPTION_KEY:-}
       - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:3000,http://localhost:8080}
       - SECURE_COOKIES=${SECURE_COOKIES:-false}
       # Invoice defaults

@@ -45,7 +45,7 @@ def test_fallback_adds_preferred_currency():
         conn.close()
 
         # Run the fallback migration
-        from invoicely.migrations.add_new_fields import migrate
+        from invoice_machine.migrations.add_new_fields import migrate
         migrate(db_path)
 
         # Verify the column was added
@@ -131,7 +131,7 @@ def test_fallback_skips_existing_columns():
         conn.close()
 
         # Should not raise an error
-        from invoicely.migrations.add_new_fields import migrate
+        from invoice_machine.migrations.add_new_fields import migrate
         migrate(db_path)
 
         # Verify no errors and columns still exist
@@ -272,7 +272,7 @@ def test_data_preservation():
         conn.close()
 
         # Run the fallback migration
-        from invoicely.migrations.add_new_fields import migrate
+        from invoice_machine.migrations.add_new_fields import migrate
         migrate(db_path)
 
         # Verify all data is preserved

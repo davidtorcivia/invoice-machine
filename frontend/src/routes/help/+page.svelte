@@ -269,7 +269,7 @@
       <div class="help-content">
         <p>All your data is stored locally in the <code>data/</code> directory:</p>
         <ul>
-          <li><code>invoicely.db</code> - SQLite database with all invoices, clients, and settings</li>
+          <li><code>invoice_machine.db</code> - SQLite database with all invoices, clients, and settings</li>
           <li><code>logos/</code> - Your uploaded logo files</li>
           <li><code>pdfs/</code> - Generated PDF files</li>
         </ul>
@@ -315,7 +315,7 @@
   "mcpServers": {
     "invoice-machine": {
       "command": "docker",
-      "args": ["exec", "-i", "invoice-machine", "python", "-m", "invoicely.mcp.server"]
+      "args": ["exec", "-i", "invoice-machine", "python", "-m", "invoice_machine.mcp.server"]
     }
   }
 }`}</pre>
@@ -342,7 +342,7 @@
           <li><strong>Search:</strong> full-text search across invoices and clients</li>
           <li><strong>Analytics:</strong> revenue summary, top clients, lifetime value</li>
           <li><strong>Email:</strong> send invoice email, test SMTP connection</li>
-          <li><strong>Other:</strong> generate PDF, list trash, empty trash</li>
+          <li><strong>Other:</strong> generate PDF, list trash</li>
         </ul>
       </div>
     </CollapsibleSection>

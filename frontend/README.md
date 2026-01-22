@@ -1,6 +1,6 @@
-# Invoicely Frontend
+# Invoice Machine Frontend
 
-Svelte frontend for the Invoicely invoicing application.
+Svelte frontend for the Invoice Machine invoicing application.
 
 ## Development
 

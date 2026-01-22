@@ -8,14 +8,14 @@ import tempfile
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from invoicely.database import Invoice, InvoiceItem, BusinessProfile
-from invoicely.services import (
+from invoice_machine.database import Invoice, InvoiceItem, BusinessProfile
+from invoice_machine.services import (
     BackupService,
     InvoiceService,
     ClientService,
 )
-from invoicely.email import _sanitize_email, _sanitize_header
-from invoicely.api.profile import validate_image_content
+from invoice_machine.email import _sanitize_email, _sanitize_header
+from invoice_machine.api.profile import validate_image_content
 
 
 class TestPathTraversalProtection:
@@ -46,8 +46,8 @@ class TestPathTraversalProtection:
         service = BackupService(backup_dir=Path(temp_db_path).parent)
 
         # These should not raise
-        path = service._validate_backup_filename("invoicely_backup_20250115_120000.db")
-        assert path.name == "invoicely_backup_20250115_120000.db"
+        path = service._validate_backup_filename("invoice_machine_backup_20250115_120000.db")
+        assert path.name == "invoice_machine_backup_20250115_120000.db"
 
         path = service._validate_backup_filename("backup.db.gz")
         assert path.name == "backup.db.gz"
@@ -281,12 +281,12 @@ class TestFileUploadSecurity:
         webp = b"RIFF" + b"\x00\x00\x00\x00" + b"WEBP" + b"\x00" * 100
         assert validate_image_content(webp) is True
 
-    def test_validates_svg_signature(self):
-        """SVG signatures are recognized."""
+    def test_rejects_svg_for_security(self):
+        """SVG is rejected due to XSS security risks (can contain embedded JavaScript)."""
         svg1 = b"<svg" + b" " * 100
         svg2 = b"<?xml" + b" " * 100
-        assert validate_image_content(svg1) is True
-        assert validate_image_content(svg2) is True
+        assert validate_image_content(svg1) is False
+        assert validate_image_content(svg2) is False
 
     def test_rejects_non_image_content(self):
         """Non-image content is rejected."""

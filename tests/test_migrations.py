@@ -49,7 +49,7 @@ class TestFallbackMigration:
         conn.close()
 
         # Run the fallback migration
-        from invoicely.migrations.add_new_fields import migrate
+        from invoice_machine.migrations.add_new_fields import migrate
         migrate(db_path)
 
         # Verify the column was added
@@ -128,7 +128,7 @@ class TestFallbackMigration:
         conn.close()
 
         # Should not raise an error
-        from invoicely.migrations.add_new_fields import migrate
+        from invoice_machine.migrations.add_new_fields import migrate
         migrate(db_path)
 
         # Verify no errors and columns still exist
@@ -374,7 +374,7 @@ class TestDataPreservation:
         conn.close()
 
         # Run the fallback migration
-        from invoicely.migrations.add_new_fields import migrate
+        from invoice_machine.migrations.add_new_fields import migrate
         migrate(db_path)
 
         # Verify all data is preserved
@@ -421,7 +421,7 @@ class TestMigrationFlowIntegration:
 
     def test_run_alembic_migrations_with_existing_db(self, tmp_path, monkeypatch):
         """Test the full run_alembic_migrations function with existing database."""
-        db_path = tmp_path / "data" / "invoicely.db"
+        db_path = tmp_path / "data" / "invoice_machine.db"
         db_path.parent.mkdir(parents=True, exist_ok=True)
 
         # Create existing database with empty alembic_version

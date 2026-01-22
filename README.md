@@ -80,8 +80,32 @@ Set these in a `.env` file or as environment variables. See `.env.example` for a
 
 | Variable | Description | Default |
 |----------|-------------|---------|
+| `INVOICE_MACHINE_ENCRYPTION_KEY` | Encryption key for sensitive data (SMTP passwords) | Required in production |
 | `SECURE_COOKIES` | Enable secure cookies (requires HTTPS) | `false` |
 | `CORS_ORIGINS` | Allowed CORS origins (comma-separated) | `http://localhost:3000,http://localhost:8080` |
+
+#### Generating an Encryption Key
+
+The encryption key protects sensitive data like SMTP credentials. In production, this key is **required**—the application will refuse to start without it.
+
+Generate a secure 32-byte (64 hex characters) key using any of these methods:
+
+**Python:**
+```bash
+python -c "import secrets; print(secrets.token_hex(32))"
+```
+
+**OpenSSL:**
+```bash
+openssl rand -hex 32
+```
+
+**PowerShell:**
+```powershell
+-join ((1..32) | ForEach-Object { "{0:x2}" -f (Get-Random -Maximum 256) })
+```
+
+Store the key securely and **never commit it to version control**. If you lose the key, any encrypted credentials (SMTP passwords) will become unreadable and must be re-entered.
 
 ### Invoice Defaults
 
@@ -97,6 +121,7 @@ For production deployments behind HTTPS (Cloudflare Tunnel, nginx, etc.), these 
 
 ```env
 # Required for production
+INVOICE_MACHINE_ENCRYPTION_KEY=your_64_character_hex_key_here
 APP_BASE_URL=https://invoices.yourdomain.com
 ENVIRONMENT=production
 SECURE_COOKIES=true
@@ -108,6 +133,7 @@ DATA_DIR=/var/lib/invoice-machine/data
 
 | Variable | Required | Description |
 |----------|----------|-------------|
+| `INVOICE_MACHINE_ENCRYPTION_KEY` | **Yes** | Encryption key for sensitive data (see [Generating an Encryption Key](#generating-an-encryption-key)) |
 | `APP_BASE_URL` | **Yes** | Must match your public URL for PDF links and MCP to work |
 | `ENVIRONMENT` | **Yes** | Set to `production` for proper logging and defaults |
 | `SECURE_COOKIES` | **Yes** | Must be `true` when using HTTPS |
@@ -234,7 +260,7 @@ If running locally with Docker, you can use stdio transport instead:
   "mcpServers": {
     "invoice-machine": {
       "command": "docker",
-      "args": ["exec", "-i", "invoice-machine", "python", "-m", "invoicely.mcp.server"]
+      "args": ["exec", "-i", "invoice-machine", "python", "-m", "invoice_machine.mcp.server"]
     }
   }
 }
@@ -285,13 +311,13 @@ If running locally with Docker, you can use stdio transport instead:
 
 **Email:** `send_invoice_email`, `test_smtp_connection`
 
-**Other:** `generate_pdf`, `list_trash`, `empty_trash`
+**Other:** `generate_pdf`, `list_trash`
 
 ## Project Structure
 
 ```
 invoice-machine/
-├── invoicely/           # Python backend
+├── invoice_machine/     # Python backend
 │   ├── api/             # FastAPI routes
 │   ├── mcp/             # MCP server
 │   ├── pdf/             # PDF generation
@@ -308,7 +334,7 @@ invoice-machine/
 │   ├── test_new_features.py  # Feature tests
 │   └── test_security.py # Security tests
 ├── data/                # Runtime data (gitignored)
-│   ├── invoicely.db     # SQLite database
+│   ├── invoice_machine.db  # SQLite database
 │   ├── backups/         # Database backups
 │   ├── pdfs/            # Generated PDFs
 │   └── logos/           # Uploaded logos
@@ -323,7 +349,7 @@ invoice-machine/
 
 ```bash
 pip install -e ".[dev]"
-uvicorn invoicely.main:app --reload --port 8080
+uvicorn invoice_machine.main:app --reload --port 8080
 ```
 
 ### Frontend
@@ -373,9 +399,16 @@ Invoice Machine includes several security features:
 
 ### Authentication
 - PBKDF2-HMAC-SHA256 password hashing with 600,000 iterations
-- Rate limiting on login endpoints (5 attempts/minute)
-- Session tokens with 30-day expiration
+- Password complexity requirements (minimum 8 characters with lowercase, uppercase, and digit)
+- Rate limiting on login endpoints (3 attempts/minute)
+- Database-backed sessions with 30-day expiration
+- CSRF protection using double-submit cookie pattern
 - Configurable secure cookies for HTTPS deployments
+
+### Credential Encryption
+- SMTP passwords and other sensitive data encrypted at rest using Fernet (AES-128-CBC)
+- Encryption key required in production (application refuses to start without it)
+- Key derivation uses PBKDF2-HMAC-SHA256 with unique salt
 
 ### Input Validation
 - Path traversal prevention on file operations
@@ -384,13 +417,18 @@ Invoice Machine includes several security features:
 - SQL injection prevention via SQLAlchemy ORM
 - FTS5 query sanitization
 
+### Container Security
+- Docker container runs as non-root user (UID 1000)
+- Minimal attack surface with production-only dependencies
+
 ### Production Recommendations
 
-1. **Use HTTPS**: Set `SECURE_COOKIES=true` when behind HTTPS
-2. **Restrict CORS**: Set `CORS_ORIGINS` to your actual domain only
-3. **Regular backups**: Enable automatic backups with S3 for offsite storage
-4. **Access control**: Use Cloudflare Access or similar for additional protection
-5. **Keep updated**: Pull latest Docker images regularly
+1. **Set encryption key**: Generate and set `INVOICE_MACHINE_ENCRYPTION_KEY` (see [Generating an Encryption Key](#generating-an-encryption-key))
+2. **Use HTTPS**: Set `SECURE_COOKIES=true` when behind HTTPS
+3. **Restrict CORS**: Set `CORS_ORIGINS` to your actual domain only
+4. **Regular backups**: Enable automatic backups with S3 for offsite storage
+5. **Access control**: Use Cloudflare Access or similar for additional protection
+6. **Keep updated**: Pull latest Docker images regularly
 
 ## Deployment
 
@@ -413,12 +451,13 @@ services:
       - "8080:8080"
     environment:
       # Required for production
+      - INVOICE_MACHINE_ENCRYPTION_KEY=${INVOICE_MACHINE_ENCRYPTION_KEY}
       - APP_BASE_URL=https://invoices.yourdomain.com
       - ENVIRONMENT=production
       - SECURE_COOKIES=true
       - CORS_ORIGINS=https://invoices.yourdomain.com
       # Database (uses container path)
-      - DATABASE_URL=sqlite+aiosqlite:////app/data/invoicely.db
+      - DATABASE_URL=sqlite+aiosqlite:////app/data/invoice_machine.db
       - DATA_DIR=/app/data
       # Optional: customize defaults
       - DEFAULT_PAYMENT_TERMS_DAYS=30

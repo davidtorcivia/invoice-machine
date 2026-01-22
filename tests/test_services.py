@@ -6,8 +6,8 @@ from decimal import Decimal
 import pytest
 from sqlalchemy import select
 
-from invoicely.database import Client, Invoice, InvoiceItem, BusinessProfile
-from invoicely.services import (
+from invoice_machine.database import Client, Invoice, InvoiceItem, BusinessProfile
+from invoice_machine.services import (
     generate_invoice_number,
     calculate_due_date,
     recalculate_invoice_totals,

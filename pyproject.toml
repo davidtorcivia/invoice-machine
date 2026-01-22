@@ -1,5 +1,5 @@
 [project]
-name = "invoicely"
+name = "invoice-machine"
 version = "0.1.0"
 description = "AI-first invoicing application with MCP server"
 readme = "README.md"

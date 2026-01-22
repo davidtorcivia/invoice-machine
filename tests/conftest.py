@@ -9,8 +9,8 @@ from pathlib import Path
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from invoicely.database import Base, BusinessProfile, Client, Invoice, InvoiceItem, RecurringSchedule
-from invoicely.services import generate_invoice_number, calculate_due_date, RecurringService, SearchService
+from invoice_machine.database import Base, BusinessProfile, Client, Invoice, InvoiceItem, RecurringSchedule
+from invoice_machine.services import generate_invoice_number, calculate_due_date, RecurringService, SearchService
 
 
 @pytest.fixture(scope="function")

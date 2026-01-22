@@ -7,10 +7,10 @@ import pytest
 import pytest_asyncio
 from httpx import AsyncClient, ASGITransport
 
-from invoicely.main import app
-from invoicely.database import Base, BusinessProfile, Client, User
-from invoicely.services import InvoiceService
-from invoicely.api.auth import create_session, SESSION_COOKIE_NAME
+from invoice_machine.main import app
+from invoice_machine.database import Base, BusinessProfile, Client, User
+from invoice_machine.services import InvoiceService
+from invoice_machine.api.auth import create_session, SESSION_COOKIE_NAME
 
 
 @pytest_asyncio.fixture(scope="function")
@@ -24,14 +24,14 @@ async def test_client():
         await conn.run_sync(Base.metadata.create_all)
 
     # Create session maker with test engine
-    import invoicely.database
-    original_maker = invoicely.database.async_session_maker
-    invoicely.database.async_session_maker = async_sessionmaker(
+    import invoice_machine.database
+    original_maker = invoice_machine.database.async_session_maker
+    invoice_machine.database.async_session_maker = async_sessionmaker(
         engine, expire_on_commit=False
     )
 
     # Create business profile and test user
-    async with invoicely.database.async_session_maker() as session:
+    async with invoice_machine.database.async_session_maker() as session:
         profile = BusinessProfile(
             id=1,
             name="Test Business",
@@ -60,7 +60,7 @@ async def test_client():
     yield client
 
     # Restore original
-    invoicely.database.async_session_maker = original_maker
+    invoice_machine.database.async_session_maker = original_maker
     await engine.dispose()
 
 

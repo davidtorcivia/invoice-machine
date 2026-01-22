@@ -48,7 +48,7 @@ RUN pip install --no-cache-dir \
     "cryptography>=42.0.0"
 
 # Copy backend code and alembic config
-COPY invoicely/ ./invoicely/
+COPY invoice_machine/ ./invoice_machine/
 COPY alembic.ini ./
 
 # Copy frontend and build
@@ -60,11 +60,19 @@ COPY frontend/ ./frontend/
 RUN cd frontend && npm run build
 
 # Copy built frontend to static directory
-RUN mkdir -p invoicely/static && \
-    cp -r frontend/dist/* invoicely/static/
+RUN mkdir -p invoice_machine/static && \
+    cp -r frontend/dist/* invoice_machine/static/
 
-# Create data directories
-RUN mkdir -p /app/data/pdfs /app/data/logos /app/data/backups
+# Create non-root user for security
+RUN groupadd --gid 1000 appuser && \
+    useradd --uid 1000 --gid appuser --shell /bin/bash --create-home appuser
+
+# Create data directories with proper ownership
+RUN mkdir -p /app/data/pdfs /app/data/logos /app/data/backups && \
+    chown -R appuser:appuser /app/data
+
+# Switch to non-root user
+USER appuser
 
 # Expose port
 EXPOSE 8080
@@ -74,4 +82,4 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"
 
 # Run the application
-CMD ["uvicorn", "invoicely.main:app", "--host", "0.0.0.0", "--port", "8080"]
+CMD ["uvicorn", "invoice_machine.main:app", "--host", "0.0.0.0", "--port", "8080"]

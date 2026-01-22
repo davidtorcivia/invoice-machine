@@ -180,22 +180,97 @@ export const createLoadingStore = () => {
 
 // ===== Data Store =====
 
-export function createDataStore(fetchFn, initialValue = null) {
-  const { subscribe, set, update } = writable(initialValue);
+/**
+ * Create a data store with lazy loading and request cancellation support.
+ *
+ * Features:
+ * - Lazy loading: data is only fetched when first subscribed or explicitly refreshed
+ * - Request cancellation: rapid refresh calls cancel previous in-flight requests
+ * - Error handling: errors are captured and exposed via error store
+ *
+ * @param {Function} fetchFn - Async function to fetch data. Receives AbortSignal as first arg.
+ * @param {*} initialValue - Initial value before first fetch
+ * @param {Object} options - Configuration options
+ * @param {boolean} options.lazy - If true (default), only fetch on first subscription
+ */
+export function createDataStore(fetchFn, initialValue = null, options = {}) {
+  const { lazy = true } = options;
+
+  const { subscribe: rawSubscribe, set, update } = writable(initialValue);
   const loading = createLoadingStore();
   const error = writable(null);
 
+  let hasFetched = false;
+  let currentController = null;
+  let subscriberCount = 0;
+
+  // Wrap subscribe to trigger lazy loading on first subscriber
+  const subscribe = (run, invalidate) => {
+    subscriberCount++;
+
+    // Trigger lazy load on first subscriber (if lazy mode and hasn't fetched)
+    if (lazy && !hasFetched && subscriberCount === 1) {
+      refresh().catch(() => {
+        // Errors are already captured in error store
+      });
+    }
+
+    const unsubscribe = rawSubscribe(run, invalidate);
+
+    return () => {
+      subscriberCount--;
+      unsubscribe();
+    };
+  };
+
   const refresh = async (...args) => {
+    // Cancel any in-flight request
+    if (currentController) {
+      currentController.abort();
+    }
+
+    // Create new abort controller for this request
+    currentController = new AbortController();
+    const signal = currentController.signal;
+
     error.set(null);
     try {
-      const data = await loading.with(() => fetchFn(...args));
-      set(data);
+      const data = await loading.with(async () => {
+        // Pass signal to fetchFn if it accepts it
+        const result = await fetchFn(signal, ...args);
+        return result;
+      });
+
+      // Only update if not aborted
+      if (!signal.aborted) {
+        set(data);
+        hasFetched = true;
+      }
       return data;
     } catch (e) {
+      // Don't treat abort as an error
+      if (e.name === 'AbortError') {
+        return get({ subscribe: rawSubscribe });
+      }
       error.set(e.message);
       toast.error(e.message);
       throw e;
+    } finally {
+      currentController = null;
     }
+  };
+
+  // Force refresh even if already fetched
+  const forceRefresh = (...args) => {
+    hasFetched = false;
+    return refresh(...args);
+  };
+
+  // Reset store to initial state
+  const reset = () => {
+    hasFetched = false;
+    set(initialValue);
+    error.set(null);
   };
 
   return {
@@ -205,28 +280,40 @@ export function createDataStore(fetchFn, initialValue = null) {
     loading: { subscribe: loading.subscribe },
     error: { subscribe: error.subscribe },
     refresh,
+    forceRefresh,
+    reset,
+    // Expose for testing
+    get hasFetched() {
+      return hasFetched;
+    },
   };
 }
 
 // ===== Business Profile Store =====
+// Profile is often needed early, so we don't use lazy loading for it
 
 export const profile = createDataStore(
-  () => fetch('/api/profile').then((r) => r.json()),
-  null
+  (signal) => fetch('/api/profile', { signal }).then((r) => r.json()),
+  null,
+  { lazy: false } // Profile is needed for many pages
 );
 
 // ===== Client Store =====
+// Clients are lazily loaded when first accessed
 
 export const clients = createDataStore(
-  () => fetch('/api/clients').then((r) => r.json()),
-  []
+  (signal) => fetch('/api/clients', { signal }).then((r) => r.json()),
+  [],
+  { lazy: true }
 );
 
 // ===== Invoice Store =====
+// Invoices are lazily loaded when first accessed
 
 export const invoices = createDataStore(
-  () => fetch('/api/invoices').then((r) => r.json()),
-  []
+  (signal) => fetch('/api/invoices', { signal }).then((r) => r.json()),
+  [],
+  { lazy: true }
 );
 
 // ===== Formatters =====
