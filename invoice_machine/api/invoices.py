@@ -126,6 +126,30 @@ class InvoiceItemUpdate(BaseModel):
     sort_order: Optional[int] = Field(None, ge=0)
 
 
+class BulkActionError(BaseModel):
+    """Error details for a single invoice in bulk action."""
+
+    id: int
+    reason: str
+
+
+class BulkActionRequest(BaseModel):
+    """Bulk action request schema."""
+
+    action: str = Field(..., pattern="^(mark_sent|mark_paid|delete)$")
+    invoice_ids: List[int] = Field(..., min_length=1, max_length=100)
+
+
+class BulkActionResponse(BaseModel):
+    """Bulk action response schema."""
+
+    action: str
+    total_requested: int
+    successful: int
+    failed: int
+    errors: List[BulkActionError] = []
+
+
 def _serialize_invoice(invoice: Invoice) -> dict:
     """Convert invoice to dict with proper decimal serialization."""
     return {
@@ -195,6 +219,22 @@ async def list_invoices(
         limit=limit,
     )
     return [_serialize_invoice(inv) for inv in invoices]
+
+
+@router.post("/bulk", response_model=BulkActionResponse)
+@limiter.limit("30/minute")
+async def bulk_action(
+    request: Request,
+    action_data: BulkActionRequest,
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """Execute bulk action on multiple invoices."""
+    result = await InvoiceService.bulk_action(
+        session,
+        action=action_data.action,
+        invoice_ids=action_data.invoice_ids,
+    )
+    return result
 
 
 @router.post("", response_model=InvoiceSchema, status_code=201)

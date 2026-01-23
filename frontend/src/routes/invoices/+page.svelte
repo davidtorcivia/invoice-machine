@@ -1,6 +1,7 @@
 <script>
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
+  import { fly } from 'svelte/transition';
   import { invoicesApi, clientsApi } from '$lib/api';
   import { formatDate, formatCurrency, toast } from '$lib/stores';
   import Header from '$lib/components/Header.svelte';
@@ -45,6 +46,110 @@
   let deleteTargetNumber = '';
   let deleting = false;
 
+  // Selection state for bulk actions
+  let selectedIds = new Set();
+
+  // Reactive: check if all visible invoices are selected
+  $: allSelected = invoices.length > 0 && selectedIds.size === invoices.length;
+
+  // Get selected invoices for action validation
+  $: selectedInvoices = invoices.filter(inv => selectedIds.has(inv.id));
+
+  // Determine which bulk actions are available
+  $: canMarkSent = selectedInvoices.some(inv => inv.status === 'draft');
+  $: canMarkPaid = selectedInvoices.some(inv => ['sent', 'overdue'].includes(inv.status));
+
+  // Bulk action modal state
+  let showBulkModal = false;
+  let bulkAction = null;
+  let bulkActionLoading = false;
+
+  function toggleSelect(id) {
+    if (selectedIds.has(id)) {
+      selectedIds.delete(id);
+    } else {
+      selectedIds.add(id);
+    }
+    selectedIds = selectedIds; // Trigger reactivity
+  }
+
+  function toggleSelectAll() {
+    if (allSelected) {
+      selectedIds = new Set();
+    } else {
+      selectedIds = new Set(invoices.map(inv => inv.id));
+    }
+  }
+
+  function clearSelection() {
+    selectedIds = new Set();
+  }
+
+  function openBulkActionModal(action) {
+    bulkAction = action;
+    showBulkModal = true;
+  }
+
+  function getActionLabel(action) {
+    const labels = {
+      mark_sent: 'Mark as Sent',
+      mark_paid: 'Mark as Paid',
+      delete: 'Delete',
+    };
+    return labels[action] || action;
+  }
+
+  function getBulkActionMessage() {
+    const count = selectedIds.size;
+    switch (bulkAction) {
+      case 'mark_sent': {
+        const draftCount = selectedInvoices.filter(inv => inv.status === 'draft').length;
+        const skipped = count - draftCount;
+        return `Mark ${draftCount} draft invoice${draftCount !== 1 ? 's' : ''} as sent?${skipped > 0 ? ` (${skipped} non-draft will be skipped)` : ''}`;
+      }
+      case 'mark_paid': {
+        const eligibleCount = selectedInvoices.filter(inv => ['sent', 'overdue'].includes(inv.status)).length;
+        const skipped = count - eligibleCount;
+        return `Mark ${eligibleCount} invoice${eligibleCount !== 1 ? 's' : ''} as paid?${skipped > 0 ? ` (${skipped} ineligible will be skipped)` : ''}`;
+      }
+      case 'delete':
+        return `Move ${count} invoice${count !== 1 ? 's' : ''} to trash? You can restore them later.`;
+      default:
+        return `Apply action to ${count} invoice${count !== 1 ? 's' : ''}?`;
+    }
+  }
+
+  async function executeBulkAction() {
+    if (!bulkAction || selectedIds.size === 0) return;
+
+    bulkActionLoading = true;
+    try {
+      const result = await invoicesApi.bulkAction(bulkAction, Array.from(selectedIds));
+
+      if (result.failed === 0) {
+        const pastTense = { mark_sent: 'marked as sent', mark_paid: 'marked as paid', delete: 'deleted' };
+        toast.success(`Successfully ${pastTense[bulkAction] || 'updated'} ${result.successful} invoice${result.successful !== 1 ? 's' : ''}`);
+      } else if (result.successful > 0) {
+        toast.info(`${result.successful} updated, ${result.failed} failed`);
+      } else {
+        toast.error('Failed to update invoices');
+      }
+
+      showBulkModal = false;
+      clearSelection();
+      await loadData();
+    } catch (error) {
+      toast.error(error.message || 'Bulk action failed');
+    } finally {
+      bulkActionLoading = false;
+    }
+  }
+
+  function cancelBulkAction() {
+    showBulkModal = false;
+    bulkAction = null;
+  }
+
   const statusConfig = {
     draft: { class: 'badge-draft', label: 'Draft' },
     sent: { class: 'badge-sent', label: 'Sent' },
@@ -77,6 +182,7 @@
 
   async function loadData() {
     loading = true;
+    clearSelection(); // Clear selection when filters/sort change
     try {
       const params = {
         sort_by: sortBy,
@@ -320,6 +426,14 @@
       <table class="table">
         <thead>
           <tr>
+            <th class="checkbox-col">
+              <input
+                type="checkbox"
+                checked={allSelected}
+                on:change={toggleSelectAll}
+                aria-label="Select all invoices"
+              />
+            </th>
             <th>
               <button class="sortable-header" class:active={sortBy === 'invoice_number'} on:click={() => handleSort('invoice_number')}>
                 Invoice
@@ -375,7 +489,15 @@
           {#each invoices as invoice}
             {@const effectiveStatus = getEffectiveStatus(invoice)}
             {@const overdue = isOverdue(invoice)}
-            <tr on:click={() => goto(`/invoices/${invoice.id}`)} class="clickable-row" class:row-overdue={overdue}>
+            <tr on:click={() => goto(`/invoices/${invoice.id}`)} class="clickable-row" class:row-overdue={overdue} class:row-selected={selectedIds.has(invoice.id)}>
+              <td class="checkbox-col" on:click|stopPropagation>
+                <input
+                  type="checkbox"
+                  checked={selectedIds.has(invoice.id)}
+                  on:change={() => toggleSelect(invoice.id)}
+                  aria-label="Select invoice {invoice.invoice_number}"
+                />
+              </td>
               <td>
                 <span class="invoice-number font-mono">#{invoice.invoice_number}</span>
               </td>
@@ -428,7 +550,15 @@
       {#each invoices as invoice}
         {@const effectiveStatus = getEffectiveStatus(invoice)}
         {@const overdue = isOverdue(invoice)}
-        <div class="invoice-card" class:card-overdue={overdue}>
+        <div class="invoice-card" class:card-overdue={overdue} class:card-selected={selectedIds.has(invoice.id)}>
+          <div class="card-checkbox" on:click|stopPropagation>
+            <input
+              type="checkbox"
+              checked={selectedIds.has(invoice.id)}
+              on:change={() => toggleSelect(invoice.id)}
+              aria-label="Select invoice {invoice.invoice_number}"
+            />
+          </div>
           <button class="invoice-card-main" on:click={() => goto(`/invoices/${invoice.id}`)}>
             <div class="invoice-card-header">
               <span class="invoice-card-number font-mono">#{invoice.invoice_number}</span>
@@ -488,6 +618,62 @@
     </div>
   {/if}
 </div>
+
+<!-- Floating bulk action bar -->
+{#if selectedIds.size > 0}
+  <div class="bulk-action-bar" transition:fly={{ y: 50, duration: 200 }}>
+    <div class="bulk-action-info">
+      <span class="selection-count">{selectedIds.size} selected</span>
+      <button class="btn btn-ghost btn-sm" on:click={clearSelection}>
+        Clear
+      </button>
+    </div>
+    <div class="bulk-action-buttons">
+      {#if canMarkSent}
+        <button
+          class="btn btn-secondary btn-sm"
+          on:click={() => openBulkActionModal('mark_sent')}
+          title="Mark selected draft invoices as sent"
+        >
+          <Icon name="send" size="sm" />
+          <span class="btn-label">Mark Sent</span>
+        </button>
+      {/if}
+      {#if canMarkPaid}
+        <button
+          class="btn btn-secondary btn-sm"
+          on:click={() => openBulkActionModal('mark_paid')}
+          title="Mark selected sent/overdue invoices as paid"
+        >
+          <Icon name="check" size="sm" />
+          <span class="btn-label">Mark Paid</span>
+        </button>
+      {/if}
+      <button
+        class="btn btn-danger btn-sm"
+        on:click={() => openBulkActionModal('delete')}
+        title="Delete selected invoices"
+      >
+        <Icon name="trash" size="sm" />
+        <span class="btn-label">Delete</span>
+      </button>
+    </div>
+  </div>
+{/if}
+
+<!-- Bulk action confirmation modal -->
+<ConfirmModal
+  show={showBulkModal}
+  title={bulkAction === 'delete' ? 'Delete Invoices' : 'Confirm Bulk Action'}
+  message={getBulkActionMessage()}
+  confirmText={getActionLabel(bulkAction)}
+  cancelText="Cancel"
+  variant={bulkAction === 'delete' ? 'danger' : 'primary'}
+  icon={bulkAction === 'delete' ? 'trash' : 'check'}
+  loading={bulkActionLoading}
+  onConfirm={executeBulkAction}
+  onCancel={cancelBulkAction}
+/>
 
 <ConfirmModal
   show={showDeleteModal}
@@ -765,6 +951,85 @@
     background: var(--color-bg);
   }
 
+  /* Checkbox column */
+  .checkbox-col {
+    width: 40px;
+    text-align: center;
+  }
+
+  .checkbox-col input[type="checkbox"] {
+    width: 16px;
+    height: 16px;
+    cursor: pointer;
+    accent-color: var(--color-primary);
+  }
+
+  /* Selected row highlight */
+  .row-selected {
+    background-color: color-mix(in srgb, var(--color-primary) 10%, transparent);
+  }
+
+  .row-selected:hover {
+    background-color: color-mix(in srgb, var(--color-primary) 15%, transparent);
+  }
+
+  /* Card selection */
+  .invoice-card.card-selected {
+    border-color: var(--color-primary);
+    background: color-mix(in srgb, var(--color-primary) 5%, var(--color-bg-elevated));
+  }
+
+  .card-checkbox {
+    position: absolute;
+    top: var(--space-3);
+    left: var(--space-3);
+    z-index: 1;
+  }
+
+  .invoice-card {
+    position: relative;
+  }
+
+  /* Floating bulk action bar */
+  .bulk-action-bar {
+    position: fixed;
+    bottom: var(--space-6);
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    align-items: center;
+    gap: var(--space-4);
+    padding: var(--space-3) var(--space-5);
+    background: var(--color-bg-elevated);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+    z-index: 40;
+  }
+
+  .bulk-action-info {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+  }
+
+  .selection-count {
+    font-weight: 600;
+    color: var(--color-text);
+    white-space: nowrap;
+  }
+
+  .bulk-action-buttons {
+    display: flex;
+    gap: var(--space-2);
+  }
+
+  .bulk-action-buttons .btn {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+  }
+
   @media (max-width: 900px) {
     .date-range-group {
       order: 10;
@@ -833,6 +1098,42 @@
     .invoice-cards {
       display: flex;
       flex-direction: column;
+    }
+
+    /* Card checkbox adjustments for mobile */
+    .invoice-card-main {
+      padding-left: var(--space-10);
+    }
+
+    /* Floating action bar responsive */
+    .bulk-action-bar {
+      left: var(--space-3);
+      right: var(--space-3);
+      transform: none;
+      flex-direction: column;
+      gap: var(--space-3);
+      padding: var(--space-3);
+    }
+
+    .bulk-action-buttons {
+      width: 100%;
+      justify-content: stretch;
+    }
+
+    .bulk-action-buttons .btn {
+      flex: 1;
+      justify-content: center;
+    }
+
+    .btn-label {
+      display: none;
+    }
+  }
+
+  /* Adjust sidebar offset for bulk action bar */
+  @media (min-width: 769px) {
+    .bulk-action-bar {
+      margin-left: calc(var(--sidebar-width, 240px) / 2);
     }
   }
 </style>

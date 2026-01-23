@@ -164,6 +164,11 @@ export const invoicesApi = {
   generatePdf: (id) => post(`/invoices/${id}/generate-pdf`),
 
   getPdfUrl: (id) => `${API_BASE}/invoices/${id}/pdf`,
+
+  bulkAction: (action, invoiceIds) => post('/invoices/bulk', {
+    action,
+    invoice_ids: invoiceIds,
+  }),
 };
 
 // ===== Trash =====

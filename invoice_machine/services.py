@@ -7,7 +7,7 @@ import tempfile
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
-from typing import Optional, Union
+from typing import Optional, Union, List
 
 import boto3
 from botocore.config import Config
@@ -752,6 +752,108 @@ class InvoiceService:
         )
         await session.commit()
         return result.rowcount
+
+    @staticmethod
+    async def bulk_action(
+        session: AsyncSession,
+        action: str,
+        invoice_ids: List[int],
+    ) -> dict:
+        """
+        Execute bulk action on multiple invoices.
+
+        Args:
+            session: Database session
+            action: One of 'mark_sent', 'mark_paid', 'delete'
+            invoice_ids: List of invoice IDs to process
+
+        Returns:
+            Dict with action, total_requested, successful, failed, errors
+        """
+        # Define valid status transitions
+        valid_transitions = {
+            "mark_sent": ["draft"],
+            "mark_paid": ["sent", "overdue"],
+            "delete": ["draft", "sent", "paid", "overdue", "cancelled"],
+        }
+
+        if action not in valid_transitions:
+            return {
+                "action": action,
+                "total_requested": len(invoice_ids),
+                "successful": 0,
+                "failed": len(invoice_ids),
+                "errors": [{"id": id, "reason": "Invalid action"} for id in invoice_ids],
+            }
+
+        # Fetch all requested invoices in single query
+        result = await session.execute(
+            select(Invoice).where(
+                and_(
+                    Invoice.id.in_(invoice_ids),
+                    Invoice.deleted_at.is_(None),
+                )
+            )
+        )
+        invoices = {inv.id: inv for inv in result.scalars().all()}
+
+        # Validate and categorize
+        valid_ids = []
+        errors = []
+
+        for inv_id in invoice_ids:
+            if inv_id not in invoices:
+                errors.append({"id": inv_id, "reason": "Invoice not found or deleted"})
+                continue
+
+            invoice = invoices[inv_id]
+            if invoice.status not in valid_transitions[action]:
+                errors.append({
+                    "id": inv_id,
+                    "reason": f"Invalid status transition: {invoice.status} cannot be {action.replace('_', ' ')}"
+                })
+                continue
+
+            valid_ids.append(inv_id)
+
+        # Execute bulk operation if there are valid IDs
+        successful = 0
+        if valid_ids:
+            now = datetime.utcnow()
+
+            if action == "mark_sent":
+                await session.execute(
+                    update(Invoice)
+                    .where(Invoice.id.in_(valid_ids))
+                    .values(status="sent", updated_at=now)
+                )
+                successful = len(valid_ids)
+
+            elif action == "mark_paid":
+                await session.execute(
+                    update(Invoice)
+                    .where(Invoice.id.in_(valid_ids))
+                    .values(status="paid", updated_at=now)
+                )
+                successful = len(valid_ids)
+
+            elif action == "delete":
+                await session.execute(
+                    update(Invoice)
+                    .where(Invoice.id.in_(valid_ids))
+                    .values(deleted_at=now, updated_at=now)
+                )
+                successful = len(valid_ids)
+
+            await session.commit()
+
+        return {
+            "action": action,
+            "total_requested": len(invoice_ids),
+            "successful": successful,
+            "failed": len(errors),
+            "errors": errors,
+        }
 
 
 class BackupService:
