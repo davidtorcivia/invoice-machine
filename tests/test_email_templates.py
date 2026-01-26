@@ -308,7 +308,6 @@ async def api_client():
     from invoice_machine.main import app
     from invoice_machine.api.auth import create_session, SESSION_COOKIE_NAME
     from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
-    import bcrypt
 
     engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
     async with engine.begin() as conn:
@@ -335,23 +334,27 @@ async def api_client():
         session.add(profile)
 
         # Create test user
-        password_hash = bcrypt.hashpw("testpass".encode(), bcrypt.gensalt()).decode()
         user = User(
             id=1,
             username="testuser",
-            password_hash=password_hash,
+            password_hash="test-password-hash",
         )
         session.add(user)
         await session.commit()
 
-    # Create session token
-    session_token = create_session(user_id=1)
+    # Create session token with CSRF
+    async with invoice_machine.database.async_session_maker() as session:
+        user_session = await create_session(session, user_id=1)
+        session_token = user_session.token
+        csrf_token = user_session.csrf_token
 
     # Create client with session cookie
     client = AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
     client.cookies.set(SESSION_COOKIE_NAME, session_token)
+    client.headers.update({"X-CSRF-Token": csrf_token})
 
     yield client
+    await client.aclose()
 
     # Restore original
     invoice_machine.database.async_session_maker = original_maker

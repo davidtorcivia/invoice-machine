@@ -13,6 +13,7 @@ from weasyprint import HTML, CSS
 
 from invoice_machine.database import Invoice, InvoiceItem, BusinessProfile
 from invoice_machine.config import get_settings
+from invoice_machine.utils import sanitize_filename_component
 
 settings = get_settings()
 
@@ -184,7 +185,10 @@ async def generate_pdf(session: AsyncSession, invoice: Invoice) -> str:
     )
 
     # Generate PDF filename
-    pdf_filename = f"{invoice.invoice_number}.pdf"
+    safe_invoice_number = sanitize_filename_component(
+        invoice.invoice_number, f"invoice-{invoice.id}"
+    )
+    pdf_filename = f"{safe_invoice_number}.pdf"
     pdf_path = settings.pdf_dir / pdf_filename
 
     # Generate PDF using WeasyPrint in a thread pool to avoid blocking

@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import secrets
 import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -28,13 +29,33 @@ from invoice_machine.rate_limit import limiter
 from invoice_machine.database import init_db, close_db
 from starlette.routing import Route
 from invoice_machine.api import profile, clients, invoices, trash, auth, mcp, backup, recurring, email, email_templates, search, analytics
-from invoice_machine.api.auth import get_session_user_id, SESSION_COOKIE_NAME, run_session_cleanup
+from invoice_machine.api.auth import get_session_data, SESSION_COOKIE_NAME, run_session_cleanup
 
 settings = get_settings()
 STATIC_DIR = Path("invoice_machine/static")
+STATIC_DIR_RESOLVED = STATIC_DIR.resolve()
 
 # Paths that don't require authentication
-PUBLIC_PATHS = {"/health", "/api/auth/status", "/api/auth/setup", "/api/auth/login", "/api/auth/logout"}
+PUBLIC_PATHS = {"/health", "/api/auth/status", "/api/auth/setup", "/api/auth/login"}
+UNSAFE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
+CSP_POLICY = (
+    "default-src 'self'; "
+    "base-uri 'self'; "
+    "object-src 'none'; "
+    "frame-ancestors 'none'; "
+    "form-action 'self'; "
+    "img-src 'self' data: blob:; "
+    "font-src 'self' https://fonts.gstatic.com; "
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+    "script-src 'self'; "
+    "script-src-attr 'none'; "
+    "connect-src 'self'; "
+    "worker-src 'self'; "
+    "manifest-src 'self'"
+)
+
+if settings.environment.lower() == "production":
+    CSP_POLICY += "; upgrade-insecure-requests"
 
 
 async def session_cleanup_task():
@@ -47,17 +68,46 @@ async def session_cleanup_task():
 async def scheduled_backup_task():
     """Background task to run daily backups at midnight UTC."""
     from datetime import datetime, timedelta
+    import json
     from invoice_machine.database import async_session_maker, BusinessProfile
     from invoice_machine.services import BackupService
-    import json
 
     while True:
         # Calculate seconds until next midnight UTC
         now = datetime.utcnow()
-        next_midnight = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+        next_midnight = (now + timedelta(days=1)).replace(
+            hour=0, minute=0, second=0, microsecond=0
+        )
         seconds_until_midnight = (next_midnight - now).total_seconds()
 
         await asyncio.sleep(seconds_until_midnight)
+
+        try:
+            async with async_session_maker() as session:
+                profile = await BusinessProfile.get(session)
+                if profile and profile.backup_enabled:
+                    # Get S3 config if enabled
+                    s3_config = None
+                    if profile.backup_s3_enabled and profile.backup_s3_config:
+                        try:
+                            s3_config = json.loads(profile.backup_s3_config)
+                            s3_config["enabled"] = True
+                        except json.JSONDecodeError:
+                            pass
+
+                    backup_service = BackupService(
+                        retention_days=profile.backup_retention_days or 30,
+                        s3_config=s3_config,
+                    )
+
+                    # Create backup
+                    backup_service.create_backup(compress=True)
+
+                    # Cleanup old backups
+                    backup_service.cleanup_old_backups()
+                    logger.info("Scheduled backup completed successfully")
+        except Exception as e:
+            logger.error(f"Scheduled backup task failed: {e}", exc_info=True)
 
 
 async def trash_cleanup_task():
@@ -131,33 +181,7 @@ async def recurring_invoice_task():
         except Exception as e:
             logger.error(f"Recurring invoice task failed: {e}", exc_info=True)
 
-        # Check if backups are enabled and run backup
-        try:
-            async with async_session_maker() as session:
-                profile = await BusinessProfile.get(session)
-                if profile and profile.backup_enabled:
-                    # Get S3 config if enabled
-                    s3_config = None
-                    if profile.backup_s3_enabled and profile.backup_s3_config:
-                        try:
-                            s3_config = json.loads(profile.backup_s3_config)
-                            s3_config["enabled"] = True
-                        except json.JSONDecodeError:
-                            pass
-
-                    backup_service = BackupService(
-                        retention_days=profile.backup_retention_days or 30,
-                        s3_config=s3_config,
-                    )
-
-                    # Create backup
-                    backup_service.create_backup(compress=True)
-
-                    # Cleanup old backups
-                    backup_service.cleanup_old_backups()
-                    logger.info("Scheduled backup completed successfully")
-        except Exception as e:
-            logger.error(f"Scheduled backup task failed: {e}", exc_info=True)
+        # Backups run in scheduled_backup_task
 
 
 def run_alembic_migrations():
@@ -375,7 +399,8 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
             response.headers["Content-Security-Policy"] = (
                 "default-src 'none'; frame-ancestors 'none'"
             )
-        # SPA pages get their CSP from the HTML meta tag
+        else:
+            response.headers["Content-Security-Policy"] = CSP_POLICY
 
         return response
 
@@ -393,6 +418,9 @@ async def auth_middleware(request: Request, call_next):
     if path in PUBLIC_PATHS or not path.startswith("/api/"):
         return await call_next(request)
 
+    if request.method == "OPTIONS":
+        return await call_next(request)
+
     # Check session cookie
     session_token = request.cookies.get(SESSION_COOKIE_NAME)
     if not session_token:
@@ -401,12 +429,24 @@ async def auth_middleware(request: Request, call_next):
             status_code=status.HTTP_401_UNAUTHORIZED,
         )
 
-    user_id = await get_session_user_id(session_token)
-    if not user_id:
-        return JSONResponse(
-            {"detail": "Session expired"},
-            status_code=status.HTTP_401_UNAUTHORIZED,
-        )
+    from invoice_machine.database import async_session_maker
+    async with async_session_maker() as db_session:
+        user_session = await get_session_data(db_session, session_token)
+        if not user_session or not user_session.user_id:
+            return JSONResponse(
+                {"detail": "Session expired"},
+                status_code=status.HTTP_401_UNAUTHORIZED,
+            )
+
+        if request.method in UNSAFE_METHODS:
+            csrf_header = request.headers.get("X-CSRF-Token")
+            if not csrf_header or not secrets.compare_digest(
+                user_session.csrf_token, csrf_header
+            ):
+                return JSONResponse(
+                    {"detail": "Invalid CSRF token"},
+                    status_code=status.HTTP_403_FORBIDDEN,
+                )
 
     return await call_next(request)
 
@@ -446,9 +486,15 @@ async def health_check():
 async def serve_spa(path: str):
     """Serve static files or fall back to index.html for SPA routing."""
     # Try to serve the exact file
-    file_path = STATIC_DIR / path
-    if file_path.is_file():
-        return FileResponse(file_path)
+    if path:
+        file_path = (STATIC_DIR / path).resolve()
+        try:
+            file_path.relative_to(STATIC_DIR_RESOLVED)
+        except ValueError:
+            return JSONResponse({"detail": "Not found"}, status_code=404)
+
+        if file_path.is_file():
+            return FileResponse(file_path)
 
     # Fall back to index.html for SPA routes
     index_path = STATIC_DIR / "index.html"

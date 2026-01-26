@@ -163,7 +163,19 @@ async def update_business_profile(
     async with get_session() as session:
         profile = await BusinessProfile.get_or_create(session)
 
-        updates = {k: v for k, v in locals().items() if v is not None and k not in ("session", "json", "Decimal")}
+        updates = {
+            k: v
+            for k, v in locals().items()
+            if v is not None and k not in ("session", "json", "Decimal")
+        }
+
+        if "smtp_password" in updates:
+            from invoice_machine.crypto import encrypt_credential
+
+            if updates["smtp_password"]:
+                updates["smtp_password"] = encrypt_credential(updates["smtp_password"])
+            else:
+                updates["smtp_password"] = None
 
         # Convert tax fields to proper types
         if "default_tax_enabled" in updates:
@@ -1936,29 +1948,21 @@ def run_sse_server(host: str = "0.0.0.0", port: int = 8081):
     Usage:
         python -m invoice_machine.mcp.server --sse --port 8081
     """
+    import asyncio
     import uvicorn
     from starlette.applications import Starlette
     from starlette.routing import Route
     from starlette.requests import Request
     from starlette.responses import Response
     from mcp.server.sse import SseServerTransport
+    from invoice_machine.api.mcp import verify_mcp_auth, get_mcp_api_key_hash
 
     # Create SSE transport
     sse = SseServerTransport("/messages/")
 
     async def handle_sse(request: Request):
-        # Check API key if configured
-        if settings.mcp_api_key:
-            # Check Authorization header
-            auth_header = request.headers.get("Authorization", "")
-            if auth_header.startswith("Bearer "):
-                provided_key = auth_header[7:]
-            else:
-                # Also check query param for compatibility
-                provided_key = request.query_params.get("api_key", "")
-
-            if provided_key != settings.mcp_api_key:
-                return Response("Unauthorized", status_code=401)
+        if not await verify_mcp_auth(request):
+            return Response("Unauthorized", status_code=401)
 
         async with sse.connect_sse(
             request.scope, request.receive, request._send
@@ -1969,16 +1973,8 @@ def run_sse_server(host: str = "0.0.0.0", port: int = 8081):
         return Response()
 
     async def handle_messages(request: Request):
-        # Check API key if configured
-        if settings.mcp_api_key:
-            auth_header = request.headers.get("Authorization", "")
-            if auth_header.startswith("Bearer "):
-                provided_key = auth_header[7:]
-            else:
-                provided_key = request.query_params.get("api_key", "")
-
-            if provided_key != settings.mcp_api_key:
-                return Response("Unauthorized", status_code=401)
+        if not await verify_mcp_auth(request):
+            return Response("Unauthorized", status_code=401)
 
         await sse.handle_post_message(request.scope, request.receive, request._send)
         return Response()
@@ -1991,10 +1987,11 @@ def run_sse_server(host: str = "0.0.0.0", port: int = 8081):
     )
 
     print(f"Starting MCP SSE server on {host}:{port}")
-    if settings.mcp_api_key:
+    api_key_hash = asyncio.run(get_mcp_api_key_hash())
+    if api_key_hash:
         print("API key authentication is ENABLED")
     else:
-        print("WARNING: No MCP_API_KEY set - server is unprotected!")
+        print("WARNING: No MCP API key configured - connections will be rejected until one is generated.")
     print(f"SSE endpoint: http://{host}:{port}/sse")
 
     uvicorn.run(app, host=host, port=port)

@@ -15,6 +15,7 @@ from sqlalchemy import select, and_, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from invoice_machine.config import get_settings
+from invoice_machine.utils import normalize_invoice_number_override
 from invoice_machine.database import (
     BusinessProfile,
     Client,
@@ -433,8 +434,8 @@ class InvoiceService:
 
         # Generate invoice number or use override
         invoice_date = issue_date or date.today()
-        if invoice_number_override:
-            invoice_number = invoice_number_override
+        if invoice_number_override is not None:
+            invoice_number = normalize_invoice_number_override(invoice_number_override)
         else:
             invoice_number = await generate_invoice_number(session, invoice_date, document_type)
 

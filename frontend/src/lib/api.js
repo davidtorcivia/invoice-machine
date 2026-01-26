@@ -4,6 +4,12 @@
 
 const API_BASE = '/api';
 
+function getCsrfToken() {
+  if (typeof document === 'undefined') return null;
+  const match = document.cookie.match(/(?:^|; )csrf_token=([^;]+)/);
+  return match ? decodeURIComponent(match[1]) : null;
+}
+
 /**
  * Make an API request
  */
@@ -16,7 +22,17 @@ async function request(endpoint, options = {}) {
     },
   };
 
-  const config = { ...defaultOptions, ...options };
+  const headers = { ...defaultOptions.headers, ...(options.headers || {}) };
+  const method = (options.method || 'GET').toUpperCase();
+
+  if (!['GET', 'HEAD', 'OPTIONS'].includes(method)) {
+    const csrfToken = getCsrfToken();
+    if (csrfToken) {
+      headers['X-CSRF-Token'] = csrfToken;
+    }
+  }
+
+  const config = { ...defaultOptions, ...options, headers };
 
   // Handle body
   if (config.body && typeof config.body === 'object' && !(config.body instanceof FormData)) {
@@ -77,9 +93,12 @@ export const profileApi = {
   uploadLogo: async (file) => {
     const formData = new FormData();
     formData.append('file', file);
+    const csrfToken = getCsrfToken();
+    const headers = csrfToken ? { 'X-CSRF-Token': csrfToken } : {};
 
     const response = await fetch(`${API_BASE}/profile/logo`, {
       method: 'POST',
+      headers,
       body: formData,
     });
 

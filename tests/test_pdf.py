@@ -17,13 +17,20 @@ from unittest.mock import patch, MagicMock, AsyncMock
 import pytest
 
 from invoice_machine.database import Invoice, InvoiceItem, BusinessProfile
-from invoice_machine.pdf.generator import (
-    format_money,
-    get_logo_base64,
-    generate_pdf,
-    strftime_filter,
-    zfill_filter,
-)
+
+try:
+    from invoice_machine.pdf.generator import (
+        format_money,
+        get_logo_base64,
+        generate_pdf,
+        strftime_filter,
+        zfill_filter,
+    )
+except OSError as e:
+    pytest.skip(
+        f"WeasyPrint dependencies missing: {e}",
+        allow_module_level=True,
+    )
 
 
 class TestFormatMoney:

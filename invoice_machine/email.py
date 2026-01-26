@@ -14,6 +14,7 @@ from starlette.concurrency import run_in_threadpool
 
 from invoice_machine.database import Invoice, BusinessProfile
 from invoice_machine.services import format_currency
+from invoice_machine.utils import sanitize_filename_component
 from invoice_machine.config import get_settings
 from invoice_machine.crypto import decrypt_credential
 
@@ -339,13 +340,16 @@ class EmailService:
 
         # Send email in thread pool
         try:
+            safe_invoice_number = sanitize_filename_component(
+                invoice.invoice_number, f"invoice-{invoice.id}"
+            )
             await run_in_threadpool(
                 self._send_email_sync,
                 to_email,
                 email_subject,
                 email_body,
                 pdf_path,
-                f"{invoice.invoice_number}.pdf",
+                f"{safe_invoice_number}.pdf",
             )
             return {
                 "success": True,

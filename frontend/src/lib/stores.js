@@ -4,6 +4,12 @@
 import { writable, derived, get } from 'svelte/store';
 import { browser } from '$app/environment';
 
+const getCsrfToken = () => {
+  if (!browser) return null;
+  const match = document.cookie.match(/(?:^|; )csrf_token=([^;]+)/);
+  return match ? decodeURIComponent(match[1]) : null;
+};
+
 // ===== Auth Store =====
 
 function createAuthStore() {
@@ -61,7 +67,9 @@ function createAuthStore() {
       return data;
     },
     logout: async () => {
-      await fetch('/api/auth/logout', { method: 'POST' });
+      const csrfToken = getCsrfToken();
+      const headers = csrfToken ? { 'X-CSRF-Token': csrfToken } : {};
+      await fetch('/api/auth/logout', { method: 'POST', headers });
       set({ loading: false, authenticated: false, needsSetup: false, username: null });
     },
   };

@@ -10,6 +10,7 @@ import base64
 import hashlib
 import logging
 import os
+import re
 import secrets
 from typing import Optional
 
@@ -46,7 +47,15 @@ def _get_encryption_key() -> bytes:
     environment = os.environ.get("ENVIRONMENT", "development").lower()
 
     if key:
-        # Validate key format (must be 32 bytes, base64-encoded = 44 chars)
+        key = key.strip()
+
+        # Accept 64-char hex keys for backwards compatibility
+        if re.fullmatch(r"[0-9a-fA-F]{64}", key):
+            decoded = bytes.fromhex(key)
+            _cached_key = base64.urlsafe_b64encode(decoded)
+            return _cached_key
+
+        # Validate base64 format (must decode to 32 bytes)
         try:
             decoded = base64.urlsafe_b64decode(key.encode())
             if len(decoded) == 32:
@@ -54,7 +63,7 @@ def _get_encryption_key() -> bytes:
                 return _cached_key
             else:
                 raise EncryptionKeyError(
-                    "INVOICE_MACHINE_ENCRYPTION_KEY must be a 32-byte base64-encoded value. "
+                    "INVOICE_MACHINE_ENCRYPTION_KEY must be a 32-byte base64 value or 64 hex characters. "
                     f"Got {len(decoded)} bytes. Generate a new key with: "
                     "python -c \"from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())\""
                 )

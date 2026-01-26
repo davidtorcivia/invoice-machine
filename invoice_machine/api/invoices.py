@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from invoice_machine.database import Invoice, InvoiceItem, get_session
 from invoice_machine.services import InvoiceService
+from invoice_machine.utils import INVOICE_NUMBER_REGEX, sanitize_filename_component
 
 router = APIRouter(prefix="/api/invoices", tags=["invoices"])
 limiter = Limiter(key_func=get_remote_address)
@@ -91,7 +92,9 @@ class InvoiceCreate(BaseModel):
     client_reference: Optional[str] = Field(None, max_length=100)
     show_payment_instructions: bool = True
     selected_payment_methods: Optional[str] = Field(None, max_length=1000)
-    invoice_number_override: Optional[str] = Field(None, max_length=50)
+    invoice_number_override: Optional[str] = Field(
+        None, max_length=50, pattern=INVOICE_NUMBER_REGEX
+    )
     # Tax settings
     tax_enabled: Optional[int] = Field(0, ge=0, le=1)
     tax_rate: Optional[Decimal] = Field(None, ge=0, le=100)
@@ -495,7 +498,10 @@ async def get_invoice_pdf(
         if safe_client:
             client_part = f"{safe_client} - "
 
-    filename = f"{client_part}{invoice.invoice_number}.pdf"
+    safe_invoice_number = sanitize_filename_component(
+        invoice.invoice_number, f"invoice-{invoice.id}"
+    )
+    filename = f"{client_part}{safe_invoice_number}.pdf"
 
     return FileResponse(
         pdf_path,
