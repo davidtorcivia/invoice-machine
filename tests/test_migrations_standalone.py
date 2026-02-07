@@ -90,6 +90,7 @@ def test_fallback_skips_existing_columns():
                 payment_methods TEXT,
                 theme_preference VARCHAR(20),
                 mcp_api_key VARCHAR(64),
+                bot_api_key VARCHAR(64),
                 app_base_url VARCHAR(500),
                 backup_enabled INTEGER DEFAULT 1,
                 backup_retention_days INTEGER DEFAULT 30,

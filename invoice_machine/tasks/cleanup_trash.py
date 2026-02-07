@@ -11,6 +11,7 @@ from sqlalchemy import delete, and_
 
 from invoice_machine.database import async_session_maker, Client, Invoice
 from invoice_machine.config import get_settings
+from invoice_machine.utils import utc_now
 
 
 async def cleanup_trash():
@@ -19,8 +20,7 @@ async def cleanup_trash():
     purge_threshold = timedelta(days=settings.trash_retention_days)
 
     async with async_session_maker() as session:
-        from datetime import datetime
-        cutoff = datetime.utcnow() - purge_threshold
+        cutoff = utc_now() - purge_threshold
 
         # Count items to be deleted
         from sqlalchemy import select, func

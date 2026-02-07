@@ -14,6 +14,7 @@ from fastapi.responses import FileResponse
 
 from invoice_machine.database import BusinessProfile, get_session
 from invoice_machine.config import get_settings
+from invoice_machine.utils import utc_now
 
 router = APIRouter(prefix="/api/profile", tags=["profile"])
 settings = get_settings()
@@ -43,7 +44,8 @@ class BusinessProfileSchema(BaseModel):
     default_payment_instructions: Optional[str] = None
     payment_methods: Optional[str] = None  # JSON string: [{id, name, instructions}]
     theme_preference: str = "system"
-    mcp_api_key: Optional[str] = None  # MCP API key for remote access
+    mcp_api_key_configured: bool = False
+    bot_api_key_configured: bool = False
     app_base_url: Optional[str] = None  # App base URL for links
     # Tax settings
     default_tax_enabled: bool = False
@@ -84,7 +86,6 @@ class BusinessProfileUpdate(BaseModel):
     default_payment_instructions: Optional[str] = Field(None, max_length=10000)
     payment_methods: Optional[str] = Field(None, max_length=10000)  # JSON string
     theme_preference: Optional[str] = Field(None, pattern="^(system|light|dark)$")
-    mcp_api_key: Optional[str] = Field(None, max_length=64)
     app_base_url: Optional[str] = Field(None, max_length=500)
     # Tax settings
     default_tax_enabled: Optional[bool] = None
@@ -165,7 +166,7 @@ async def update_profile(
         if value is not None:
             setattr(profile, key, value)
 
-    profile.updated_at = datetime.utcnow()
+    profile.updated_at = utc_now()
     await session.commit()
     await session.refresh(profile)
 
@@ -238,7 +239,7 @@ async def upload_logo(
     # Update profile
     profile = await BusinessProfile.get_or_create(session)
     profile.logo_path = unique_filename
-    profile.updated_at = datetime.utcnow()
+    profile.updated_at = utc_now()
     await session.commit()
 
     return {"logo_path": unique_filename, "url": f"/api/profile/logo/{unique_filename}"}
@@ -264,7 +265,7 @@ async def delete_logo(
                 logging.getLogger(__name__).warning(f"Could not delete logo file: {e}")
 
         profile.logo_path = None
-        profile.updated_at = datetime.utcnow()
+        profile.updated_at = utc_now()
         await session.commit()
 
     return {"success": True}
@@ -312,7 +313,7 @@ async def generate_mcp_key(
 
     # Hash it before storing - the plain key is only shown once
     profile.mcp_api_key = hash_api_key(plain_key)
-    profile.updated_at = datetime.utcnow()
+    profile.updated_at = utc_now()
     await session.commit()
 
     return {
@@ -330,7 +331,44 @@ async def delete_mcp_key(
     """Delete MCP API key (disables remote MCP access)."""
     profile = await BusinessProfile.get_or_create(session)
     profile.mcp_api_key = None
-    profile.updated_at = datetime.utcnow()
+    profile.updated_at = utc_now()
+    await session.commit()
+
+    return {"success": True}
+
+
+@router.post("/bot-key")
+@limiter.limit("5/hour")
+async def generate_bot_key(
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+):
+    """Generate a new bot API key for conventional REST API automation."""
+    from invoice_machine.crypto import generate_api_key, hash_api_key
+
+    profile = await BusinessProfile.get_or_create(session)
+
+    plain_key = generate_api_key()
+    profile.bot_api_key = hash_api_key(plain_key)
+    profile.updated_at = utc_now()
+    await session.commit()
+
+    return {
+        "bot_api_key": plain_key,
+        "warning": "This key is only shown once. Save it now - it cannot be recovered.",
+    }
+
+
+@router.delete("/bot-key")
+@limiter.limit("5/hour")
+async def delete_bot_key(
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+):
+    """Delete bot API key (disables bearer token REST API access)."""
+    profile = await BusinessProfile.get_or_create(session)
+    profile.bot_api_key = None
+    profile.updated_at = utc_now()
     await session.commit()
 
     return {"success": True}

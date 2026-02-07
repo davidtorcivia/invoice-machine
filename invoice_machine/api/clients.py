@@ -5,7 +5,7 @@ from decimal import Decimal
 from typing import Optional, List
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from invoice_machine.database import Client, get_session
@@ -41,8 +41,7 @@ class ClientSchema(BaseModel):
     updated_at: datetime
     deleted_at: Optional[datetime] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class ClientCreate(BaseModel):

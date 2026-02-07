@@ -2,7 +2,6 @@
 
 import json
 import logging
-from datetime import datetime
 from typing import Optional, List
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -14,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from invoice_machine.database import BusinessProfile, get_session
 from invoice_machine.services import BackupService
 from invoice_machine.crypto import encrypt_credential, decrypt_credential
+from invoice_machine.utils import utc_now
 
 logger = logging.getLogger(__name__)
 
@@ -194,7 +194,7 @@ async def update_backup_settings(
         s3_config["prefix"] = updates.backup_s3_prefix or None
 
     profile.backup_s3_config = json.dumps(s3_config) if s3_config else None
-    profile.updated_at = datetime.utcnow()
+    profile.updated_at = utc_now()
 
     await session.commit()
     await session.refresh(profile)

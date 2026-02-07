@@ -27,6 +27,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from invoice_machine.config import get_settings
 from invoice_machine.rate_limit import limiter
 from invoice_machine.database import init_db, close_db
+from invoice_machine.utils import utc_now
 from starlette.routing import Route
 from invoice_machine.api import profile, clients, invoices, trash, auth, mcp, backup, recurring, email, email_templates, search, analytics
 from invoice_machine.api.auth import get_session_data, SESSION_COOKIE_NAME, run_session_cleanup
@@ -67,14 +68,14 @@ async def session_cleanup_task():
 
 async def scheduled_backup_task():
     """Background task to run daily backups at midnight UTC."""
-    from datetime import datetime, timedelta
+    from datetime import timedelta
     import json
     from invoice_machine.database import async_session_maker, BusinessProfile
     from invoice_machine.services import BackupService
 
     while True:
         # Calculate seconds until next midnight UTC
-        now = datetime.utcnow()
+        now = utc_now()
         next_midnight = (now + timedelta(days=1)).replace(
             hour=0, minute=0, second=0, microsecond=0
         )
@@ -112,12 +113,12 @@ async def scheduled_backup_task():
 
 async def trash_cleanup_task():
     """Background task to auto-purge expired trash items daily at 3 AM UTC."""
-    from datetime import datetime, timedelta
+    from datetime import timedelta
     from invoice_machine.tasks.cleanup_trash import cleanup_trash
 
     while True:
         # Calculate seconds until next 3 AM UTC
-        now = datetime.utcnow()
+        now = utc_now()
         next_3am = now.replace(hour=3, minute=0, second=0, microsecond=0)
         if now.hour >= 3:
             next_3am = next_3am + timedelta(days=1)
@@ -133,13 +134,13 @@ async def trash_cleanup_task():
 
 async def overdue_check_task():
     """Background task to mark overdue invoices daily at 1 AM UTC."""
-    from datetime import datetime, timedelta
+    from datetime import timedelta
     from invoice_machine.database import async_session_maker
     from invoice_machine.services import InvoiceService
 
     while True:
         # Calculate seconds until next 1 AM UTC
-        now = datetime.utcnow()
+        now = utc_now()
         next_1am = now.replace(hour=1, minute=0, second=0, microsecond=0)
         if now.hour >= 1:
             next_1am = next_1am + timedelta(days=1)
@@ -158,13 +159,13 @@ async def overdue_check_task():
 
 async def recurring_invoice_task():
     """Background task to process recurring invoices daily at 2 AM UTC."""
-    from datetime import datetime, timedelta
+    from datetime import timedelta
     from invoice_machine.database import async_session_maker
     from invoice_machine.services import RecurringService
 
     while True:
         # Calculate seconds until next 2 AM UTC
-        now = datetime.utcnow()
+        now = utc_now()
         next_2am = now.replace(hour=2, minute=0, second=0, microsecond=0)
         if now.hour >= 2:
             next_2am = next_2am + timedelta(days=1)
@@ -409,6 +410,31 @@ app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(RequestSizeLimitMiddleware)
 
 
+def _extract_bearer_token(request: Request) -> str | None:
+    """Extract bearer token from Authorization header."""
+    auth_header = request.headers.get("Authorization", "")
+    if not auth_header.startswith("Bearer "):
+        return None
+
+    token = auth_header[7:].strip()
+    return token or None
+
+
+async def _verify_bot_api_key(token: str | None) -> bool:
+    """Verify bot API key for bearer token authentication."""
+    if not token:
+        return False
+
+    from invoice_machine.crypto import verify_api_key
+    from invoice_machine.database import BusinessProfile, async_session_maker
+
+    async with async_session_maker() as db_session:
+        profile = await BusinessProfile.get(db_session)
+        if not profile or not profile.bot_api_key:
+            return False
+        return verify_api_key(token, profile.bot_api_key)
+
+
 @app.middleware("http")
 async def auth_middleware(request: Request, call_next):
     """Protect API routes with authentication."""
@@ -420,6 +446,13 @@ async def auth_middleware(request: Request, call_next):
 
     if request.method == "OPTIONS":
         return await call_next(request)
+
+    # Allow bearer token authentication for bot automation on API routes
+    # (excluding auth endpoints which are session-based).
+    if not path.startswith("/api/auth/"):
+        bearer_token = _extract_bearer_token(request)
+        if await _verify_bot_api_key(bearer_token):
+            return await call_next(request)
 
     # Check session cookie
     session_token = request.cookies.get(SESSION_COOKIE_NAME)
@@ -480,6 +513,37 @@ app.mount("/mcp", mcp_asgi_app)
 async def health_check():
     """Health check endpoint."""
     return {"status": "healthy"}
+
+
+@app.get("/SKILL.md", include_in_schema=False)
+async def skill_manifest(request: Request):
+    """Serve a basic skill manifest for bot integrations."""
+    base_url = str(request.base_url).rstrip("/")
+    content = f"""# Invoice Machine Bot Skill
+
+Use this skill to automate Invoice Machine over HTTP.
+
+## Auth
+- Header: `Authorization: Bearer <BOT_API_KEY>`
+- Use the Bot API Key from the Settings page.
+
+## Base URL
+- `{base_url}/api`
+
+## Common Endpoints
+- `GET /api/profile`
+- `GET /api/invoices/paginated?page=1&per_page=25`
+- `POST /api/invoices`
+- `PUT /api/invoices/{{id}}`
+- `POST /api/clients`
+
+## Example
+```bash
+curl -H "Authorization: Bearer $BOT_API_KEY" \\
+  "{base_url}/api/invoices/paginated?page=1&per_page=10"
+```
+"""
+    return Response(content, media_type="text/markdown")
 
 
 @app.get("/{path:path}")

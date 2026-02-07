@@ -625,6 +625,21 @@ class TestEmailTemplatesEndpoints:
 class TestEmailTemplateMCPTools:
     """Tests for email template MCP tools via direct function calls."""
 
+    @pytest.fixture(autouse=True)
+    async def _bind_mcp_to_test_db(self, session_maker):
+        """Route MCP direct calls to the current test database session maker."""
+        import invoice_machine.database
+        import invoice_machine.mcp.server as mcp_server
+
+        original_maker = invoice_machine.database.async_session_maker
+        invoice_machine.database.async_session_maker = session_maker
+        mcp_server._schema_initialized = False
+        try:
+            yield
+        finally:
+            invoice_machine.database.async_session_maker = original_maker
+            mcp_server._schema_initialized = False
+
     @pytest.mark.asyncio
     async def test_mcp_get_templates_structure(self, db_session, business_profile):
         """get_email_templates returns correct structure."""

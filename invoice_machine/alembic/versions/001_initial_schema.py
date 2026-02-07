@@ -58,6 +58,7 @@ def upgrade() -> None:
             sa.Column("payment_methods", sa.Text(), nullable=True),
             sa.Column("theme_preference", sa.String(20), default="system"),
             sa.Column("mcp_api_key", sa.String(64), nullable=True),
+            sa.Column("bot_api_key", sa.String(64), nullable=True),
             sa.Column("app_base_url", sa.String(500), nullable=True),
             # Backup settings
             sa.Column("backup_enabled", sa.Integer(), default=1),

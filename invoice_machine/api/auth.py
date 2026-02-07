@@ -10,7 +10,7 @@ Implements secure session management with:
 import re
 import secrets
 import hashlib
-from datetime import datetime, timedelta
+from datetime import timedelta
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Response, Cookie, Request, Header
@@ -20,6 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from invoice_machine.database import User, Session as DbSession, get_session, async_session_maker
 from invoice_machine.config import get_settings
 from invoice_machine.rate_limit import limiter
+from invoice_machine.utils import utc_now
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 settings = get_settings()
@@ -117,7 +118,7 @@ async def create_session(
     Returns:
         Created Session object with token and csrf_token
     """
-    expires_at = datetime.utcnow() + timedelta(days=SESSION_DURATION_DAYS)
+    expires_at = utc_now() + timedelta(days=SESSION_DURATION_DAYS)
 
     user_agent = None
     ip_address = None

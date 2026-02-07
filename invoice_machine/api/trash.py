@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from invoice_machine.database import Client, Invoice, get_session
 from invoice_machine.services import ClientService, InvoiceService
 from invoice_machine.rate_limit import limiter
+from invoice_machine.utils import ensure_utc, utc_now
 
 router = APIRouter(prefix="/api/trash", tags=["trash"])
 
@@ -30,11 +31,10 @@ async def list_trash(
     session: AsyncSession = Depends(get_session),
 ) -> List[TrashedItemSchema]:
     """List all trashed items."""
-    from datetime import timedelta
     from invoice_machine.config import get_settings
 
     settings = get_settings()
-    purge_threshold = datetime.utcnow() - timedelta(days=settings.trash_retention_days)
+    now = utc_now()
 
     items = []
 
@@ -45,15 +45,18 @@ async def list_trash(
         select(Client).where(Client.deleted_at.is_not(None))
     )
     for client in client_result.scalars():
+        deleted_at = ensure_utc(client.deleted_at)
+        if not deleted_at:
+            continue
         days_left = settings.trash_retention_days - int(
-            (datetime.utcnow() - client.deleted_at).total_seconds() / 86400
+            (now - deleted_at).total_seconds() / 86400
         )
         items.append(
             TrashedItemSchema(
                 type="client",
                 id=client.id,
                 name=client.display_name,
-                deleted_at=client.deleted_at,
+                deleted_at=deleted_at,
                 days_until_purge=days_left,
             )
         )
@@ -63,15 +66,18 @@ async def list_trash(
         select(Invoice).where(Invoice.deleted_at.is_not(None))
     )
     for invoice in invoice_result.scalars():
+        deleted_at = ensure_utc(invoice.deleted_at)
+        if not deleted_at:
+            continue
         days_left = settings.trash_retention_days - int(
-            (datetime.utcnow() - invoice.deleted_at).total_seconds() / 86400
+            (now - deleted_at).total_seconds() / 86400
         )
         items.append(
             TrashedItemSchema(
                 type="invoice",
                 id=invoice.id,
                 name=invoice.invoice_number,
-                deleted_at=invoice.deleted_at,
+                deleted_at=deleted_at,
                 days_until_purge=days_left,
             )
         )

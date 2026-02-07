@@ -28,7 +28,7 @@
       const thisYear = now.getFullYear();
 
       stats.clientCount = clientsData.length;
-      recentInvoices = invoicesData.slice(0, 5);
+      recentInvoices = invoicesData.slice(0, 10);
 
       for (const invoice of invoicesData) {
         const total = parseFloat(invoice.total);

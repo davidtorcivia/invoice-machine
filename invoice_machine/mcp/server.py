@@ -1,23 +1,63 @@
 """MCP server for Claude Desktop integration."""
 
-from datetime import date, datetime
+from contextlib import asynccontextmanager
+from datetime import date
 from decimal import Decimal
-from typing import Optional, Union
+from pathlib import Path
+from typing import AsyncIterator, Optional, Union
 
 from mcp.server.fastmcp import FastMCP
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from invoice_machine.database import async_session_maker, BusinessProfile, Client, Invoice
+import invoice_machine.database as db
+from invoice_machine.database import (
+    BusinessProfile,
+    Client,
+    Invoice,
+)
 from invoice_machine.services import ClientService, InvoiceService, RecurringService, SearchService, format_currency
 from invoice_machine.config import get_settings
+from invoice_machine.utils import ensure_utc, utc_now
 
 mcp = FastMCP("invoice-machine")
 settings = get_settings()
+_schema_initialized = False
 
 
-def get_session() -> AsyncSession:
+def _sqlite_path_from_url(database_url: str) -> Path | None:
+    """Extract SQLite file path from SQLAlchemy URL, if applicable."""
+    if database_url.startswith("sqlite+aiosqlite:///"):
+        return Path(database_url.replace("sqlite+aiosqlite:///", "", 1))
+    if database_url.startswith("sqlite:///"):
+        return Path(database_url.replace("sqlite:///", "", 1))
+    return None
+
+
+async def _ensure_schema_initialized() -> None:
+    """Ensure MCP session DB has required tables/columns even without app startup."""
+    global _schema_initialized
+    if _schema_initialized:
+        return
+
+    # Create tables for fresh databases.
+    await db.init_db()
+
+    # Backfill missing legacy columns in older SQLite databases.
+    db_path = _sqlite_path_from_url(settings.database_url)
+    if db_path is not None and db_path.name != ":memory:":
+        from invoice_machine.migrations.add_new_fields import migrate
+
+        migrate(db_path)
+
+    _schema_initialized = True
+
+
+@asynccontextmanager
+async def get_session() -> AsyncIterator[AsyncSession]:
     """Get database session."""
-    return async_session_maker()
+    await _ensure_schema_initialized()
+    async with db.async_session_maker() as session:
+        yield session
 
 
 # ============================================================================
@@ -192,7 +232,7 @@ async def update_business_profile(
         for key, value in updates.items():
             setattr(profile, key, value)
 
-        profile.updated_at = datetime.utcnow()
+        profile.updated_at = utc_now()
         await session.commit()
         await session.refresh(profile)
 
@@ -276,7 +316,7 @@ async def add_payment_method(
 
         # Create new method with unique ID
         new_method = {
-            "id": str(int(datetime.utcnow().timestamp() * 1000)),
+            "id": str(int(utc_now().timestamp() * 1000)),
             "name": name,
             "instructions": instructions,
         }
@@ -284,7 +324,7 @@ async def add_payment_method(
 
         # Save back to profile
         profile.payment_methods = json.dumps(payment_methods)
-        profile.updated_at = datetime.utcnow()
+        profile.updated_at = utc_now()
         await session.commit()
 
         return new_method
@@ -323,7 +363,7 @@ async def remove_payment_method(method_id: str) -> bool:
 
         # Save back to profile
         profile.payment_methods = json.dumps(payment_methods)
-        profile.updated_at = datetime.utcnow()
+        profile.updated_at = utc_now()
         await session.commit()
 
         return True
@@ -1059,7 +1099,6 @@ async def generate_pdf(invoice_id: int) -> dict:
             "generated_at": "2025-01-15T10:30:00Z"
         }
     """
-    from datetime import datetime
     from invoice_machine.pdf.generator import generate_pdf as do_generate_pdf
 
     async with get_session() as session:
@@ -1070,7 +1109,7 @@ async def generate_pdf(invoice_id: int) -> dict:
         pdf_path = await do_generate_pdf(session, invoice)
 
         invoice.pdf_path = pdf_path
-        invoice.pdf_generated_at = datetime.utcnow()
+        invoice.pdf_generated_at = utc_now()
         await session.commit()
 
         return {
@@ -1094,11 +1133,10 @@ async def list_trash() -> list:
     Returns:
         List of trashed items with days until auto-purge
     """
-    from datetime import timedelta
-
     async with get_session() as session:
         from sqlalchemy import select
 
+        now = utc_now()
         items = []
 
         # Trashed clients
@@ -1108,14 +1146,17 @@ async def list_trash() -> list:
             )
         )
         for client in client_result.scalars():
+            deleted_at = ensure_utc(client.deleted_at)
+            if not deleted_at:
+                continue
             days_left = settings.trash_retention_days - int(
-                (datetime.utcnow() - client.deleted_at).total_seconds() / 86400
+                (now - deleted_at).total_seconds() / 86400
             )
             items.append({
                 "type": "client",
                 "id": client.id,
                 "name": client.display_name,
-                "deleted_at": client.deleted_at.isoformat(),
+                "deleted_at": deleted_at.isoformat(),
                 "days_until_purge": days_left,
             })
 
@@ -1126,14 +1167,17 @@ async def list_trash() -> list:
             )
         )
         for invoice in invoice_result.scalars():
+            deleted_at = ensure_utc(invoice.deleted_at)
+            if not deleted_at:
+                continue
             days_left = settings.trash_retention_days - int(
-                (datetime.utcnow() - invoice.deleted_at).total_seconds() / 86400
+                (now - deleted_at).total_seconds() / 86400
             )
             items.append({
                 "type": "invoice",
                 "id": invoice.id,
                 "name": invoice.invoice_number,
-                "deleted_at": invoice.deleted_at.isoformat(),
+                "deleted_at": deleted_at.isoformat(),
                 "days_until_purge": days_left,
             })
 
@@ -1416,7 +1460,7 @@ async def send_invoice_email(
         if invoice.needs_pdf_regeneration:
             pdf_path = await generate_pdf(session, invoice)
             invoice.pdf_path = pdf_path
-            invoice.pdf_generated_at = datetime.utcnow()
+            invoice.pdf_generated_at = utc_now()
             await session.commit()
 
         # Send email
@@ -1523,7 +1567,7 @@ async def update_email_templates(
         if email_body_template is not None:
             profile.email_body_template = email_body_template or None
 
-        profile.updated_at = datetime.utcnow()
+        profile.updated_at = utc_now()
         await session.commit()
         await session.refresh(profile)
 
@@ -2009,3 +2053,4 @@ if __name__ == "__main__":
         run_sse_server(port=port)
     else:
         main()
+

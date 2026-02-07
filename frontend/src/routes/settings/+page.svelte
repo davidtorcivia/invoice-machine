@@ -23,6 +23,7 @@
     paymentMethods: false,
     smtpSettings: false,
     mcpIntegration: false,
+    botApi: false,
     backup: false
   };
 
@@ -78,9 +79,12 @@
 
   // MCP Integration
   let mcpApiKey = '';
+  let mcpApiKeyConfigured = false;
+  let botApiKey = '';
+  let botApiKeyConfigured = false;
   let appBaseUrl = '';
   let generatingMcpKey = false;
-  let showMcpKeyModal = false;
+  let generatingBotKey = false;
 
   // Computed MCP endpoint URL
   $: mcpEndpointUrl = appBaseUrl || (typeof window !== 'undefined' ? window.location.origin : '');
@@ -111,6 +115,8 @@
   // MCP key delete modal state
   let showDeleteMcpModal = false;
   let deletingMcpKey = false;
+  let showDeleteBotModal = false;
+  let deletingBotKey = false;
 
   onMount(async () => {
     await loadProfile();
@@ -153,7 +159,10 @@
       }
 
       // MCP settings
-      mcpApiKey = profile.mcp_api_key || '';
+      mcpApiKeyConfigured = !!profile.mcp_api_key_configured;
+      botApiKeyConfigured = !!profile.bot_api_key_configured;
+      mcpApiKey = '';
+      botApiKey = '';
       appBaseUrl = profile.app_base_url || '';
 
       // Tax settings
@@ -396,7 +405,7 @@
     try {
       const result = await profileApi.generateMcpKey();
       mcpApiKey = result.mcp_api_key;
-      showMcpKeyModal = true;
+      mcpApiKeyConfigured = true;
       toast.success('MCP API key generated');
     } catch (error) {
       toast.error('Failed to generate API key');
@@ -414,6 +423,7 @@
     try {
       await profileApi.deleteMcpKey();
       mcpApiKey = '';
+      mcpApiKeyConfigured = false;
       toast.success('MCP API key deleted');
       showDeleteMcpModal = false;
     } catch (error) {
@@ -428,12 +438,59 @@
   }
 
   function copyMcpKey() {
+    if (!mcpApiKey) {
+      toast.error('Regenerate key to copy it again');
+      return;
+    }
     navigator.clipboard.writeText(mcpApiKey);
     toast.success('API key copied to clipboard');
   }
 
-  function closeMcpKeyModal() {
-    showMcpKeyModal = false;
+  // Bot API key functions
+  async function generateBotKey() {
+    generatingBotKey = true;
+    try {
+      const result = await profileApi.generateBotKey();
+      botApiKey = result.bot_api_key;
+      botApiKeyConfigured = true;
+      toast.success('Bot API key generated');
+    } catch (error) {
+      toast.error('Failed to generate bot API key');
+    } finally {
+      generatingBotKey = false;
+    }
+  }
+
+  function openDeleteBotModal() {
+    showDeleteBotModal = true;
+  }
+
+  async function confirmDeleteBotKey() {
+    deletingBotKey = true;
+    try {
+      await profileApi.deleteBotKey();
+      botApiKey = '';
+      botApiKeyConfigured = false;
+      toast.success('Bot API key deleted');
+      showDeleteBotModal = false;
+    } catch (error) {
+      toast.error('Failed to delete bot API key');
+    } finally {
+      deletingBotKey = false;
+    }
+  }
+
+  function cancelDeleteBotKey() {
+    showDeleteBotModal = false;
+  }
+
+  function copyBotKey() {
+    if (!botApiKey) {
+      toast.error('Regenerate key to copy it again');
+      return;
+    }
+    navigator.clipboard.writeText(botApiKey);
+    toast.success('Bot API key copied to clipboard');
   }
 
   // Backup functions
@@ -1097,7 +1154,7 @@
           </p>
         </div>
 
-        {#if mcpApiKey}
+        {#if mcpApiKeyConfigured}
           <div class="mcp-status mcp-enabled">
             <div class="mcp-status-icon">
               <Icon name="check" size="md" />
@@ -1111,12 +1168,15 @@
           <div class="mcp-key-display">
             <label class="label">API Key</label>
             <div class="mcp-key-row">
-              <input type="password" class="input" value={mcpApiKey} readonly />
-              <button class="btn btn-secondary" on:click={copyMcpKey}>
+              <input type="password" class="input" value={mcpApiKey || '••••••••••••••••'} readonly />
+              <button class="btn btn-secondary" on:click={copyMcpKey} disabled={!mcpApiKey}>
                 <Icon name="copy" size="sm" />
                 Copy
               </button>
             </div>
+            {#if !mcpApiKey}
+              <p class="form-hint">Key is hidden after generation. Regenerate to copy again.</p>
+            {/if}
           </div>
 
           <div class="mcp-actions">
@@ -1153,11 +1213,11 @@
               <p>Add this to your Claude Desktop config file:</p>
               <pre class="code-block">{`{
   "mcpServers": {
-    "invoice-machine": {
-      "transport": "sse",
-      "url": "${mcpEndpointUrl}/mcp/sse",
-      "headers": {
-        "Authorization": "Bearer ${mcpApiKey || 'YOUR_API_KEY'}"
+            "invoice-machine": {
+              "transport": "sse",
+              "url": "${mcpEndpointUrl}/mcp/sse",
+              "headers": {
+                "Authorization": "Bearer ${mcpApiKey || 'YOUR_API_KEY'}"
       }
     }
   }
@@ -1167,6 +1227,79 @@
                 <li><strong>macOS:</strong> <code>~/Library/Application Support/Claude/claude_desktop_config.json</code></li>
                 <li><strong>Windows:</strong> <code>%APPDATA%\Claude\claude_desktop_config.json</code></li>
               </ul>
+            </div>
+          </details>
+        </div>
+      </CollapsibleSection>
+
+      <!-- Bot API Key -->
+      <CollapsibleSection title="Bot API Key" subtitle="REST API automation access" icon="settings" bind:open={openSections.botApi}>
+        <p class="form-hint mb-4">
+          Generate a separate API key for conventional REST API access with bots and agents.
+          Use this key in the <code>Authorization: Bearer ...</code> header for <code>/api/*</code> endpoints.
+        </p>
+
+        {#if botApiKeyConfigured}
+          <div class="mcp-status mcp-enabled">
+            <div class="mcp-status-icon">
+              <Icon name="check" size="md" />
+            </div>
+            <div class="mcp-status-info">
+              <span class="mcp-status-label">Bot API access enabled</span>
+              <span class="mcp-status-endpoint">Skill URL: <code>{mcpEndpointUrl}/SKILL.md</code></span>
+            </div>
+          </div>
+
+          <div class="mcp-key-display">
+            <label class="label">Bot API Key</label>
+            <div class="mcp-key-row">
+              <input type="password" class="input" value={botApiKey || '••••••••••••••••'} readonly />
+              <button class="btn btn-secondary" on:click={copyBotKey} disabled={!botApiKey}>
+                <Icon name="copy" size="sm" />
+                Copy
+              </button>
+            </div>
+            {#if !botApiKey}
+              <p class="form-hint">Key is hidden after generation. Regenerate to copy again.</p>
+            {/if}
+          </div>
+
+          <div class="mcp-actions">
+            <button class="btn btn-secondary" on:click={generateBotKey} disabled={generatingBotKey}>
+              <Icon name="refresh" size="sm" />
+              Regenerate Key
+            </button>
+            <button class="btn btn-ghost btn-danger-text" on:click={openDeleteBotModal}>
+              <Icon name="trash" size="sm" />
+              Disable Bot API Access
+            </button>
+          </div>
+        {:else}
+          <div class="mcp-status mcp-disabled">
+            <div class="mcp-status-icon">
+              <Icon name="x" size="md" />
+            </div>
+            <div class="mcp-status-info">
+              <span class="mcp-status-label">Bot API access disabled</span>
+              <span class="mcp-status-hint">Generate a key to enable bearer token access for bots</span>
+            </div>
+          </div>
+
+          <button class="btn btn-primary" on:click={generateBotKey} disabled={generatingBotKey}>
+            <Icon name="plus" size="sm" />
+            {generatingBotKey ? 'Generating...' : 'Generate Bot API Key'}
+          </button>
+        {/if}
+
+        <div class="mcp-help mt-4">
+          <details>
+            <summary>How to use this key with bots</summary>
+            <div class="mcp-help-content">
+              <p>Reference the hosted skill file at:</p>
+              <pre class="code-block">{`${mcpEndpointUrl}/SKILL.md`}</pre>
+              <p class="mt-2">Example request:</p>
+              <pre class="code-block">{`curl -H "Authorization: Bearer ${botApiKey || 'YOUR_BOT_API_KEY'}" \\
+  "${mcpEndpointUrl}/api/invoices/paginated?page=1&per_page=10"`}</pre>
             </div>
           </details>
         </div>
@@ -1480,6 +1613,20 @@
   loading={deletingMcpKey}
   onConfirm={confirmDeleteMcpKey}
   onCancel={cancelDeleteMcpKey}
+/>
+
+<!-- Delete Bot API Key Modal -->
+<ConfirmModal
+  show={showDeleteBotModal}
+  title="Disable Bot API Access"
+  message="This will delete your bot API key and disable bearer-token automation for /api endpoints."
+  confirmText="Disable"
+  cancelText="Cancel"
+  variant="danger"
+  icon="trash"
+  loading={deletingBotKey}
+  onConfirm={confirmDeleteBotKey}
+  onCancel={cancelDeleteBotKey}
 />
 
 <!-- Delete Backup Modal -->

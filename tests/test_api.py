@@ -92,6 +92,8 @@ class TestProfileEndpoints:
         assert data["id"] == 1
         assert data["name"] == "Test Business"
         assert data["business_name"] == "Test LLC"
+        assert data["mcp_api_key_configured"] is False
+        assert data["bot_api_key_configured"] is False
 
     @pytest.mark.asyncio
     async def test_update_profile(self, test_client):
@@ -115,6 +117,71 @@ class TestProfileEndpoints:
         data = response.json()
         assert data["name"] == "Test Business"
         assert data["phone"] == "555-9999"
+
+    @pytest.mark.asyncio
+    async def test_generate_bot_key(self, test_client):
+        """Generate bot API key and mark profile as configured."""
+        response = await test_client.post("/api/profile/bot-key")
+        assert response.status_code == 200
+        data = response.json()
+        assert "bot_api_key" in data
+        assert isinstance(data["bot_api_key"], str)
+        assert len(data["bot_api_key"]) >= 32
+
+        profile_response = await test_client.get("/api/profile")
+        profile_data = profile_response.json()
+        assert profile_data["bot_api_key_configured"] is True
+
+    @pytest.mark.asyncio
+    async def test_delete_bot_key(self, test_client):
+        """Delete bot API key and mark profile as unconfigured."""
+        await test_client.post("/api/profile/bot-key")
+
+        response = await test_client.delete("/api/profile/bot-key")
+        assert response.status_code == 200
+        assert response.json()["success"] is True
+
+        profile_response = await test_client.get("/api/profile")
+        profile_data = profile_response.json()
+        assert profile_data["bot_api_key_configured"] is False
+
+
+class TestBotApiKeyAuth:
+    """Tests for bearer-token auth using dedicated bot API key."""
+
+    @pytest.mark.asyncio
+    async def test_bot_key_allows_conventional_api_calls(self, test_client):
+        """Bot key can authenticate GET and unsafe methods without CSRF."""
+        generate_response = await test_client.post("/api/profile/bot-key")
+        bot_key = generate_response.json()["bot_api_key"]
+
+        bot_client = AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
+        headers = {"Authorization": f"Bearer {bot_key}"}
+        try:
+            profile_response = await bot_client.get("/api/profile", headers=headers)
+            assert profile_response.status_code == 200
+
+            create_response = await bot_client.post(
+                "/api/clients",
+                headers=headers,
+                json={"name": "Bot Client", "email": "bot@example.com"},
+            )
+            assert create_response.status_code == 201
+        finally:
+            await bot_client.aclose()
+
+    @pytest.mark.asyncio
+    async def test_invalid_bot_key_is_rejected(self, test_client):
+        """Invalid bearer token does not bypass authentication."""
+        bot_client = AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
+        try:
+            response = await bot_client.get(
+                "/api/profile",
+                headers={"Authorization": "Bearer invalid-key"},
+            )
+            assert response.status_code == 401
+        finally:
+            await bot_client.aclose()
 
 
 class TestClientEndpoints:
@@ -244,6 +311,64 @@ class TestInvoiceEndpoints:
         response = await test_client.get("/api/invoices")
         assert response.status_code == 200
         assert response.json() == []
+
+    @pytest.mark.asyncio
+    async def test_list_invoices_supports_sorting(self, test_client):
+        """List invoices supports sort_by and sort_dir parameters."""
+        await test_client.post("/api/invoices", json={"issue_date": "2025-01-10"})
+        await test_client.post("/api/invoices", json={"issue_date": "2025-01-01"})
+
+        response = await test_client.get(
+            "/api/invoices?sort_by=issue_date&sort_dir=asc&limit=10"
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data) == 2
+        assert data[0]["issue_date"] <= data[1]["issue_date"]
+
+    @pytest.mark.asyncio
+    async def test_list_invoices_paginated(self, test_client):
+        """Paginated invoices endpoint returns items and metadata."""
+        for i in range(6):
+            await test_client.post(
+                "/api/invoices",
+                json={"issue_date": f"2025-01-{i + 1:02d}"},
+            )
+
+        response = await test_client.get("/api/invoices/paginated?page=2&per_page=2")
+        assert response.status_code == 200
+
+        data = response.json()
+        assert "items" in data
+        assert "pagination" in data
+        assert len(data["items"]) == 2
+        assert data["pagination"]["total"] == 6
+        assert data["pagination"]["page"] == 2
+        assert data["pagination"]["per_page"] == 2
+        assert data["pagination"]["total_pages"] == 3
+        assert data["pagination"]["has_next"] is True
+        assert data["pagination"]["has_prev"] is True
+
+    @pytest.mark.asyncio
+    async def test_list_invoices_includes_line_item_preview(self, test_client):
+        """List responses include line item summary fields."""
+        await test_client.post(
+            "/api/invoices",
+            json={
+                "items": [
+                    {"description": "Design", "quantity": 1, "unit_price": 100},
+                    {"description": "Development", "quantity": 1, "unit_price": 200},
+                    {"description": "Hosting", "quantity": 1, "unit_price": 50},
+                ]
+            },
+        )
+
+        response = await test_client.get("/api/invoices?limit=1")
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data) == 1
+        assert data[0]["line_items_count"] == 3
+        assert "Design" in data[0]["line_items_preview"]
 
     @pytest.mark.asyncio
     async def test_create_invoice(self, test_client):
@@ -379,6 +504,25 @@ class TestInvoiceEndpoints:
         data = response.json()
         assert data["description"] == "New Service"
         assert data["total"] == "150.00"
+
+    @pytest.mark.asyncio
+    async def test_add_invoice_item_with_hours_unit_type(self, test_client):
+        """Add line item supports explicit hours unit type."""
+        create_response = await test_client.post("/api/invoices", json={})
+        invoice_id = create_response.json()["id"]
+
+        response = await test_client.post(
+            f"/api/invoices/{invoice_id}/items",
+            params={
+                "description": "Consulting",
+                "quantity": 2,
+                "unit_type": "hours",
+                "unit_price": "75.00",
+            },
+        )
+        assert response.status_code == 201
+        data = response.json()
+        assert data["unit_type"] == "hours"
 
     @pytest.mark.asyncio
     async def test_update_invoice_item(self, test_client):

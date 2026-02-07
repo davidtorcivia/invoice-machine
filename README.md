@@ -16,7 +16,8 @@ A self-hosted invoicing application for freelancers and small businesses. Create
 - Dark mode with system preference detection
 - Overdue invoice highlighting and automatic status updates
 - **Analytics** for revenue tracking and client insights
-- MCP integration for Claude Desktop
+- MCP integration for Claude Desktop (separate key from REST bot API)
+- Bot API key for conventional `/api/*` automation with hosted `SKILL.md`
 - SQLite storage, runs anywhere
 
 ## Quick Start
@@ -134,7 +135,7 @@ DATA_DIR=/var/lib/invoice-machine/data
 | Variable | Required | Description |
 |----------|----------|-------------|
 | `INVOICE_MACHINE_ENCRYPTION_KEY` | **Yes** | Encryption key for sensitive data (see [Generating an Encryption Key](#generating-an-encryption-key)) |
-| `APP_BASE_URL` | **Yes** | Must match your public URL for PDF links and MCP to work |
+| `APP_BASE_URL` | **Yes** | Must match your public URL for PDF links, MCP, and hosted `SKILL.md` |
 | `ENVIRONMENT` | **Yes** | Set to `production` for proper logging and defaults |
 | `SECURE_COOKIES` | **Yes** | Must be `true` when using HTTPS |
 | `CORS_ORIGINS` | **Yes** | Must match your domain to prevent CORS errors |
@@ -240,16 +241,55 @@ Invoice Machine works with Claude Desktop through MCP. You can create invoices, 
         "mcp-remote",
         "https://your-server.com/mcp/sse",
         "--header",
-        "Authorization: Bearer YOUR_API_KEY"
+        "Authorization: Bearer YOUR_MCP_API_KEY"
       ]
     }
   }
 }
 ```
 
-Replace `your-server.com` with your actual domain and `YOUR_API_KEY` with the key from Settings.
+Replace `your-server.com` with your actual domain and `YOUR_MCP_API_KEY` with the key from Settings.
 
 The MCP endpoint runs on the same port as the web app. Works with Cloudflare Tunnel or any reverse proxy.
+
+### Key Scope
+
+The MCP API key is only for MCP (`/mcp/*`) connections from Claude Desktop.
+For conventional REST API calls (`/api/*`), use the separate Bot API key described below.
+
+## Bot API Integration
+
+Use a dedicated Bot API key for automation tools, scripts, and agents making standard HTTP requests.
+
+### Setup
+
+1. Go to Settings > Bot API Key
+2. Click Generate Bot API Key
+3. Save the key immediately (it is only shown once)
+4. Send it as a bearer token in REST API requests
+
+### Authentication
+
+Use this header on `/api/*` requests:
+
+```http
+Authorization: Bearer YOUR_BOT_API_KEY
+```
+
+### Skill File
+
+Invoice Machine exposes a hosted skill file for agent setup at:
+
+```text
+https://your-server.com/SKILL.md
+```
+
+### Example Request
+
+```bash
+curl -H "Authorization: Bearer YOUR_BOT_API_KEY" \
+  "https://your-server.com/api/invoices/paginated?page=1&per_page=10"
+```
 
 ### Local Docker Setup
 
@@ -349,6 +389,7 @@ invoice-machine/
 
 ```bash
 pip install -e ".[dev]"
+python -c "import mcp; print('mcp installed')"
 uvicorn invoice_machine.main:app --reload --port 8080
 ```
 

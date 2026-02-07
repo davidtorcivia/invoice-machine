@@ -5,14 +5,19 @@ from decimal import Decimal
 from typing import Optional, List, Union
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from invoice_machine.database import Invoice, InvoiceItem, get_session
 from invoice_machine.services import InvoiceService
-from invoice_machine.utils import INVOICE_NUMBER_REGEX, sanitize_filename_component
+from invoice_machine.utils import (
+    INVOICE_NUMBER_REGEX,
+    ensure_utc,
+    sanitize_filename_component,
+    utc_now,
+)
 
 router = APIRouter(prefix="/api/invoices", tags=["invoices"])
 limiter = Limiter(key_func=get_remote_address)
@@ -29,8 +34,7 @@ class InvoiceItemSchema(BaseModel):
     total: str
     sort_order: int
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class InvoiceSchema(BaseModel):
@@ -64,10 +68,11 @@ class InvoiceSchema(BaseModel):
     created_at: datetime
     updated_at: datetime
     deleted_at: Optional[datetime] = None
+    line_items_count: int = 0
+    line_items_preview: str = ""
     items: List[InvoiceItemSchema] = []
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class InvoiceItemCreate(BaseModel):
@@ -153,8 +158,46 @@ class BulkActionResponse(BaseModel):
     errors: List[BulkActionError] = []
 
 
-def _serialize_invoice(invoice: Invoice) -> dict:
+class InvoicePagination(BaseModel):
+    """Pagination metadata for invoice list responses."""
+
+    page: int
+    per_page: int
+    total: int
+    total_pages: int
+    has_next: bool
+    has_prev: bool
+
+
+class PaginatedInvoiceResponse(BaseModel):
+    """Paginated invoice list response."""
+
+    items: List[InvoiceSchema]
+    pagination: InvoicePagination
+
+
+def _build_line_items_preview(invoice: Invoice, max_items: int = 2, max_len: int = 120) -> str:
+    """Build compact preview text from invoice line item descriptions."""
+    descriptions = [
+        (item.description or "").strip()
+        for item in invoice.items
+        if (item.description or "").strip()
+    ]
+    if not descriptions:
+        return ""
+
+    preview = ", ".join(descriptions[:max_items])
+    if len(descriptions) > max_items:
+        preview = f"{preview} +{len(descriptions) - max_items} more"
+
+    if len(preview) > max_len:
+        return preview[: max_len - 3].rstrip() + "..."
+    return preview
+
+
+def _serialize_invoice(invoice: Invoice, include_items: bool = True) -> dict:
     """Convert invoice to dict with proper decimal serialization."""
+    line_items_count = len(invoice.items)
     return {
         "id": invoice.id,
         "invoice_number": invoice.invoice_number,
@@ -184,18 +227,24 @@ def _serialize_invoice(invoice: Invoice) -> dict:
         "created_at": invoice.created_at,
         "updated_at": invoice.updated_at,
         "deleted_at": invoice.deleted_at,
-        "items": [
-            {
-                "id": item.id,
-                "description": item.description,
-                "quantity": item.quantity,
-                "unit_type": item.unit_type,
-                "unit_price": str(item.unit_price),
-                "total": str(item.total),
-                "sort_order": item.sort_order,
-            }
-            for item in invoice.items
-        ],
+        "line_items_count": line_items_count,
+        "line_items_preview": _build_line_items_preview(invoice),
+        "items": (
+            [
+                {
+                    "id": item.id,
+                    "description": item.description,
+                    "quantity": item.quantity,
+                    "unit_type": item.unit_type,
+                    "unit_price": str(item.unit_price),
+                    "total": str(item.total),
+                    "sort_order": item.sort_order,
+                }
+                for item in invoice.items
+            ]
+            if include_items
+            else []
+        ),
     }
 
 
@@ -208,6 +257,11 @@ async def list_invoices(
     from_date: Optional[date] = Query(None, description="Filter from this date"),
     to_date: Optional[date] = Query(None, description="Filter to this date"),
     include_deleted: bool = Query(False, description="Include soft-deleted invoices"),
+    sort_by: str = Query(
+        "created_at",
+        pattern="^(created_at|issue_date|due_date|client|invoice_number|total|status)$",
+    ),
+    sort_dir: str = Query("desc", pattern="^(asc|desc)$"),
     limit: int = Query(50, ge=1, le=100),
     session: AsyncSession = Depends(get_session),
 ) -> List[dict]:
@@ -219,9 +273,58 @@ async def list_invoices(
         from_date=from_date,
         to_date=to_date,
         include_deleted=include_deleted,
+        sort_by=sort_by,
+        sort_dir=sort_dir,
         limit=limit,
     )
-    return [_serialize_invoice(inv) for inv in invoices]
+    return [_serialize_invoice(inv, include_items=False) for inv in invoices]
+
+
+@router.get("/paginated", response_model=PaginatedInvoiceResponse)
+@limiter.limit("120/minute")
+async def list_invoices_paginated(
+    request: Request,
+    status: Optional[str] = Query(None, description="Filter by status"),
+    client_id: Optional[int] = Query(None, description="Filter by client ID"),
+    from_date: Optional[date] = Query(None, description="Filter from this date"),
+    to_date: Optional[date] = Query(None, description="Filter to this date"),
+    include_deleted: bool = Query(False, description="Include soft-deleted invoices"),
+    sort_by: str = Query(
+        "created_at",
+        pattern="^(created_at|issue_date|due_date|client|invoice_number|total|status)$",
+    ),
+    sort_dir: str = Query("desc", pattern="^(asc|desc)$"),
+    page: int = Query(1, ge=1),
+    per_page: int = Query(25, ge=1, le=100),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """List invoices with pagination metadata."""
+    items, total = await InvoiceService.list_invoices_paginated(
+        session,
+        status=status,
+        client_id=client_id,
+        from_date=from_date,
+        to_date=to_date,
+        include_deleted=include_deleted,
+        sort_by=sort_by,
+        sort_dir=sort_dir,
+        page=page,
+        per_page=per_page,
+    )
+
+    total_pages = (total + per_page - 1) // per_page if total > 0 else 0
+
+    return {
+        "items": [_serialize_invoice(inv, include_items=False) for inv in items],
+        "pagination": {
+            "page": page,
+            "per_page": per_page,
+            "total": total,
+            "total_pages": total_pages,
+            "has_next": page < total_pages,
+            "has_prev": page > 1,
+        },
+    }
 
 
 @router.post("/bulk", response_model=BulkActionResponse)
@@ -260,24 +363,28 @@ async def create_invoice(
             for item in invoice_data.items
         ]
 
-    invoice = await InvoiceService.create_invoice(
-        session,
-        client_id=invoice_data.client_id,
-        issue_date=invoice_data.issue_date,
-        due_date=invoice_data.due_date,
-        payment_terms_days=invoice_data.payment_terms_days,
-        currency_code=invoice_data.currency_code,
-        notes=invoice_data.notes,
-        document_type=invoice_data.document_type,
-        client_reference=invoice_data.client_reference,
-        show_payment_instructions=invoice_data.show_payment_instructions,
-        selected_payment_methods=invoice_data.selected_payment_methods,
-        invoice_number_override=invoice_data.invoice_number_override,
-        tax_enabled=invoice_data.tax_enabled,
-        tax_rate=invoice_data.tax_rate,
-        tax_name=invoice_data.tax_name,
-        items=items_data,
-    )
+    try:
+        invoice = await InvoiceService.create_invoice(
+            session,
+            client_id=invoice_data.client_id,
+            issue_date=invoice_data.issue_date,
+            due_date=invoice_data.due_date,
+            payment_terms_days=invoice_data.payment_terms_days,
+            currency_code=invoice_data.currency_code,
+            notes=invoice_data.notes,
+            document_type=invoice_data.document_type,
+            client_reference=invoice_data.client_reference,
+            show_payment_instructions=invoice_data.show_payment_instructions,
+            selected_payment_methods=invoice_data.selected_payment_methods,
+            invoice_number_override=invoice_data.invoice_number_override,
+            tax_enabled=invoice_data.tax_enabled,
+            tax_rate=invoice_data.tax_rate,
+            tax_name=invoice_data.tax_name,
+            items=items_data,
+        )
+    except ValueError as e:
+        await session.rollback()
+        raise HTTPException(status_code=400, detail=str(e))
 
     return _serialize_invoice(invoice)
 
@@ -341,18 +448,29 @@ async def add_invoice_item(
     invoice_id: int,
     description: str = Query(..., description="Item description"),
     quantity: int = Query(1, ge=1, description="Quantity"),
+    unit_type: str = Query("qty", pattern="^(qty|hours)$", description="Unit type"),
     unit_price: Union[Decimal, str] = Query(..., description="Unit price"),
     sort_order: int = Query(0, description="Sort order"),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
     """Add line item to invoice."""
-    item = await InvoiceService.add_item(
-        session, invoice_id, description, quantity, unit_price, sort_order
-    )
+    try:
+        item = await InvoiceService.add_item(
+            session,
+            invoice_id,
+            description,
+            quantity,
+            unit_price,
+            sort_order,
+            unit_type,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     return {
         "id": item.id,
         "description": item.description,
         "quantity": item.quantity,
+        "unit_type": item.unit_type,
         "unit_price": str(item.unit_price),
         "total": str(item.total),
         "sort_order": item.sort_order,
@@ -379,6 +497,7 @@ async def update_invoice_item(
         "id": item.id,
         "description": item.description,
         "quantity": item.quantity,
+        "unit_type": item.unit_type,
         "unit_price": str(item.unit_price),
         "total": str(item.total),
         "sort_order": item.sort_order,
@@ -420,10 +539,8 @@ async def generate_invoice_pdf(
     pdf_path = await generate_pdf(session, invoice)
 
     # Update invoice
-    from datetime import datetime
-
     invoice.pdf_path = pdf_path
-    invoice.pdf_generated_at = datetime.utcnow()
+    invoice.pdf_generated_at = utc_now()
     await session.commit()
 
     return {
@@ -453,14 +570,14 @@ async def get_invoice_pdf(
     needs_generation = (
         not invoice.pdf_path
         or not invoice.pdf_generated_at
-        or invoice.updated_at > invoice.pdf_generated_at
+        or ensure_utc(invoice.updated_at) > ensure_utc(invoice.pdf_generated_at)
     )
 
     if needs_generation:
         # Generate PDF
         pdf_path = await generate_pdf(session, invoice)
         invoice.pdf_path = pdf_path
-        invoice.pdf_generated_at = datetime.utcnow()
+        invoice.pdf_generated_at = utc_now()
         await session.commit()
         await session.refresh(invoice)
 

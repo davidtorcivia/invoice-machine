@@ -114,6 +114,10 @@ export const profileApi = {
   generateMcpKey: () => post('/profile/mcp-key'),
 
   deleteMcpKey: () => del('/profile/mcp-key'),
+
+  generateBotKey: () => post('/profile/bot-key'),
+
+  deleteBotKey: () => del('/profile/bot-key'),
 };
 
 // ===== Clients =====
@@ -157,6 +161,21 @@ export const invoicesApi = {
     return get(`/invoices${query}`);
   },
 
+  listPaginated: (params = {}) => {
+    const search = new URLSearchParams();
+    if (params.status) search.append('status', params.status);
+    if (params.client_id) search.append('client_id', params.client_id);
+    if (params.from_date) search.append('from_date', params.from_date);
+    if (params.to_date) search.append('to_date', params.to_date);
+    if (params.include_deleted) search.append('include_deleted', 'true');
+    if (params.sort_by) search.append('sort_by', params.sort_by);
+    if (params.sort_dir) search.append('sort_dir', params.sort_dir);
+    search.append('page', `${params.page || 1}`);
+    search.append('per_page', `${params.per_page || 25}`);
+    const query = search.toString() ? `?${search}` : '';
+    return get(`/invoices/paginated${query}`);
+  },
+
   get: (id) => get(`/invoices/${id}`),
 
   create: (data) => post('/invoices', data),
@@ -171,6 +190,7 @@ export const invoicesApi = {
     const params = new URLSearchParams();
     params.append('description', item.description);
     params.append('quantity', item.quantity);
+    params.append('unit_type', item.unit_type || 'qty');
     params.append('unit_price', item.unit_price);
     params.append('sort_order', item.sort_order || 0);
     return post(`/invoices/${id}/items?${params}`);

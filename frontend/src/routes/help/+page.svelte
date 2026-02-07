@@ -19,7 +19,8 @@
     trash: false,
     tips: false,
     dataBackup: false,
-    mcpIntegration: false
+    mcpIntegration: false,
+    botApiIntegration: false
   };
 </script>
 
@@ -136,6 +137,9 @@
 
         <h3>Theme</h3>
         <p>Choose between light mode, dark mode, or system preference (which follows your operating system's setting).</p>
+
+        <h3>API Keys</h3>
+        <p>Settings includes two separate keys: <strong>MCP API Key</strong> for Claude Desktop (<code>/mcp/*</code>) and <strong>Bot API Key</strong> for REST automation (<code>/api/*</code>).</p>
       </div>
     </CollapsibleSection>
 
@@ -302,12 +306,13 @@
         "mcp-remote",
         "https://your-server.com/mcp/sse",
         "--header",
-        "Authorization: Bearer YOUR_API_KEY"
+        "Authorization: Bearer YOUR_MCP_API_KEY"
       ]
     }
   }
 }`}</pre>
-        <p>Replace <code>your-server.com</code> with your actual domain and <code>YOUR_API_KEY</code> with the key from Settings.</p>
+        <p>Replace <code>your-server.com</code> with your actual domain and <code>YOUR_MCP_API_KEY</code> with the key from Settings.</p>
+        <p class="note"><strong>Note:</strong> The MCP key only works for <code>/mcp/*</code>. Use the separate Bot API key for <code>/api/*</code> REST calls.</p>
 
         <h3>Local Setup (Docker)</h3>
         <p>If running locally with Docker, you can use stdio transport instead:</p>
@@ -344,6 +349,32 @@
           <li><strong>Email:</strong> send invoice email, test SMTP connection</li>
           <li><strong>Other:</strong> generate PDF, list trash</li>
         </ul>
+      </div>
+    </CollapsibleSection>
+
+    <!-- Bot API Integration -->
+    <CollapsibleSection title="Bot API Integration (REST)" icon="settings" bind:open={openSections.botApiIntegration}>
+      <div class="help-content">
+        <p>Use the Bot API key for conventional HTTP automation against <code>/api/*</code> endpoints (scripts, agents, external bots).</p>
+
+        <h3>Setup</h3>
+        <ol>
+          <li>Go to <strong>Settings</strong> in Invoice Machine</li>
+          <li>Scroll to <strong>Bot API Key</strong> and click <strong>Generate Bot API Key</strong></li>
+          <li>Save the key immediately (it is only shown once)</li>
+          <li>Use it as a bearer token on API requests</li>
+        </ol>
+
+        <h3>Authentication Header</h3>
+        <pre class="code-block">{`Authorization: Bearer YOUR_BOT_API_KEY`}</pre>
+
+        <h3>Skill File</h3>
+        <p>Invoice Machine hosts a skill file for bot setup at:</p>
+        <pre class="code-block">{`https://your-server.com/SKILL.md`}</pre>
+
+        <h3>Example Request</h3>
+        <pre class="code-block">{`curl -H "Authorization: Bearer YOUR_BOT_API_KEY" \\
+  "https://your-server.com/api/invoices/paginated?page=1&per_page=10"`}</pre>
       </div>
     </CollapsibleSection>
   </div>

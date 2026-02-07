@@ -4,18 +4,18 @@ import gzip
 import shutil
 import sqlite3
 import tempfile
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from pathlib import Path
 from typing import Optional, Union, List
 
 import boto3
 from botocore.config import Config
-from sqlalchemy import select, and_, update
+from sqlalchemy import select, and_, update, func, asc, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from invoice_machine.config import get_settings
-from invoice_machine.utils import normalize_invoice_number_override
+from invoice_machine.utils import normalize_invoice_number_override, utc_now
 from invoice_machine.database import (
     BusinessProfile,
     Client,
@@ -293,7 +293,7 @@ class ClientService:
             if hasattr(client, key) and value is not None:
                 setattr(client, key, value)
 
-        client.updated_at = datetime.utcnow()
+        client.updated_at = utc_now()
         await session.commit()
         await session.refresh(client)
         return client
@@ -305,8 +305,8 @@ class ClientService:
         if not client:
             return False
 
-        client.deleted_at = datetime.utcnow()
-        client.updated_at = datetime.utcnow()
+        client.deleted_at = utc_now()
+        client.updated_at = utc_now()
         await session.commit()
         return True
 
@@ -323,7 +323,7 @@ class ClientService:
             return False
 
         client.deleted_at = None
-        client.updated_at = datetime.utcnow()
+        client.updated_at = utc_now()
         await session.commit()
         return True
 
@@ -339,7 +339,10 @@ class InvoiceService:
         from_date: Optional[date] = None,
         to_date: Optional[date] = None,
         include_deleted: bool = False,
+        sort_by: str = "created_at",
+        sort_dir: str = "desc",
         limit: int = 50,
+        offset: int = 0,
     ) -> list[Invoice]:
         """List invoices with filters."""
         query = select(Invoice)
@@ -359,9 +362,73 @@ class InvoiceService:
         if to_date:
             query = query.where(Invoice.issue_date <= to_date)
 
-        query = query.order_by(Invoice.created_at.desc()).limit(limit)
+        sort_columns = {
+            "created_at": Invoice.created_at,
+            "issue_date": Invoice.issue_date,
+            "due_date": Invoice.due_date,
+            "invoice_number": Invoice.invoice_number,
+            "total": Invoice.total,
+            "status": Invoice.status,
+            "client": func.coalesce(Invoice.client_business, Invoice.client_name, ""),
+        }
+        sort_column = sort_columns.get((sort_by or "").lower(), Invoice.created_at)
+        order_expr = asc(sort_column) if (sort_dir or "").lower() == "asc" else desc(sort_column)
+
+        safe_limit = max(1, min(int(limit), 500))
+        safe_offset = max(0, int(offset))
+
+        query = query.order_by(order_expr, Invoice.id.desc()).offset(safe_offset).limit(safe_limit)
         result = await session.execute(query)
         return list(result.scalars().all())
+
+    @staticmethod
+    async def list_invoices_paginated(
+        session: AsyncSession,
+        status: Optional[str] = None,
+        client_id: Optional[int] = None,
+        from_date: Optional[date] = None,
+        to_date: Optional[date] = None,
+        include_deleted: bool = False,
+        sort_by: str = "created_at",
+        sort_dir: str = "desc",
+        page: int = 1,
+        per_page: int = 25,
+    ) -> tuple[list[Invoice], int]:
+        """List invoices with pagination and return (items, total_count)."""
+        conditions = []
+        if not include_deleted:
+            conditions.append(Invoice.deleted_at.is_(None))
+        if status:
+            conditions.append(Invoice.status == status)
+        if client_id:
+            conditions.append(Invoice.client_id == client_id)
+        if from_date:
+            conditions.append(Invoice.issue_date >= from_date)
+        if to_date:
+            conditions.append(Invoice.issue_date <= to_date)
+
+        count_query = select(func.count(Invoice.id))
+        if conditions:
+            count_query = count_query.where(*conditions)
+        total = int((await session.execute(count_query)).scalar() or 0)
+
+        safe_page = max(1, int(page))
+        safe_per_page = max(1, min(int(per_page), 100))
+        offset = (safe_page - 1) * safe_per_page
+
+        invoices = await InvoiceService.list_invoices(
+            session,
+            status=status,
+            client_id=client_id,
+            from_date=from_date,
+            to_date=to_date,
+            include_deleted=include_deleted,
+            sort_by=sort_by,
+            sort_dir=sort_dir,
+            limit=safe_per_page,
+            offset=offset,
+        )
+        return invoices, total
 
     @staticmethod
     async def get_invoice(session: AsyncSession, invoice_id: int) -> Optional[Invoice]:
@@ -394,8 +461,6 @@ class InvoiceService:
         Items format: [{description, quantity, unit_price, unit_type}]
         Tax settings are snapshotted from business profile if not provided.
         """
-        from invoice_machine.config import get_settings
-        settings = get_settings()
         business = await BusinessProfile.get_or_create(session)
 
         # Validate tax_rate if provided
@@ -473,18 +538,40 @@ class InvoiceService:
         session.add(invoice)
         await session.flush()  # Get invoice.id
 
-        # Add items if provided
+        # Add items in one transaction (avoid per-item commits/recalculations)
         if items:
+            valid_unit_types = {"qty", "hours"}
+            invoice_items: list[InvoiceItem] = []
+
             for i, item_data in enumerate(items):
-                await InvoiceService.add_item(
-                    session,
-                    invoice.id,
-                    item_data.get("description", ""),
-                    item_data.get("quantity", 1),
-                    item_data.get("unit_price", 0),
-                    sort_order=i,
-                    unit_type=item_data.get("unit_type", "qty"),
+                quantity = item_data.get("quantity", 1)
+                if quantity < 0:
+                    raise ValueError("Quantity cannot be negative")
+
+                unit_price = Decimal(str(item_data.get("unit_price", 0)))
+                if unit_price < 0:
+                    raise ValueError("Unit price cannot be negative")
+
+                unit_type = item_data.get("unit_type", "qty")
+                if unit_type not in valid_unit_types:
+                    raise ValueError(
+                        f"Invalid unit type. Must be one of: {sorted(valid_unit_types)}"
+                    )
+
+                invoice_items.append(
+                    InvoiceItem(
+                        invoice_id=invoice.id,
+                        description=item_data.get("description", ""),
+                        quantity=quantity,
+                        unit_type=unit_type,
+                        unit_price=unit_price,
+                        total=unit_price * Decimal(quantity),
+                        sort_order=item_data.get("sort_order", i),
+                    )
                 )
+
+            session.add_all(invoice_items)
+            await session.flush()
 
         await recalculate_invoice_totals(session, invoice)
         await session.commit()
@@ -542,7 +629,7 @@ class InvoiceService:
         if client:
             await snapshot_client_info(session, client, invoice)
 
-        invoice.updated_at = datetime.utcnow()
+        invoice.updated_at = utc_now()
         await session.commit()
         await session.refresh(invoice)
         return invoice
@@ -554,8 +641,8 @@ class InvoiceService:
         if not invoice:
             return False
 
-        invoice.deleted_at = datetime.utcnow()
-        invoice.updated_at = datetime.utcnow()
+        invoice.deleted_at = utc_now()
+        invoice.updated_at = utc_now()
         await session.commit()
         return True
 
@@ -572,7 +659,7 @@ class InvoiceService:
             return False
 
         invoice.deleted_at = None
-        invoice.updated_at = datetime.utcnow()
+        invoice.updated_at = utc_now()
         await session.commit()
         return True
 
@@ -749,7 +836,7 @@ class InvoiceService:
                     Invoice.deleted_at.is_(None),
                 )
             )
-            .values(status="overdue", updated_at=datetime.utcnow())
+            .values(status="overdue", updated_at=utc_now())
         )
         await session.commit()
         return result.rowcount
@@ -820,7 +907,7 @@ class InvoiceService:
         # Execute bulk operation if there are valid IDs
         successful = 0
         if valid_ids:
-            now = datetime.utcnow()
+            now = utc_now()
 
             if action == "mark_sent":
                 await session.execute(
@@ -879,7 +966,7 @@ class BackupService:
         Returns dict with: filename, path, size_bytes, timestamp, uploaded_to_s3
         """
         settings = get_settings()
-        timestamp = datetime.utcnow()
+        timestamp = utc_now()
         timestamp_str = timestamp.strftime("%Y%m%d_%H%M%S")
 
         # Source database
@@ -957,7 +1044,9 @@ class BackupService:
                     "filename": path.name,
                     "path": str(path),
                     "size_bytes": stat.st_size,
-                    "created_at": datetime.fromtimestamp(stat.st_mtime).isoformat(),
+                    "created_at": datetime.fromtimestamp(
+                        stat.st_mtime, tz=timezone.utc
+                    ).isoformat(),
                     "compressed": path.suffix == ".gz",
                 })
 
@@ -970,14 +1059,14 @@ class BackupService:
 
         Returns number of backups deleted.
         """
-        cutoff = datetime.utcnow() - timedelta(days=self.retention_days)
+        cutoff = utc_now() - timedelta(days=self.retention_days)
         deleted = 0
 
         # Clean up both new and old prefix backups
         for pattern in ["invoice_machine_backup_*.db*", "invoicely_backup_*.db*"]:
             for path in self.backup_dir.glob(pattern):
                 stat = path.stat()
-                created = datetime.fromtimestamp(stat.st_mtime)
+                created = datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc)
                 if created < cutoff:
                     path.unlink()
                     deleted += 1
@@ -1129,7 +1218,7 @@ class BackupService:
 
         # Create a backup of current database before restoring
         if db_path.exists():
-            pre_restore_filename = f"pre_restore_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.db"
+            pre_restore_filename = f"pre_restore_{utc_now().strftime('%Y%m%d_%H%M%S')}.db"
             pre_restore_backup = self.backup_dir / pre_restore_filename
             shutil.copy2(db_path, pre_restore_backup)
 
@@ -1144,7 +1233,7 @@ class BackupService:
         return {
             "restored_from": backup_filename,
             "pre_restore_backup": pre_restore_filename,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": utc_now().isoformat(),
             "message": "Database restored. Please restart the application for changes to take effect.",
         }
 
@@ -1374,7 +1463,7 @@ class RecurringService:
             if hasattr(schedule, key) and value is not None:
                 setattr(schedule, key, value)
 
-        schedule.updated_at = datetime.utcnow()
+        schedule.updated_at = utc_now()
         await session.commit()
         await session.refresh(schedule)
         return schedule
@@ -1400,7 +1489,7 @@ class RecurringService:
             return False
 
         schedule.is_active = 0
-        schedule.updated_at = datetime.utcnow()
+        schedule.updated_at = utc_now()
         await session.commit()
         return True
 
@@ -1412,7 +1501,7 @@ class RecurringService:
             return False
 
         schedule.is_active = 1
-        schedule.updated_at = datetime.utcnow()
+        schedule.updated_at = utc_now()
         await session.commit()
         return True
 
@@ -1490,7 +1579,7 @@ class RecurringService:
                 schedule.next_invoice_date = RecurringService.calculate_next_date(
                     today, schedule.frequency, schedule.schedule_day
                 )
-                schedule.updated_at = datetime.utcnow()
+                schedule.updated_at = utc_now()
 
                 results.append({
                     "schedule_id": schedule.id,
@@ -1546,7 +1635,7 @@ class RecurringService:
             schedule.next_invoice_date = RecurringService.calculate_next_date(
                 today, schedule.frequency, schedule.schedule_day
             )
-            schedule.updated_at = datetime.utcnow()
+            schedule.updated_at = utc_now()
             await session.commit()
 
             return {
@@ -2018,3 +2107,4 @@ class SearchService:
             }
             for item in items
         ]
+

@@ -18,6 +18,16 @@
   let filterToDate = '';
   let sortBy = 'issue_date';
   let sortDir = 'desc';
+  let currentPage = 1;
+  let perPage = 25;
+  let pagination = {
+    page: 1,
+    per_page: 25,
+    total: 0,
+    total_pages: 0,
+    has_next: false,
+    has_prev: false,
+  };
 
   // Sort options for mobile dropdown
   const sortOptions = [
@@ -39,6 +49,8 @@
   const yearOptions = Array.from({ length: 6 }, (_, i) => currentYear - i);
 
   $: selectedSortOption = `${sortBy}-${sortDir}`;
+  $: pageStart = pagination.total === 0 ? 0 : ((pagination.page - 1) * pagination.per_page) + 1;
+  $: pageEnd = pagination.total === 0 ? 0 : Math.min(pagination.total, pageStart + invoices.length - 1);
 
   // Delete modal state
   let showDeleteModal = false;
@@ -187,6 +199,8 @@
       const params = {
         sort_by: sortBy,
         sort_dir: sortDir,
+        page: currentPage,
+        per_page: perPage,
       };
       if (filterStatus) params.status = filterStatus;
       if (filterClient) params.client_id = filterClient;
@@ -200,15 +214,31 @@
         if (filterToDate) params.to_date = filterToDate;
       }
 
-      [invoices, clients] = await Promise.all([
-        invoicesApi.list(params),
+      const [invoicesData, clientsData] = await Promise.all([
+        invoicesApi.listPaginated(params),
         clientsApi.list(),
       ]);
+
+      invoices = invoicesData.items || [];
+      pagination = invoicesData.pagination || pagination;
+      currentPage = pagination.page || currentPage;
+      clients = clientsData;
     } catch (error) {
       toast.error('Failed to load invoices');
     } finally {
       loading = false;
     }
+  }
+
+  function loadFirstPage() {
+    currentPage = 1;
+    loadData();
+  }
+
+  function changePage(nextPage) {
+    if (nextPage < 1 || nextPage > pagination.total_pages || nextPage === currentPage) return;
+    currentPage = nextPage;
+    loadData();
   }
 
   function handleSort(field) {
@@ -220,7 +250,7 @@
       sortBy = field;
       sortDir = ['client', 'status'].includes(field) ? 'asc' : 'desc';
     }
-    loadData();
+    loadFirstPage();
   }
 
   function handleSortDropdown(e) {
@@ -228,7 +258,7 @@
     if (option) {
       sortBy = option.field;
       sortDir = option.dir;
-      loadData();
+      loadFirstPage();
     }
   }
 
@@ -238,7 +268,7 @@
       filterFromDate = '';
       filterToDate = '';
     }
-    loadData();
+    loadFirstPage();
   }
 
   function handleDateChange() {
@@ -246,7 +276,7 @@
     if (filterFromDate || filterToDate) {
       filterYear = '';
     }
-    loadData();
+    loadFirstPage();
   }
 
   function clearAllFilters() {
@@ -257,7 +287,7 @@
     filterToDate = '';
     sortBy = 'issue_date';
     sortDir = 'desc';
-    loadData();
+    loadFirstPage();
   }
 
   $: hasFilters = filterStatus || filterClient || filterYear || filterFromDate || filterToDate;
@@ -310,7 +340,12 @@
   <div class="page-header">
     <div class="page-header-text">
       <h1>Invoices</h1>
-      <p class="page-subtitle">{invoices.length} invoice{invoices.length !== 1 ? 's' : ''}</p>
+      <p class="page-subtitle">
+        {pagination.total} invoice{pagination.total !== 1 ? 's' : ''}
+        {#if pagination.total_pages > 1}
+          - Page {pagination.page} of {pagination.total_pages}
+        {/if}
+      </p>
     </div>
     <a href="/invoices/new" class="btn btn-primary">
       <Icon name="plus" size="sm" />
@@ -327,7 +362,7 @@
           id="status-filter"
           class="select"
           bind:value={filterStatus}
-          on:change={loadData}
+          on:change={loadFirstPage}
         >
           <option value="">All Statuses</option>
           <option value="draft">Draft</option>
@@ -344,7 +379,7 @@
           id="client-filter"
           class="select"
           bind:value={filterClient}
-          on:change={loadData}
+          on:change={loadFirstPage}
         >
           <option value="">All Clients</option>
           {#each clients as client}
@@ -450,6 +485,7 @@
                 {/if}
               </button>
             </th>
+            <th>Line Items</th>
             <th>
               <button class="sortable-header" class:active={sortBy === 'issue_date'} on:click={() => handleSort('issue_date')}>
                 Date
@@ -503,6 +539,16 @@
               </td>
               <td>
                 <span class="client-name">{invoice.client_business || invoice.client_name || '---'}</span>
+              </td>
+              <td>
+                {#if invoice.line_items_count > 0}
+                  <div class="line-items-cell" title={invoice.line_items_preview}>
+                    <span class="line-items-text">{invoice.line_items_preview}</span>
+                    <span class="line-items-count">{invoice.line_items_count}</span>
+                  </div>
+                {:else}
+                  <span class="text-secondary">---</span>
+                {/if}
               </td>
               <td class="text-secondary">{formatDate(invoice.issue_date)}</td>
               <td class:text-overdue={overdue} class:text-secondary={!overdue}>
@@ -567,6 +613,11 @@
               </span>
             </div>
             <div class="invoice-card-client">{invoice.client_business || invoice.client_name || '---'}</div>
+            {#if invoice.line_items_count > 0}
+              <div class="invoice-card-items" title={invoice.line_items_preview}>
+                {invoice.line_items_preview}
+              </div>
+            {/if}
             <div class="invoice-card-footer">
               <span class="invoice-card-date" class:text-overdue={overdue}>
                 {invoice.due_date ? formatDate(invoice.due_date) : formatDate(invoice.issue_date)}
@@ -598,6 +649,31 @@
         </div>
       {/each}
     </div>
+
+    <div class="pagination-bar">
+      <div class="pagination-summary">
+        Showing {pageStart}-{pageEnd} of {pagination.total}
+      </div>
+      <div class="pagination-controls">
+        <button
+          class="btn btn-secondary btn-sm"
+          on:click={() => changePage(currentPage - 1)}
+          disabled={!pagination.has_prev || loading}
+        >
+          Previous
+        </button>
+        <span class="pagination-page">
+          Page {pagination.page} of {Math.max(1, pagination.total_pages)}
+        </span>
+        <button
+          class="btn btn-secondary btn-sm"
+          on:click={() => changePage(currentPage + 1)}
+          disabled={!pagination.has_next || loading}
+        >
+          Next
+        </button>
+      </div>
+    </div>
   {:else}
     <div class="empty-state">
       <div class="empty-state-icon">
@@ -605,7 +681,7 @@
       </div>
       <div class="empty-state-title">No invoices found</div>
       <div class="empty-state-description">
-        {#if filterStatus || filterClient}
+        {#if hasFilters}
           Try adjusting your filters or create a new invoice.
         {:else}
           Create your first invoice to get started.
@@ -856,6 +932,32 @@
     font-variant-numeric: tabular-nums;
   }
 
+  .line-items-cell {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    max-width: 360px;
+  }
+
+  .line-items-text {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--color-text-secondary);
+    font-size: 0.8125rem;
+  }
+
+  .line-items-count {
+    flex-shrink: 0;
+    font-size: 0.6875rem;
+    color: var(--color-text-tertiary);
+    background: var(--color-bg-sunken);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    padding: 0.125rem 0.375rem;
+  }
+
   .actions-col {
     width: 100px;
     text-align: right;
@@ -919,6 +1021,15 @@
     font-size: 0.9375rem;
     color: var(--color-text-secondary);
     margin-bottom: var(--space-3);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .invoice-card-items {
+    margin-bottom: var(--space-2);
+    color: var(--color-text-tertiary);
+    font-size: 0.75rem;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -1030,6 +1141,36 @@
     gap: var(--space-1);
   }
 
+  .pagination-bar {
+    margin-top: var(--space-4);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+    padding: var(--space-3) var(--space-4);
+    background: var(--color-bg-elevated);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+  }
+
+  .pagination-summary {
+    font-size: 0.8125rem;
+    color: var(--color-text-secondary);
+  }
+
+  .pagination-controls {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+  }
+
+  .pagination-page {
+    font-size: 0.8125rem;
+    color: var(--color-text);
+    min-width: 110px;
+    text-align: center;
+  }
+
   @media (max-width: 900px) {
     .date-range-group {
       order: 10;
@@ -1070,6 +1211,15 @@
     .table th:nth-child(4),
     .table td:nth-child(4) {
       display: none;
+    }
+
+    .pagination-bar {
+      flex-direction: column;
+      align-items: stretch;
+    }
+
+    .pagination-controls {
+      justify-content: space-between;
     }
   }
 

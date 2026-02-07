@@ -29,6 +29,7 @@ from sqlalchemy.orm import (
 )
 
 from invoice_machine.config import get_settings
+from invoice_machine.utils import ensure_utc, utc_now
 
 
 class Base(DeclarativeBase):
@@ -45,7 +46,7 @@ class User(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     username: Mapped[str] = mapped_column(String(100), unique=True, nullable=False)
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
 
     @classmethod
     async def get_by_username(cls, session: "AsyncSession", username: str) -> Optional["User"]:
@@ -92,6 +93,8 @@ class BusinessProfile(Base):
     theme_preference: Mapped[str] = mapped_column(String(20), default="system")
     # MCP API key for remote access
     mcp_api_key: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    # Bot API key for conventional REST API automation
+    bot_api_key: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     # App base URL for links and MCP configuration
     app_base_url: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     # Backup settings
@@ -116,9 +119,9 @@ class BusinessProfile(Base):
     # Email template settings (optional - defaults used if not set)
     email_subject_template: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     email_body_template: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+        DateTime, default=utc_now, onupdate=utc_now
     )
 
     @classmethod
@@ -139,6 +142,16 @@ class BusinessProfile(Base):
             await session.commit()
             await session.refresh(profile)
         return profile
+
+    @property
+    def mcp_api_key_configured(self) -> bool:
+        """Whether an MCP API key is configured."""
+        return bool(self.mcp_api_key)
+
+    @property
+    def bot_api_key_configured(self) -> bool:
+        """Whether a bot REST API key is configured."""
+        return bool(self.bot_api_key)
 
 
 class Client(Base):
@@ -167,9 +180,9 @@ class Client(Base):
     tax_name: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     # Per-client currency preference (None = use global default)
     preferred_currency: Mapped[Optional[str]] = mapped_column(String(3), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+        DateTime, default=utc_now, onupdate=utc_now
     )
     deleted_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 
@@ -237,9 +250,9 @@ class Invoice(Base):
     pdf_path: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     pdf_generated_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+        DateTime, default=utc_now, onupdate=utc_now
     )
     deleted_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 
@@ -279,7 +292,9 @@ class Invoice(Base):
         """Check if PDF needs regeneration."""
         if self.pdf_generated_at is None:
             return True
-        return self.updated_at > self.pdf_generated_at
+        updated_at = ensure_utc(self.updated_at)
+        pdf_generated_at = ensure_utc(self.pdf_generated_at)
+        return bool(updated_at and pdf_generated_at and updated_at > pdf_generated_at)
 
 
 class InvoiceItem(Base):
@@ -320,7 +335,7 @@ class Session(Base):
     token: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
     user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False)
     expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
     # CSRF token for form protection
     csrf_token: Mapped[str] = mapped_column(String(64), nullable=False)
     # Optional: track session metadata for security auditing
@@ -368,7 +383,7 @@ class Session(Base):
         from sqlalchemy import select
 
         result = await session.execute(
-            select(cls).where(cls.token == token, cls.expires_at > datetime.utcnow())
+            select(cls).where(cls.token == token, cls.expires_at > utc_now())
         )
         return result.scalar_one_or_none()
 
@@ -387,7 +402,7 @@ class Session(Base):
         from sqlalchemy import delete
 
         result = await session.execute(
-            delete(cls).where(cls.expires_at <= datetime.utcnow())
+            delete(cls).where(cls.expires_at <= utc_now())
         )
         await session.commit()
         return result.rowcount
@@ -434,9 +449,9 @@ class RecurringSchedule(Base):
         Integer, ForeignKey("invoices.id"), nullable=True
     )
     # Timestamps
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+        DateTime, default=utc_now, onupdate=utc_now
     )
 
     client: Mapped["Client"] = relationship("Client", lazy="selectin")
