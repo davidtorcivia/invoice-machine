@@ -39,24 +39,46 @@ STATIC_DIR_RESOLVED = STATIC_DIR.resolve()
 # Paths that don't require authentication
 PUBLIC_PATHS = {"/health", "/api/auth/status", "/api/auth/setup", "/api/auth/login"}
 UNSAFE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
-CSP_POLICY = (
-    "default-src 'self'; "
-    "base-uri 'self'; "
-    "object-src 'none'; "
-    "frame-ancestors 'none'; "
-    "form-action 'self'; "
-    "img-src 'self' data: blob:; "
-    "font-src 'self' https://fonts.gstatic.com; "
-    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
-    "script-src 'self'; "
-    "script-src-attr 'none'; "
-    "connect-src 'self'; "
-    "worker-src 'self'; "
-    "manifest-src 'self'"
-)
+def build_spa_csp_policy(request: Request) -> str:
+    """Build CSP policy for non-API routes.
 
-if settings.environment.lower() == "production":
-    CSP_POLICY += "; upgrade-insecure-requests"
+    Keeps strict defaults, but relaxes script/connect sources for Cloudflare-
+    proxied requests so Rocket Loader/Insights don't break frontend boot.
+    """
+    script_src = ["'self'"]
+    connect_src = ["'self'"]
+
+    # Cloudflare proxy headers are present when traffic passes through CF.
+    if request.headers.get("cf-ray") or request.headers.get("cf-visitor"):
+        script_src.extend(["'unsafe-inline'", "https://static.cloudflareinsights.com"])
+        connect_src.extend(
+            [
+                "https://cloudflareinsights.com",
+                "https://*.cloudflareinsights.com",
+                "https://static.cloudflareinsights.com",
+            ]
+        )
+
+    policy = (
+        "default-src 'self'; "
+        "base-uri 'self'; "
+        "object-src 'none'; "
+        "frame-ancestors 'none'; "
+        "form-action 'self'; "
+        "img-src 'self' data: blob:; "
+        "font-src 'self' https://fonts.gstatic.com; "
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+        f"script-src {' '.join(script_src)}; "
+        "script-src-attr 'none'; "
+        f"connect-src {' '.join(connect_src)}; "
+        "worker-src 'self'; "
+        "manifest-src 'self'"
+    )
+
+    if settings.environment.lower() == "production":
+        policy += "; upgrade-insecure-requests"
+
+    return policy
 
 
 async def session_cleanup_task():
@@ -401,7 +423,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
                 "default-src 'none'; frame-ancestors 'none'"
             )
         else:
-            response.headers["Content-Security-Policy"] = CSP_POLICY
+            response.headers["Content-Security-Policy"] = build_spa_csp_policy(request)
 
         return response
 

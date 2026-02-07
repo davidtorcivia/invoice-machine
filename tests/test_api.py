@@ -78,6 +78,16 @@ class TestHealthEndpoint:
         assert response.status_code == 200
         assert response.json() == {"status": "healthy"}
 
+    @pytest.mark.asyncio
+    async def test_cloudflare_csp_allows_insights_scripts(self, test_client):
+        """Cloudflare-proxied requests get compatible CSP for Rocket Loader/Insights."""
+        response = await test_client.get("/health", headers={"cf-ray": "test-ray-id"})
+        assert response.status_code == 200
+
+        csp = response.headers.get("content-security-policy", "")
+        assert "script-src 'self' 'unsafe-inline' https://static.cloudflareinsights.com" in csp
+        assert "connect-src 'self' https://cloudflareinsights.com" in csp
+
 
 class TestProfileEndpoints:
     """Tests for business profile endpoints."""
