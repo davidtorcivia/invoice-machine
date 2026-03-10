@@ -4,7 +4,7 @@ from datetime import date, timedelta
 from decimal import Decimal
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import select, func
 
 from invoice_machine.database import Client, Invoice, InvoiceItem, BusinessProfile
 from invoice_machine.services import (
@@ -15,6 +15,7 @@ from invoice_machine.services import (
     format_currency,
     ClientService,
     InvoiceService,
+    purge_trashed_records,
 )
 
 
@@ -396,6 +397,18 @@ class TestInvoiceService:
         assert updated.invoice_number.startswith("20241201")
 
     @pytest.mark.asyncio
+    async def test_update_quote_issue_date_preserves_quote_prefix(self, db_session):
+        """Backdating a quote keeps quote numbering instead of switching to invoice numbering."""
+        quote = await InvoiceService.create_invoice(db_session, document_type="quote")
+
+        updated = await InvoiceService.update_invoice(
+            db_session, quote.id, issue_date=date(2024, 12, 1)
+        )
+
+        assert updated.document_type == "quote"
+        assert updated.invoice_number.startswith("Q-20241201")
+
+    @pytest.mark.asyncio
     async def test_delete_invoice_soft(self, db_session):
         """Delete is a soft delete."""
         invoice = await InvoiceService.create_invoice(db_session)
@@ -450,3 +463,50 @@ class TestInvoiceService:
 
         await db_session.refresh(invoice)
         assert invoice.total == Decimal("0")
+
+
+class TestTrashPurge:
+    """Tests for permanent trash cleanup behavior."""
+
+    @pytest.mark.asyncio
+    async def test_purge_trashed_records_keeps_client_with_active_invoice(
+        self, db_session, test_client
+    ):
+        """Trashed clients are retained while any live invoice still references them."""
+        invoice = await InvoiceService.create_invoice(db_session, client_id=test_client.id)
+        test_client.deleted_at = date.today()
+        await db_session.commit()
+
+        result = await purge_trashed_records(db_session)
+        await db_session.commit()
+
+        assert result["clients_deleted"] == 0
+        assert await db_session.get(Client, test_client.id) is not None
+        assert await db_session.get(Invoice, invoice.id) is not None
+
+    @pytest.mark.asyncio
+    async def test_purge_trashed_records_deletes_invoice_items_before_invoices(
+        self, db_session, test_client
+    ):
+        """Purging trashed invoices also removes their line items and then the now-unreferenced client."""
+        invoice = await InvoiceService.create_invoice(
+            db_session,
+            client_id=test_client.id,
+            items=[{"description": "Service", "quantity": 1, "unit_price": 100}],
+        )
+        invoice.deleted_at = date.today()
+        test_client.deleted_at = date.today()
+        await db_session.commit()
+
+        result = await purge_trashed_records(db_session)
+        await db_session.commit()
+
+        item_count = int(
+            (await db_session.execute(select(func.count(InvoiceItem.id)))).scalar() or 0
+        )
+
+        assert result["invoices_deleted"] == 1
+        assert result["clients_deleted"] == 1
+        assert await db_session.get(Invoice, invoice.id) is None
+        assert await db_session.get(Client, test_client.id) is None
+        assert item_count == 0

@@ -5,7 +5,7 @@ from decimal import Decimal
 from typing import Optional, List
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.requests import Request
 
@@ -14,6 +14,21 @@ from invoice_machine.services import RecurringService
 from invoice_machine.rate_limit import limiter
 
 router = APIRouter(prefix="/api/recurring", tags=["recurring"])
+
+
+def _validate_schedule_day_for_frequency(
+    frequency: Optional[str],
+    schedule_day: Optional[int],
+) -> None:
+    """Validate schedule_day against the selected frequency when possible."""
+    if frequency is None or schedule_day is None:
+        return
+
+    if frequency == "weekly" and not (0 <= schedule_day <= 6):
+        raise ValueError("For weekly frequency, schedule_day must be 0-6 (Monday-Sunday)")
+
+    if frequency in {"monthly", "quarterly", "yearly"} and not (1 <= schedule_day <= 31):
+        raise ValueError("For monthly/quarterly/yearly frequency, schedule_day must be 1-31")
 
 
 class LineItemSchema(BaseModel):
@@ -67,6 +82,11 @@ class RecurringScheduleCreate(BaseModel):
     tax_name: Optional[str] = Field(None, max_length=50)
     next_invoice_date: Optional[date] = None
 
+    @model_validator(mode="after")
+    def validate_schedule_day(self) -> "RecurringScheduleCreate":
+        _validate_schedule_day_for_frequency(self.frequency, self.schedule_day)
+        return self
+
 
 class RecurringScheduleUpdate(BaseModel):
     """Update recurring schedule request."""
@@ -83,6 +103,11 @@ class RecurringScheduleUpdate(BaseModel):
     tax_name: Optional[str] = Field(None, max_length=50)
     is_active: Optional[bool] = None
     next_invoice_date: Optional[date] = None
+
+    @model_validator(mode="after")
+    def validate_schedule_day(self) -> "RecurringScheduleUpdate":
+        _validate_schedule_day_for_frequency(self.frequency, self.schedule_day)
+        return self
 
 
 def _schedule_to_dict(schedule: RecurringSchedule) -> dict:
@@ -209,7 +234,11 @@ async def update_schedule(
     if "is_active" in update_data and update_data["is_active"] is not None:
         update_data["is_active"] = int(update_data["is_active"])
 
-    schedule = await RecurringService.update_schedule(session, schedule_id, **update_data)
+    try:
+        schedule = await RecurringService.update_schedule(session, schedule_id, **update_data)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
     if not schedule:
         raise HTTPException(status_code=404, detail="Schedule not found")
     return _schedule_to_dict(schedule)

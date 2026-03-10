@@ -7,7 +7,7 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from invoice_machine.database import Client, Invoice, get_session
-from invoice_machine.services import ClientService, InvoiceService
+from invoice_machine.services import ClientService, InvoiceService, purge_trashed_records
 from invoice_machine.rate_limit import limiter
 from invoice_machine.utils import ensure_utc, utc_now
 
@@ -91,18 +91,7 @@ async def list_trash(
 @limiter.limit("5/hour")
 async def empty_trash(request: Request, session: AsyncSession = Depends(get_session)):
     """Permanently delete all trashed items immediately."""
-    from sqlalchemy import delete
-
-    # Delete all trashed clients
-    await session.execute(
-        delete(Client).where(Client.deleted_at.is_not(None))
-    )
-
-    # Delete all trashed invoices (cascade to items)
-    await session.execute(
-        delete(Invoice).where(Invoice.deleted_at.is_not(None))
-    )
-
+    await purge_trashed_records(session)
     await session.commit()
 
 

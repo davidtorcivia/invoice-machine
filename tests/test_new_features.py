@@ -142,6 +142,29 @@ class TestRecurringInvoices:
         assert schedule.is_active == 1
 
     @pytest.mark.asyncio
+    async def test_create_monthly_schedule_preserves_31st_when_available(
+        self, db_session, test_client, monkeypatch
+    ):
+        """Initial monthly scheduling keeps day 31 when the target month supports it."""
+
+        class FixedDate(date):
+            @classmethod
+            def today(cls):
+                return cls(2025, 6, 10)
+
+        monkeypatch.setattr("invoice_machine.services.date", FixedDate)
+
+        schedule = await RecurringService.create_schedule(
+            db_session,
+            client_id=test_client.id,
+            name="Month End",
+            frequency="monthly",
+            schedule_day=31,
+        )
+
+        assert schedule.next_invoice_date == date(2025, 7, 31)
+
+    @pytest.mark.asyncio
     async def test_create_weekly_schedule(self, db_session, test_client):
         """Create a weekly recurring schedule."""
         schedule = await RecurringService.create_schedule(
@@ -190,6 +213,48 @@ class TestRecurringInvoices:
                 frequency="monthly",
                 schedule_day=32,
             )
+
+    @pytest.mark.asyncio
+    async def test_update_schedule_validates_schedule_day(self, db_session, test_client):
+        """Updating a schedule enforces frequency-specific schedule day rules."""
+        schedule = await RecurringService.create_schedule(
+            db_session,
+            client_id=test_client.id,
+            name="Weekly",
+            frequency="weekly",
+            schedule_day=1,
+        )
+
+        with pytest.raises(ValueError, match="schedule_day must be 0-6"):
+            await RecurringService.update_schedule(
+                db_session, schedule.id, frequency="weekly", schedule_day=31
+            )
+
+    @pytest.mark.asyncio
+    async def test_update_schedule_recalculates_next_date(self, db_session, test_client, monkeypatch):
+        """Changing schedule cadence recalculates the stored next invoice date."""
+
+        class FixedDate(date):
+            @classmethod
+            def today(cls):
+                return cls(2025, 1, 10)
+
+        monkeypatch.setattr("invoice_machine.services.date", FixedDate)
+
+        schedule = await RecurringService.create_schedule(
+            db_session,
+            client_id=test_client.id,
+            name="Monthly Retainer",
+            frequency="monthly",
+            schedule_day=15,
+            next_invoice_date=date(2025, 1, 15),
+        )
+
+        updated = await RecurringService.update_schedule(
+            db_session, schedule.id, schedule_day=20
+        )
+
+        assert updated.next_invoice_date == date(2025, 2, 20)
 
     @pytest.mark.asyncio
     async def test_trigger_schedule(self, db_session, business_profile, test_client):
@@ -299,6 +364,13 @@ class TestRecurringInvoices:
         # February doesn't have 31 days, should use last day
         assert next_date.month == 2
         assert next_date.day == 28
+
+    @pytest.mark.asyncio
+    async def test_calculate_next_date_weekly_preserves_configured_weekday(self, db_session):
+        """Late weekly runs still advance to the configured weekday instead of drifting."""
+        current = date(2025, 1, 14)  # Tuesday
+        next_date = RecurringService.calculate_next_date(current, "weekly", 0)  # Monday
+        assert next_date == date(2025, 1, 20)
 
 
 class TestSearch:

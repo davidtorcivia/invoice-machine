@@ -12,7 +12,7 @@ from typing import Optional, Union, List
 
 import boto3
 from botocore.config import Config
-from sqlalchemy import select, and_, update, func, asc, desc
+from sqlalchemy import select, and_, update, func, asc, desc, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from invoice_machine.config import get_settings
@@ -163,6 +163,80 @@ def format_currency(amount: Union[Decimal, float], currency_code: str = "USD") -
 def is_invoice_document(document: Invoice) -> bool:
     """Return True when a document should count toward invoice billing totals."""
     return getattr(document, "document_type", "invoice") == "invoice"
+
+
+VALID_RECURRING_FREQUENCIES = ("daily", "weekly", "monthly", "quarterly", "yearly")
+
+
+def _replace_with_valid_day(target_date: date, schedule_day: int) -> date:
+    """Clamp schedule_day to the last valid day of the target month."""
+    from dateutil.relativedelta import relativedelta
+
+    last_day = ((target_date.replace(day=1) + relativedelta(months=1)) - timedelta(days=1)).day
+    return target_date.replace(day=min(schedule_day, last_day))
+
+
+def validate_recurring_schedule(
+    frequency: str,
+    schedule_day: int,
+    payment_terms_days: Optional[int] = None,
+    tax_rate: Optional[Decimal] = None,
+) -> None:
+    """Validate recurring schedule fields."""
+    if frequency not in VALID_RECURRING_FREQUENCIES:
+        raise ValueError(
+            f"Invalid frequency. Must be one of: {list(VALID_RECURRING_FREQUENCIES)}"
+        )
+
+    if frequency == "weekly" and not (0 <= schedule_day <= 6):
+        raise ValueError("For weekly frequency, schedule_day must be 0-6 (Monday-Sunday)")
+
+    if frequency in {"monthly", "quarterly", "yearly"} and not (1 <= schedule_day <= 31):
+        raise ValueError("For monthly/quarterly/yearly frequency, schedule_day must be 1-31")
+
+    if payment_terms_days is not None and not (0 <= payment_terms_days <= 365):
+        raise ValueError("Payment terms must be between 0 and 365 days")
+
+    if tax_rate is not None and (tax_rate < 0 or tax_rate > 100):
+        raise ValueError("Tax rate must be between 0 and 100")
+
+
+async def purge_trashed_records(
+    session: AsyncSession,
+    deleted_before: Optional[datetime] = None,
+) -> dict[str, int]:
+    """Delete trashed invoices and any now-unreferenced trashed clients."""
+    invoice_conditions = [Invoice.deleted_at.is_not(None)]
+    client_conditions = [Client.deleted_at.is_not(None)]
+    if deleted_before is not None:
+        invoice_conditions.append(Invoice.deleted_at < deleted_before)
+        client_conditions.append(Client.deleted_at < deleted_before)
+
+    invoice_filter = and_(*invoice_conditions)
+    client_filter = and_(*client_conditions)
+    remaining_invoice_exists = select(Invoice.id).where(Invoice.client_id == Client.id).exists()
+
+    invoice_count = int(
+        (await session.execute(select(func.count(Invoice.id)).where(invoice_filter))).scalar() or 0
+    )
+    invoice_ids = select(Invoice.id).where(invoice_filter)
+    await session.execute(delete(InvoiceItem).where(InvoiceItem.invoice_id.in_(invoice_ids)))
+    await session.execute(delete(Invoice).where(invoice_filter))
+
+    client_count = int(
+        (
+            await session.execute(
+                select(func.count(Client.id)).where(client_filter, ~remaining_invoice_exists)
+            )
+        ).scalar()
+        or 0
+    )
+    await session.execute(delete(Client).where(client_filter, ~remaining_invoice_exists))
+
+    return {
+        "invoices_deleted": invoice_count,
+        "clients_deleted": client_count,
+    }
 
 
 class ClientService:
@@ -623,7 +697,9 @@ class InvoiceService:
         # Handle issue_date change - regenerate invoice number
         if issue_date and issue_date != invoice.issue_date:
             invoice.issue_date = issue_date
-            invoice.invoice_number = await generate_invoice_number(session, issue_date)
+            invoice.invoice_number = await generate_invoice_number(
+                session, issue_date, invoice.document_type
+            )
             # Recalculate due date if not explicitly overridden
             if not due_date:
                 invoice.due_date = calculate_due_date(
@@ -1377,24 +1453,12 @@ class RecurringService:
         import json
         from dateutil.relativedelta import relativedelta
 
-        # Validate frequency
-        valid_frequencies = ["daily", "weekly", "monthly", "quarterly", "yearly"]
-        if frequency not in valid_frequencies:
-            raise ValueError(f"Invalid frequency. Must be one of: {valid_frequencies}")
-
-        # Validate schedule_day
-        if frequency == "weekly" and not (0 <= schedule_day <= 6):
-            raise ValueError("For weekly frequency, schedule_day must be 0-6 (Monday-Sunday)")
-        elif frequency in ["monthly", "quarterly", "yearly"] and not (1 <= schedule_day <= 31):
-            raise ValueError("For monthly/quarterly/yearly frequency, schedule_day must be 1-31")
-
-        # Validate payment_terms_days
-        if payment_terms_days < 0 or payment_terms_days > 365:
-            raise ValueError("Payment terms must be between 0 and 365 days")
-
-        # Validate tax_rate if provided
-        if tax_rate is not None and (tax_rate < 0 or tax_rate > 100):
-            raise ValueError("Tax rate must be between 0 and 100")
+        validate_recurring_schedule(
+            frequency,
+            schedule_day,
+            payment_terms_days=payment_terms_days,
+            tax_rate=tax_rate,
+        )
 
         # Calculate next invoice date if not provided
         if next_invoice_date is None:
@@ -1409,18 +1473,21 @@ class RecurringService:
                 next_invoice_date = today + timedelta(days=days_ahead)
             elif frequency == "monthly":
                 # Next month on schedule_day
-                next_invoice_date = (today.replace(day=1) + relativedelta(months=1)).replace(
-                    day=min(schedule_day, 28)
+                next_invoice_date = _replace_with_valid_day(
+                    today.replace(day=1) + relativedelta(months=1),
+                    schedule_day,
                 )
             elif frequency == "quarterly":
                 # Next quarter on schedule_day
-                next_invoice_date = (today.replace(day=1) + relativedelta(months=3)).replace(
-                    day=min(schedule_day, 28)
+                next_invoice_date = _replace_with_valid_day(
+                    today.replace(day=1) + relativedelta(months=3),
+                    schedule_day,
                 )
             elif frequency == "yearly":
                 # Next year on schedule_day (of current month)
-                next_invoice_date = (today.replace(day=1) + relativedelta(years=1)).replace(
-                    day=min(schedule_day, 28)
+                next_invoice_date = _replace_with_valid_day(
+                    today.replace(day=1) + relativedelta(years=1),
+                    schedule_day,
                 )
 
         schedule = RecurringSchedule(
@@ -1490,6 +1557,28 @@ class RecurringService:
         if "line_items" in kwargs and kwargs["line_items"] is not None:
             kwargs["line_items"] = json.dumps(kwargs["line_items"])
 
+        new_frequency = kwargs.get("frequency", schedule.frequency)
+        new_schedule_day = kwargs.get("schedule_day", schedule.schedule_day)
+        new_payment_terms_days = kwargs.get(
+            "payment_terms_days", schedule.payment_terms_days
+        )
+        new_tax_rate = kwargs.get("tax_rate", schedule.tax_rate)
+
+        validate_recurring_schedule(
+            new_frequency,
+            new_schedule_day,
+            payment_terms_days=new_payment_terms_days,
+            tax_rate=new_tax_rate,
+        )
+
+        if (
+            ("frequency" in kwargs or "schedule_day" in kwargs)
+            and "next_invoice_date" not in kwargs
+        ):
+            kwargs["next_invoice_date"] = RecurringService.calculate_next_date(
+                date.today(), new_frequency, new_schedule_day
+            )
+
         for key, value in kwargs.items():
             if hasattr(schedule, key) and value is not None:
                 setattr(schedule, key, value)
@@ -1544,27 +1633,19 @@ class RecurringService:
         if frequency == "daily":
             return current_date + timedelta(days=1)
         elif frequency == "weekly":
-            return current_date + timedelta(weeks=1)
+            days_ahead = schedule_day - current_date.weekday()
+            if days_ahead <= 0:
+                days_ahead += 7
+            return current_date + timedelta(days=days_ahead)
         elif frequency == "monthly":
             next_date = current_date + relativedelta(months=1)
-            # Handle months with fewer days
-            try:
-                return next_date.replace(day=schedule_day)
-            except ValueError:
-                # Day doesn't exist in this month, use last day
-                return (next_date.replace(day=1) + relativedelta(months=1)) - timedelta(days=1)
+            return _replace_with_valid_day(next_date, schedule_day)
         elif frequency == "quarterly":
             next_date = current_date + relativedelta(months=3)
-            try:
-                return next_date.replace(day=schedule_day)
-            except ValueError:
-                return (next_date.replace(day=1) + relativedelta(months=1)) - timedelta(days=1)
+            return _replace_with_valid_day(next_date, schedule_day)
         elif frequency == "yearly":
             next_date = current_date + relativedelta(years=1)
-            try:
-                return next_date.replace(day=schedule_day)
-            except ValueError:
-                return (next_date.replace(day=1) + relativedelta(months=1)) - timedelta(days=1)
+            return _replace_with_valid_day(next_date, schedule_day)
         else:
             raise ValueError(f"Unknown frequency: {frequency}")
 

@@ -7,10 +7,9 @@ Run via cron or manually:
 import asyncio
 from datetime import timedelta
 
-from sqlalchemy import delete, and_
-
-from invoice_machine.database import async_session_maker, Client, Invoice
+from invoice_machine.database import async_session_maker
 from invoice_machine.config import get_settings
+from invoice_machine.services import purge_trashed_records
 from invoice_machine.utils import utc_now
 
 
@@ -22,50 +21,13 @@ async def cleanup_trash():
     async with async_session_maker() as session:
         cutoff = utc_now() - purge_threshold
 
-        # Count items to be deleted
-        from sqlalchemy import select, func
-
-        client_count_result = await session.execute(
-            select(func.count(Client.id)).where(
-                and_(
-                    Client.deleted_at.is_not(None),
-                    Client.deleted_at < cutoff,
-                )
-            )
-        )
-        invoice_count_result = await session.execute(
-            select(func.count(Invoice.id)).where(
-                and_(
-                    Invoice.deleted_at.is_not(None),
-                    Invoice.deleted_at < cutoff,
-                )
-            )
-        )
-
-        clients_deleted = client_count_result.scalar() or 0
-        invoices_deleted = invoice_count_result.scalar() or 0
-
-        # Delete
-        await session.execute(
-            delete(Client).where(
-                and_(
-                    Client.deleted_at.is_not(None),
-                    Client.deleted_at < cutoff,
-                )
-            )
-        )
-        await session.execute(
-            delete(Invoice).where(
-                and_(
-                    Invoice.deleted_at.is_not(None),
-                    Invoice.deleted_at < cutoff,
-                )
-            )
-        )
-
+        result = await purge_trashed_records(session, deleted_before=cutoff)
         await session.commit()
 
-        print(f"Cleanup complete: {clients_deleted} clients, {invoices_deleted} invoices purged")
+        print(
+            "Cleanup complete: "
+            f"{result['clients_deleted']} clients, {result['invoices_deleted']} invoices purged"
+        )
 
 
 if __name__ == "__main__":

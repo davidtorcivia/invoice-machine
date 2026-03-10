@@ -652,6 +652,30 @@ class TestTrashEndpoints:
         assert "client" in types
         assert "invoice" in types
 
+    @pytest.mark.asyncio
+    async def test_empty_trash_keeps_trashed_client_with_live_invoice(self, test_client):
+        """Emptying trash does not permanently delete clients still referenced by active invoices."""
+        client_response = await test_client.post(
+            "/api/clients", json={"name": "Protected Client"}
+        )
+        client_id = client_response.json()["id"]
+
+        invoice_response = await test_client.post(
+            "/api/invoices", json={"client_id": client_id}
+        )
+        invoice_id = invoice_response.json()["id"]
+
+        await test_client.delete(f"/api/clients/{client_id}")
+
+        response = await test_client.post("/api/trash/empty")
+        assert response.status_code == 204
+
+        restore_response = await test_client.post(f"/api/clients/{client_id}/restore")
+        assert restore_response.status_code == 200
+
+        invoice_get = await test_client.get(f"/api/invoices/{invoice_id}")
+        assert invoice_get.status_code == 200
+
 
 class TestBackupEndpoints:
     """Tests for backup endpoints."""
@@ -779,6 +803,31 @@ class TestRecurringEndpoints:
         data = response.json()
         assert data["name"] == "Updated Name"
         assert data["schedule_day"] == 20
+
+    @pytest.mark.asyncio
+    async def test_update_recurring_schedule_rejects_invalid_weekly_day(self, test_client):
+        """Weekly schedules reject out-of-range schedule_day values on update."""
+        client_response = await test_client.post(
+            "/api/clients", json={"name": "Weekly Client"}
+        )
+        client_id = client_response.json()["id"]
+
+        create_response = await test_client.post(
+            "/api/recurring",
+            json={
+                "client_id": client_id,
+                "name": "Weekly Schedule",
+                "frequency": "weekly",
+                "schedule_day": 1,
+            },
+        )
+        schedule_id = create_response.json()["id"]
+
+        response = await test_client.put(
+            f"/api/recurring/{schedule_id}",
+            json={"frequency": "weekly", "schedule_day": 31},
+        )
+        assert response.status_code == 422
 
     @pytest.mark.asyncio
     async def test_pause_schedule(self, test_client):
