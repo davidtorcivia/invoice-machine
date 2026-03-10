@@ -1,6 +1,7 @@
 """Business logic services for invoices, clients, and backups."""
 
 import gzip
+import os
 import shutil
 import sqlite3
 import tempfile
@@ -1204,11 +1205,17 @@ class BackupService:
         try:
             resolved = backup_path.resolve()
             backup_dir_resolved = self.backup_dir.resolve()
-            if not str(resolved).startswith(str(backup_dir_resolved)):
-                raise ValueError("Invalid backup filename: path traversal detected")
+            resolved.relative_to(backup_dir_resolved)
         except (OSError, ValueError) as e:
             raise ValueError(f"Invalid backup filename: {e}")
 
+        return backup_path
+
+    def get_backup_path(self, backup_filename: str, must_exist: bool = True) -> Path:
+        """Return a validated backup path, optionally requiring the file to exist."""
+        backup_path = self._validate_backup_filename(backup_filename)
+        if must_exist and not backup_path.exists():
+            raise FileNotFoundError(f"Backup not found: {backup_filename}")
         return backup_path
 
     def restore_backup(self, backup_filename: str, validate: bool = True) -> dict:
@@ -1225,9 +1232,7 @@ class BackupService:
         The application should be restarted after restore.
         """
         settings = get_settings()
-        backup_path = self._validate_backup_filename(backup_filename)
-        if not backup_path.exists():
-            raise FileNotFoundError(f"Backup not found: {backup_filename}")
+        backup_path = self.get_backup_path(backup_filename)
 
         # Validate backup before proceeding
         if validate:
@@ -1235,20 +1240,26 @@ class BackupService:
 
         db_path = settings.data_dir / "invoice_machine.db"
         pre_restore_filename = None
+        tmp_path = db_path.with_name(f"{db_path.name}.restore-{utc_now().strftime('%Y%m%d%H%M%S%f')}.tmp")
 
-        # Create a backup of current database before restoring
-        if db_path.exists():
-            pre_restore_filename = f"pre_restore_{utc_now().strftime('%Y%m%d_%H%M%S')}.db"
-            pre_restore_backup = self.backup_dir / pre_restore_filename
-            shutil.copy2(db_path, pre_restore_backup)
+        try:
+            # Prepare restored database in a temporary file first so replacement is atomic.
+            if backup_path.suffix == ".gz":
+                with gzip.open(backup_path, "rb") as f_in:
+                    with open(tmp_path, "wb") as f_out:
+                        shutil.copyfileobj(f_in, f_out)
+            else:
+                shutil.copy2(backup_path, tmp_path)
 
-        # Restore
-        if backup_path.suffix == ".gz":
-            with gzip.open(backup_path, "rb") as f_in:
-                with open(db_path, "wb") as f_out:
-                    shutil.copyfileobj(f_in, f_out)
-        else:
-            shutil.copy2(backup_path, db_path)
+            # Create a backup of current database before restoring
+            if db_path.exists():
+                pre_restore_filename = f"pre_restore_{utc_now().strftime('%Y%m%d_%H%M%S')}.db"
+                pre_restore_backup = self.backup_dir / pre_restore_filename
+                shutil.copy2(db_path, pre_restore_backup)
+
+            os.replace(tmp_path, db_path)
+        finally:
+            tmp_path.unlink(missing_ok=True)
 
         return {
             "restored_from": backup_filename,
@@ -1324,7 +1335,7 @@ class BackupService:
     def delete_backup(self, backup_filename: str) -> bool:
         """Delete a specific backup file."""
         # Validate filename to prevent path traversal
-        backup_path = self._validate_backup_filename(backup_filename)
+        backup_path = self.get_backup_path(backup_filename, must_exist=False)
         if backup_path.exists():
             backup_path.unlink()
             return True
@@ -1711,6 +1722,38 @@ class SearchService:
             )
             existing_fts_tables = {row[0] for row in fts_tables_check.fetchall()}
 
+            # Get counts from main tables early so we can skip unnecessary rebuilds.
+            invoices_count = (await session.execute(text("SELECT COUNT(*) FROM invoices"))).scalar()
+            clients_count = (await session.execute(text("SELECT COUNT(*) FROM clients"))).scalar()
+            line_items_count = (await session.execute(text("SELECT COUNT(*) FROM invoice_items"))).scalar()
+
+            # If no data to index, skip
+            if invoices_count == 0 and clients_count == 0 and line_items_count == 0:
+                result["skipped"] = True
+                result["reason"] = "No data to index"
+                return result
+
+            if not force and {"invoices_fts", "clients_fts", "invoice_items_fts"} <= existing_fts_tables:
+                try:
+                    invoices_fts_count = (await session.execute(text("SELECT COUNT(*) FROM invoices_fts"))).scalar()
+                    clients_fts_count = (await session.execute(text("SELECT COUNT(*) FROM clients_fts"))).scalar()
+                    line_items_fts_count = (await session.execute(text("SELECT COUNT(*) FROM invoice_items_fts"))).scalar()
+
+                    if (
+                        invoices_count == invoices_fts_count
+                        and clients_count == clients_fts_count
+                        and line_items_count == line_items_fts_count
+                    ):
+                        result["invoices_indexed"] = invoices_count
+                        result["clients_indexed"] = clients_count
+                        result["line_items_indexed"] = line_items_count
+                        result["skipped"] = True
+                        result["reason"] = "FTS indexes already up to date"
+                        return result
+                except Exception:
+                    # Fall through to a rebuild if counts cannot be checked reliably.
+                    pass
+
             # Create invoices_fts if it doesn't exist
             if "invoices_fts" not in existing_fts_tables:
                 await session.execute(text("""
@@ -1812,17 +1855,6 @@ class SearchService:
                 END
             """))
             await session.commit()
-
-            # Get counts from main tables
-            invoices_count = (await session.execute(text("SELECT COUNT(*) FROM invoices"))).scalar()
-            clients_count = (await session.execute(text("SELECT COUNT(*) FROM clients"))).scalar()
-            line_items_count = (await session.execute(text("SELECT COUNT(*) FROM invoice_items"))).scalar()
-
-            # If no data to index, skip
-            if invoices_count == 0 and clients_count == 0 and line_items_count == 0:
-                result["skipped"] = True
-                result["reason"] = "No data to index"
-                return result
 
             # For external content FTS tables, use the 'rebuild' command
             # This re-reads all data from the content table and rebuilds the index

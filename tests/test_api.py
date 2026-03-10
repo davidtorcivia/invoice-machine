@@ -2,6 +2,7 @@
 
 from datetime import date
 from decimal import Decimal
+from unittest.mock import AsyncMock, patch
 
 import pytest
 import pytest_asyncio
@@ -88,6 +89,21 @@ class TestHealthEndpoint:
         assert "script-src 'self' 'unsafe-inline' https://static.cloudflareinsights.com" in csp
         assert "connect-src 'self' https://cloudflareinsights.com" in csp
 
+    @pytest.mark.asyncio
+    async def test_cors_preflight_allows_csrf_header(self, test_client):
+        """CORS preflight allows the CSRF header required for unsafe methods."""
+        response = await test_client.options(
+            "/api/clients",
+            headers={
+                "Origin": "http://localhost:3000",
+                "Access-Control-Request-Method": "POST",
+                "Access-Control-Request-Headers": "X-CSRF-Token, Content-Type",
+            },
+        )
+        assert response.status_code == 200
+        allow_headers = response.headers.get("access-control-allow-headers", "").lower()
+        assert "x-csrf-token" in allow_headers
+
 
 class TestProfileEndpoints:
     """Tests for business profile endpoints."""
@@ -127,6 +143,17 @@ class TestProfileEndpoints:
         data = response.json()
         assert data["name"] == "Test Business"
         assert data["phone"] == "555-9999"
+
+    @pytest.mark.asyncio
+    async def test_restore_guard_rejects_requests_during_backup_restore(self, test_client):
+        """App returns 503 for new requests while restore mode is active."""
+        app.state.restore_in_progress = True
+        try:
+            response = await test_client.get("/api/profile")
+        finally:
+            app.state.restore_in_progress = False
+
+        assert response.status_code == 503
 
     @pytest.mark.asyncio
     async def test_generate_bot_key(self, test_client):
@@ -624,6 +651,27 @@ class TestTrashEndpoints:
         types = {item["type"] for item in items}
         assert "client" in types
         assert "invoice" in types
+
+
+class TestBackupEndpoints:
+    """Tests for backup endpoints."""
+
+    @pytest.mark.asyncio
+    async def test_download_backup_rejects_invalid_filename(self, test_client):
+        """Backup download rejects traversal attempts before serving files."""
+        from invoice_machine.services import BackupService
+        import tempfile
+        from pathlib import Path
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            service = BackupService(backup_dir=Path(tmpdir))
+            with patch(
+                "invoice_machine.api.backup.get_backup_service",
+                AsyncMock(return_value=service),
+            ):
+                response = await test_client.get("/api/backups/download/..%5Csecret.db")
+
+        assert response.status_code == 400
 
 
 class TestRecurringEndpoints:

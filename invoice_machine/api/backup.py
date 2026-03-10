@@ -2,6 +2,7 @@
 
 import json
 import logging
+import asyncio
 from typing import Optional, List
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -10,7 +11,7 @@ from pydantic import BaseModel, Field
 from invoice_machine.rate_limit import limiter
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from invoice_machine.database import BusinessProfile, get_session
+from invoice_machine.database import BusinessProfile, get_session, close_db, init_db
 from invoice_machine.services import BackupService
 from invoice_machine.crypto import encrypt_credential, decrypt_credential
 from invoice_machine.utils import utc_now
@@ -285,26 +286,40 @@ async def restore_backup(
     The application should be restarted after restore.
     """
     backup_service = await get_backup_service(session)
+    restore_state = request.app.state
 
-    try:
-        # Download from S3 if requested
-        if download_from_s3:
-            backup_service.download_from_s3(filename)
+    async with restore_state.restore_lock:
+        restore_state.restore_in_progress = True
 
-        result = backup_service.restore_backup(filename)
-        return RestoreResult(**result)
-    except FileNotFoundError:
-        raise HTTPException(status_code=404, detail="Backup file not found")
-    except ValueError as e:
-        # ValueError contains user-facing validation messages (e.g., path traversal)
-        error_msg = str(e)
-        # Only expose safe validation messages
-        if "Invalid backup filename" in error_msg or "Invalid SQLite database" in error_msg:
-            raise HTTPException(status_code=400, detail=error_msg)
-        raise HTTPException(status_code=400, detail="Invalid backup file")
-    except Exception as e:
-        logger.error(f"Restore failed: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Restore failed. Check server logs for details.")
+        try:
+            # Wait for any in-flight requests to complete before closing the DB engine.
+            while restore_state.active_requests > 1:
+                await asyncio.sleep(0.05)
+
+            await session.close()
+            await close_db()
+
+            # Download from S3 if requested
+            if download_from_s3:
+                backup_service.download_from_s3(filename)
+
+            result = backup_service.restore_backup(filename)
+            return RestoreResult(**result)
+        except FileNotFoundError:
+            raise HTTPException(status_code=404, detail="Backup file not found")
+        except ValueError as e:
+            # ValueError contains user-facing validation messages (e.g., path traversal)
+            error_msg = str(e)
+            # Only expose safe validation messages
+            if "Invalid backup filename" in error_msg or "Invalid SQLite database" in error_msg:
+                raise HTTPException(status_code=400, detail=error_msg)
+            raise HTTPException(status_code=400, detail="Invalid backup file")
+        except Exception as e:
+            logger.error(f"Restore failed: {e}", exc_info=True)
+            raise HTTPException(status_code=500, detail="Restore failed. Check server logs for details.")
+        finally:
+            await init_db()
+            restore_state.restore_in_progress = False
 
 
 @router.get("/download/{filename}")
@@ -317,13 +332,12 @@ async def download_backup(
     """Download a backup file."""
     backup_service = await get_backup_service(session)
 
-    backup_path = backup_service.backup_dir / filename
-    if not backup_path.exists():
+    try:
+        backup_path = backup_service.get_backup_path(filename)
+    except FileNotFoundError:
         raise HTTPException(status_code=404, detail="Backup not found")
-
-    # Security: ensure path is within backup directory
-    if not str(backup_path.resolve()).startswith(str(backup_service.backup_dir.resolve())):
-        raise HTTPException(status_code=400, detail="Invalid backup path")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
     return FileResponse(
         backup_path,

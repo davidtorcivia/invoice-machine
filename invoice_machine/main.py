@@ -20,6 +20,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, FileResponse, Response
+from starlette.datastructures import Headers
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -85,6 +86,8 @@ async def session_cleanup_task():
     """Background task to cleanup expired sessions every hour."""
     while True:
         await asyncio.sleep(3600)  # Run every hour
+        if app.state.restore_in_progress:
+            continue
         await run_session_cleanup()
 
 
@@ -106,6 +109,8 @@ async def scheduled_backup_task():
         await asyncio.sleep(seconds_until_midnight)
 
         try:
+            if app.state.restore_in_progress:
+                continue
             async with async_session_maker() as session:
                 profile = await BusinessProfile.get(session)
                 if profile and profile.backup_enabled:
@@ -149,6 +154,8 @@ async def trash_cleanup_task():
         await asyncio.sleep(seconds_until_3am)
 
         try:
+            if app.state.restore_in_progress:
+                continue
             await cleanup_trash()
         except Exception as e:
             logger.error(f"Trash cleanup task failed: {e}", exc_info=True)
@@ -171,6 +178,8 @@ async def overdue_check_task():
         await asyncio.sleep(seconds_until_1am)
 
         try:
+            if app.state.restore_in_progress:
+                continue
             async with async_session_maker() as session:
                 count = await InvoiceService.update_overdue_invoices(session)
                 if count > 0:
@@ -196,6 +205,8 @@ async def recurring_invoice_task():
         await asyncio.sleep(seconds_until_2am)
 
         try:
+            if app.state.restore_in_progress:
+                continue
             async with async_session_maker() as session:
                 results = await RecurringService.process_due_schedules(session)
                 if results:
@@ -358,6 +369,9 @@ app = FastAPI(
     version="0.1.0",
     lifespan=lifespan,
 )
+app.state.restore_lock = asyncio.Lock()
+app.state.restore_in_progress = False
+app.state.active_requests = 0
 
 # Rate limiting
 app.state.limiter = limiter
@@ -369,28 +383,65 @@ app.add_middleware(
     allow_origins=settings.cors_origins_list,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE"],
-    allow_headers=["Content-Type", "Authorization", "Accept", "X-Requested-With"],
+    allow_headers=[
+        "Content-Type",
+        "Authorization",
+        "Accept",
+        "X-Requested-With",
+        "X-CSRF-Token",
+    ],
 )
 
 
-class RequestSizeLimitMiddleware(BaseHTTPMiddleware):
+class RequestSizeExceeded(Exception):
+    """Raised when a request body exceeds the configured limit."""
+
+
+class RequestSizeLimitMiddleware:
     """Limit request body size to prevent DoS attacks."""
 
-    MAX_BODY_SIZE = 10 * 1024 * 1024  # 10 MB default limit
+    def __init__(self, app, max_body_size: int = 10 * 1024 * 1024):
+        self.app = app
+        self.max_body_size = max_body_size
 
-    async def dispatch(self, request: Request, call_next):
-        # Check Content-Length header if present
-        content_length = request.headers.get("content-length")
+    async def __call__(self, scope, receive, send):
+        if scope.get("type") != "http":
+            await self.app(scope, receive, send)
+            return
+
+        headers = Headers(scope=scope)
+        content_length = headers.get("content-length")
         if content_length:
             try:
-                if int(content_length) > self.MAX_BODY_SIZE:
-                    return JSONResponse(
+                if int(content_length) > self.max_body_size:
+                    response = JSONResponse(
                         {"detail": "Request body too large"},
                         status_code=413,
                     )
+                    await response(scope, receive, send)
+                    return
             except ValueError:
-                pass  # Invalid content-length, let request proceed
-        return await call_next(request)
+                pass
+
+        received = 0
+
+        async def limited_receive():
+            nonlocal received
+            message = await receive()
+            if message["type"] == "http.request":
+                received += len(message.get("body", b""))
+                if received > self.max_body_size:
+                    raise RequestSizeExceeded()
+            return message
+
+        try:
+            await self.app(scope, limited_receive, send)
+        except RequestSizeExceeded:
+            response = JSONResponse(
+                {"detail": "Request body too large"},
+                status_code=413,
+            )
+            await response(scope, receive, send)
 
 
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
@@ -430,6 +481,22 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
 
 app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(RequestSizeLimitMiddleware)
+
+
+@app.middleware("http")
+async def restore_guard_middleware(request: Request, call_next):
+    """Reject new requests while a database restore is in progress."""
+    if request.app.state.restore_in_progress and request.url.path != "/health":
+        return JSONResponse(
+            {"detail": "Service temporarily unavailable during backup restore"},
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        )
+
+    request.app.state.active_requests += 1
+    try:
+        return await call_next(request)
+    finally:
+        request.app.state.active_requests = max(0, request.app.state.active_requests - 1)
 
 
 def _extract_bearer_token(request: Request) -> str | None:

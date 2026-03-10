@@ -493,3 +493,30 @@ class TestRestoreBackup:
                 pre_restore_file = backup_dir / result["pre_restore_backup"]
                 assert pre_restore_file.exists()
                 assert pre_restore_file.read_bytes() == original_content
+
+    def test_restore_backup_cleans_up_temporary_restore_file(self):
+        """Temporary restore files are removed after an atomic replace."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            data_dir = Path(tmpdir) / "data"
+            data_dir.mkdir()
+            backup_dir = Path(tmpdir) / "backups"
+            backup_dir.mkdir()
+
+            db_file = data_dir / "invoice_machine.db"
+            db_file.write_bytes(b"original database content")
+
+            backup_content = b"SQLite format 3\x00" + b"\x00" * 100
+            backup_file = backup_dir / "invoice_machine_backup_20250115_120000.db"
+            backup_file.write_bytes(backup_content)
+
+            service = BackupService(backup_dir=backup_dir)
+
+            with patch("invoice_machine.services.get_settings") as mock_settings:
+                mock_settings.return_value.data_dir = data_dir
+
+                service.restore_backup(
+                    "invoice_machine_backup_20250115_120000.db", validate=False
+                )
+
+            assert db_file.read_bytes() == backup_content
+            assert list(data_dir.glob("invoice_machine.db.restore-*.tmp")) == []

@@ -201,13 +201,17 @@ async def upload_logo(
     if not file.content_type or not file.content_type.startswith("image/"):
         raise HTTPException(status_code=400, detail="File must be an image")
 
-    # Read and validate file size
-    contents = await file.read()
-    if len(contents) > settings.max_logo_size_mb * 1024 * 1024:
-        raise HTTPException(
-            status_code=400,
-            detail=f"File too large. Maximum size: {settings.max_logo_size_mb}MB"
-        )
+    # Read in chunks so oversized uploads do not have to be buffered fully in memory.
+    max_bytes = settings.max_logo_size_mb * 1024 * 1024
+    buffer = bytearray()
+    while chunk := await file.read(1024 * 1024):
+        buffer.extend(chunk)
+        if len(buffer) > max_bytes:
+            raise HTTPException(
+                status_code=400,
+                detail=f"File too large. Maximum size: {settings.max_logo_size_mb}MB"
+            )
+    contents = bytes(buffer)
 
     # Validate file size is not zero
     if len(contents) == 0:
