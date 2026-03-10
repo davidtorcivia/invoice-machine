@@ -150,6 +150,7 @@ export const invoicesApi = {
   list: (params = {}) => {
     const search = new URLSearchParams();
     if (params.status) search.append('status', params.status);
+    if (params.document_type) search.append('document_type', params.document_type);
     if (params.client_id) search.append('client_id', params.client_id);
     if (params.from_date) search.append('from_date', params.from_date);
     if (params.to_date) search.append('to_date', params.to_date);
@@ -164,6 +165,7 @@ export const invoicesApi = {
   listPaginated: (params = {}) => {
     const search = new URLSearchParams();
     if (params.status) search.append('status', params.status);
+    if (params.document_type) search.append('document_type', params.document_type);
     if (params.client_id) search.append('client_id', params.client_id);
     if (params.from_date) search.append('from_date', params.from_date);
     if (params.to_date) search.append('to_date', params.to_date);
@@ -300,6 +302,8 @@ export const searchApi = {
 // ===== Analytics =====
 
 export const analyticsApi = {
+  getDashboardSummary: () => get('/analytics/dashboard'),
+
   getRevenue: (params = {}) => {
     const search = new URLSearchParams();
     if (params.from_date) search.append('from_date', params.from_date);

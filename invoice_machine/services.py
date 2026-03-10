@@ -159,6 +159,11 @@ def format_currency(amount: Union[Decimal, float], currency_code: str = "USD") -
     return f"{amount:,.2f} {currency_code}"
 
 
+def is_invoice_document(document: Invoice) -> bool:
+    """Return True when a document should count toward invoice billing totals."""
+    return getattr(document, "document_type", "invoice") == "invoice"
+
+
 class ClientService:
     """Service for client operations."""
 
@@ -183,6 +188,24 @@ class ClientService:
         """
         from sqlalchemy import func, case
 
+        total_invoiced_expr = func.coalesce(func.sum(Invoice.total), 0)
+        total_paid_expr = func.coalesce(
+            func.sum(
+                case(
+                    (Invoice.status == "paid", Invoice.total),
+                    else_=0,
+                )
+            ),
+            0,
+        )
+        invoice_count_expr = func.count(Invoice.id)
+        paid_invoice_count_expr = func.sum(
+            case(
+                (Invoice.status == "paid", 1),
+                else_=0,
+            )
+        )
+
         # Build aggregated query
         query = (
             select(
@@ -190,23 +213,10 @@ class ClientService:
                 Client.name,
                 Client.business_name,
                 Client.email,
-                func.coalesce(func.sum(Invoice.total), 0).label("total_invoiced"),
-                func.coalesce(
-                    func.sum(
-                        case(
-                            (Invoice.status == "paid", Invoice.total),
-                            else_=0,
-                        )
-                    ),
-                    0,
-                ).label("total_paid"),
-                func.count(Invoice.id).label("invoice_count"),
-                func.sum(
-                    case(
-                        (Invoice.status == "paid", 1),
-                        else_=0,
-                    )
-                ).label("paid_invoice_count"),
+                total_invoiced_expr.label("total_invoiced"),
+                total_paid_expr.label("total_paid"),
+                invoice_count_expr.label("invoice_count"),
+                paid_invoice_count_expr.label("paid_invoice_count"),
                 func.min(Invoice.issue_date).label("first_invoice"),
                 func.max(Invoice.issue_date).label("last_invoice"),
             )
@@ -214,11 +224,13 @@ class ClientService:
                 Invoice,
                 and_(
                     Invoice.client_id == Client.id,
+                    Invoice.document_type == "invoice",
                     Invoice.deleted_at.is_(None),
                 ),
             )
             .where(Client.deleted_at.is_(None))
             .group_by(Client.id)
+            .order_by(desc(total_paid_expr), Client.id)
         )
 
         if client_id:
@@ -335,6 +347,7 @@ class InvoiceService:
     async def list_invoices(
         session: AsyncSession,
         status: Optional[str] = None,
+        document_type: Optional[str] = None,
         client_id: Optional[int] = None,
         from_date: Optional[date] = None,
         to_date: Optional[date] = None,
@@ -352,6 +365,9 @@ class InvoiceService:
 
         if status:
             query = query.where(Invoice.status == status)
+
+        if document_type:
+            query = query.where(Invoice.document_type == document_type)
 
         if client_id:
             query = query.where(Invoice.client_id == client_id)
@@ -385,6 +401,7 @@ class InvoiceService:
     async def list_invoices_paginated(
         session: AsyncSession,
         status: Optional[str] = None,
+        document_type: Optional[str] = None,
         client_id: Optional[int] = None,
         from_date: Optional[date] = None,
         to_date: Optional[date] = None,
@@ -400,6 +417,8 @@ class InvoiceService:
             conditions.append(Invoice.deleted_at.is_(None))
         if status:
             conditions.append(Invoice.status == status)
+        if document_type:
+            conditions.append(Invoice.document_type == document_type)
         if client_id:
             conditions.append(Invoice.client_id == client_id)
         if from_date:
@@ -419,6 +438,7 @@ class InvoiceService:
         invoices = await InvoiceService.list_invoices(
             session,
             status=status,
+            document_type=document_type,
             client_id=client_id,
             from_date=from_date,
             to_date=to_date,

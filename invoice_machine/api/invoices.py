@@ -253,6 +253,9 @@ def _serialize_invoice(invoice: Invoice, include_items: bool = True) -> dict:
 async def list_invoices(
     request: Request,
     status: Optional[str] = Query(None, description="Filter by status"),
+    document_type: Optional[str] = Query(
+        None, pattern="^(invoice|quote)$", description="Filter by document type"
+    ),
     client_id: Optional[int] = Query(None, description="Filter by client ID"),
     from_date: Optional[date] = Query(None, description="Filter from this date"),
     to_date: Optional[date] = Query(None, description="Filter to this date"),
@@ -269,6 +272,7 @@ async def list_invoices(
     invoices = await InvoiceService.list_invoices(
         session,
         status=status,
+        document_type=document_type,
         client_id=client_id,
         from_date=from_date,
         to_date=to_date,
@@ -285,6 +289,9 @@ async def list_invoices(
 async def list_invoices_paginated(
     request: Request,
     status: Optional[str] = Query(None, description="Filter by status"),
+    document_type: Optional[str] = Query(
+        None, pattern="^(invoice|quote)$", description="Filter by document type"
+    ),
     client_id: Optional[int] = Query(None, description="Filter by client ID"),
     from_date: Optional[date] = Query(None, description="Filter from this date"),
     to_date: Optional[date] = Query(None, description="Filter to this date"),
@@ -302,6 +309,7 @@ async def list_invoices_paginated(
     items, total = await InvoiceService.list_invoices_paginated(
         session,
         status=status,
+        document_type=document_type,
         client_id=client_id,
         from_date=from_date,
         to_date=to_date,

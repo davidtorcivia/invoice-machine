@@ -4,7 +4,7 @@ Optimized for performance using SQL-level aggregation instead of in-memory loops
 This is critical for scaling to thousands of invoices.
 """
 
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Optional
 
@@ -22,6 +22,68 @@ router = APIRouter(prefix="/api/analytics", tags=["analytics"])
 # Reasonable limits to prevent excessive queries
 MAX_INVOICE_QUERY_LIMIT = 1000
 MAX_CLIENT_LIMIT = 100
+
+
+@router.get("/dashboard")
+@limiter.limit("30/minute")
+async def get_dashboard_summary(
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """Get dashboard summary totals for invoice documents."""
+    today = date.today()
+    month_start = datetime(today.year, today.month, 1)
+    if today.month == 12:
+        next_month_start = datetime(today.year + 1, 1, 1)
+    else:
+        next_month_start = datetime(today.year, today.month + 1, 1)
+
+    base_filter = and_(
+        Invoice.document_type == "invoice",
+        Invoice.deleted_at.is_(None),
+    )
+
+    totals_query = select(
+        func.coalesce(
+            func.sum(
+                case((Invoice.status.in_(["sent", "overdue"]), Invoice.total), else_=0)
+            ),
+            0,
+        ).label("total_outstanding"),
+        func.coalesce(
+            func.sum(
+                case(
+                    (
+                        and_(
+                            Invoice.status == "paid",
+                            Invoice.created_at >= month_start,
+                            Invoice.created_at < next_month_start,
+                        ),
+                        Invoice.total,
+                    ),
+                    else_=0,
+                )
+            ),
+            0,
+        ).label("paid_this_month"),
+        func.count(case((Invoice.status == "draft", 1))).label("draft_count"),
+        func.count(Invoice.id).label("invoice_count"),
+    ).where(base_filter)
+
+    result = await session.execute(totals_query)
+    totals = result.one()
+
+    total_outstanding = Decimal(str(totals.total_outstanding))
+    paid_this_month = Decimal(str(totals.paid_this_month))
+
+    return {
+        "total_outstanding": str(total_outstanding),
+        "total_outstanding_formatted": format_currency(total_outstanding, "USD"),
+        "paid_this_month": str(paid_this_month),
+        "paid_this_month_formatted": format_currency(paid_this_month, "USD"),
+        "draft_count": totals.draft_count or 0,
+        "invoice_count": totals.invoice_count or 0,
+    }
 
 
 @router.get("/revenue")
@@ -52,6 +114,7 @@ async def get_revenue_summary(
 
     # Base filter for date range and non-deleted invoices
     base_filter = and_(
+        Invoice.document_type == "invoice",
         Invoice.issue_date >= from_date_parsed,
         Invoice.issue_date <= to_date_parsed,
         Invoice.deleted_at.is_(None),
@@ -192,6 +255,4 @@ async def get_client_lifetime_values(
         for stat in stats
     ]
 
-    # Sort by total paid (descending)
-    results.sort(key=lambda x: Decimal(x["total_paid"]), reverse=True)
     return results

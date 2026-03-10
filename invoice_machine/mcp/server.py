@@ -15,7 +15,14 @@ from invoice_machine.database import (
     Client,
     Invoice,
 )
-from invoice_machine.services import ClientService, InvoiceService, RecurringService, SearchService, format_currency
+from invoice_machine.services import (
+    ClientService,
+    InvoiceService,
+    RecurringService,
+    SearchService,
+    format_currency,
+    is_invoice_document,
+)
 from invoice_machine.config import get_settings
 from invoice_machine.utils import ensure_utc, utc_now
 
@@ -1227,6 +1234,8 @@ async def get_revenue_summary(
             limit=10000,
         )
 
+        invoices = [inv for inv in invoices if is_invoice_document(inv)]
+
         # Calculate totals
         total_invoiced = sum(inv.total for inv in invoices)
         total_paid = sum(inv.total for inv in invoices if inv.status == "paid")
@@ -1306,6 +1315,8 @@ async def get_client_lifetime_value(
                 session, client_id=client.id, limit=10000
             )
 
+            invoices = [inv for inv in invoices if is_invoice_document(inv)]
+
             total_invoiced = sum(inv.total for inv in invoices)
             total_paid = sum(inv.total for inv in invoices if inv.status == "paid")
             paid_invoices = [inv for inv in invoices if inv.status == "paid"]
@@ -1358,6 +1369,7 @@ async def get_client_invoice_context(
             client_id=client_id,
             limit=limit,
         )
+        invoices = [inv for inv in invoices if is_invoice_document(inv)]
 
         # Get all invoices for stats
         all_invoices = await InvoiceService.list_invoices(
@@ -1365,6 +1377,8 @@ async def get_client_invoice_context(
             client_id=client_id,
             limit=10000,
         )
+
+        all_invoices = [inv for inv in all_invoices if is_invoice_document(inv)]
 
         total_billed = sum(inv.total for inv in all_invoices if inv.status in ("sent", "paid", "overdue"))
         paid_invoices = [inv for inv in all_invoices if inv.status == "paid"]

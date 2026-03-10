@@ -1,7 +1,7 @@
 <script>
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
-  import { invoicesApi, clientsApi } from '$lib/api';
+  import { analyticsApi, invoicesApi, clientsApi } from '$lib/api';
   import { formatCurrency, formatDate, toast } from '$lib/stores';
   import Header from '$lib/components/Header.svelte';
   import Icon from '$lib/components/Icons.svelte';
@@ -18,32 +18,19 @@
 
   onMount(async () => {
     try {
-      const [invoicesData, clientsData] = await Promise.all([
-        invoicesApi.list({ limit: 100 }),
+      const [dashboardData, invoicesData, clientsData] = await Promise.all([
+        analyticsApi.getDashboardSummary(),
+        invoicesApi.list({ document_type: 'invoice', limit: 10 }),
         clientsApi.list(),
       ]);
 
-      const now = new Date();
-      const thisMonth = now.getMonth();
-      const thisYear = now.getFullYear();
-
-      stats.clientCount = clientsData.length;
-      recentInvoices = invoicesData.slice(0, 10);
-
-      for (const invoice of invoicesData) {
-        const total = parseFloat(invoice.total);
-        const invoiceDate = new Date(invoice.created_at);
-
-        if (invoice.status === 'draft') {
-          stats.draftCount++;
-        } else if (invoice.status === 'sent' || invoice.status === 'overdue') {
-          stats.totalOutstanding += total;
-        }
-
-        if (invoice.status === 'paid' && invoiceDate.getMonth() === thisMonth && invoiceDate.getFullYear() === thisYear) {
-          stats.paidThisMonth += total;
-        }
-      }
+      stats = {
+        totalOutstanding: parseFloat(dashboardData.total_outstanding) || 0,
+        paidThisMonth: parseFloat(dashboardData.paid_this_month) || 0,
+        draftCount: dashboardData.draft_count || 0,
+        clientCount: clientsData.length,
+      };
+      recentInvoices = invoicesData;
     } catch (error) {
       toast.error('Failed to load dashboard');
     } finally {
