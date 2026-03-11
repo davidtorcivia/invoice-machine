@@ -4,8 +4,12 @@
    * Clean, consistent icons
    */
 
+  /** @type {string} */
   export let name = 'home';
+  /** @type {'sm' | 'md' | 'lg' | 'xl' | string} */
   export let size = 'md';
+  /** @type {string} */
+  export let class_ = '';
 
   const sizes = {
     sm: '14px',
@@ -77,7 +81,7 @@
   stroke-width="2"
   stroke-linecap="round"
   stroke-linejoin="round"
-  class="icon"
+  class={`icon ${class_}`.trim()}
 >
   <path d={icons[name] || icons.home} />
 </svg>

@@ -88,6 +88,12 @@
     }
     return `Invoice #${item.name}`;
   }
+
+  function handleModalKeydown(event, closeModal) {
+    if (event.key === 'Escape') {
+      closeModal();
+    }
+  }
 </script>
 
 <Header title="Trash" />
@@ -163,8 +169,9 @@
 
 <!-- Restore Confirmation Modal -->
 {#if showRestoreModal && selectedItem}
-  <div class="modal-overlay" on:click={closeRestoreModal} on:keydown={(e) => e.key === 'Escape' && closeRestoreModal()} role="button" tabindex="-1">
-    <div class="modal confirm-modal" on:click|stopPropagation role="dialog" aria-modal="true">
+  <div class="modal-overlay" role="presentation" tabindex="-1" on:keydown={(event) => handleModalKeydown(event, closeRestoreModal)}>
+    <button type="button" class="modal-backdrop" aria-label="Close restore dialog" on:click={closeRestoreModal}></button>
+    <div class="modal confirm-modal" role="dialog" aria-modal="true" tabindex="-1">
       <div class="modal-icon restore">
         <Icon name="refresh" size="lg" />
       </div>
@@ -195,8 +202,9 @@
 
 <!-- Empty Trash Confirmation Modal -->
 {#if showEmptyModal}
-  <div class="modal-overlay" on:click={closeEmptyModal} on:keydown={(e) => e.key === 'Escape' && closeEmptyModal()} role="button" tabindex="-1">
-    <div class="modal confirm-modal danger" on:click|stopPropagation role="dialog" aria-modal="true">
+  <div class="modal-overlay" role="presentation" tabindex="-1" on:keydown={(event) => handleModalKeydown(event, closeEmptyModal)}>
+    <button type="button" class="modal-backdrop" aria-label="Close empty trash dialog" on:click={closeEmptyModal}></button>
+    <div class="modal confirm-modal danger" role="dialog" aria-modal="true" tabindex="-1">
       <div class="modal-icon danger">
         <Icon name="trash" size="lg" />
       </div>
@@ -359,9 +367,19 @@
 
   /* Confirmation Modal Styles */
   .confirm-modal {
+    position: relative;
     max-width: 400px;
     padding: var(--space-8);
     text-align: center;
+  }
+
+  .modal-backdrop {
+    position: absolute;
+    inset: 0;
+    border: 0;
+    padding: 0;
+    background: transparent;
+    cursor: pointer;
   }
 
   .modal-icon {

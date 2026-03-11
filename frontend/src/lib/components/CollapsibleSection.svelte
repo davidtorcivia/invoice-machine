@@ -1,9 +1,13 @@
 <script>
   import Icon from './Icons.svelte';
 
+  /** @type {string} */
   export let title = '';
+  /** @type {string} */
   export let subtitle = '';
+  /** @type {boolean} */
   export let open = false;
+  /** @type {string | null} */
   export let icon = null;
 
   function toggle() {

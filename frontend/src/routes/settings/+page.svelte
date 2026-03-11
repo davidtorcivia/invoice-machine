@@ -9,6 +9,8 @@
   import Icon from '$lib/components/Icons.svelte';
   import ConfirmModal from '$lib/components/ConfirmModal.svelte';
   import CollapsibleSection from '$lib/components/CollapsibleSection.svelte';
+  import SettingsApiAccessSection from '$lib/components/settings/SettingsApiAccessSection.svelte';
+  import SettingsBackupSection from '$lib/components/settings/SettingsBackupSection.svelte';
 
   let profile = null;
   let loading = true;
@@ -198,7 +200,7 @@
       const data = {
         smtp_enabled: smtpEnabled,
         smtp_host: smtpHost || undefined,
-        smtp_port: parseInt(smtpPort) || 587,
+        smtp_port: Number(smtpPort) || 587,
         smtp_username: smtpUsername || undefined,
         smtp_from_email: smtpFromEmail || undefined,
         smtp_from_name: smtpFromName || undefined,
@@ -253,7 +255,7 @@
         country: country || undefined,
         ein: ein || undefined,
         accent_color: accentColor || undefined,
-        default_payment_terms_days: parseInt(defaultPaymentTermsDays) || undefined,
+        default_payment_terms_days: Number(defaultPaymentTermsDays) || undefined,
         default_currency_code: defaultCurrencyCode || undefined,
         default_notes: defaultNotes || undefined,
         default_payment_instructions: defaultPaymentInstructions || undefined,
@@ -323,6 +325,12 @@
 
   function openDeleteLogoModal() {
     showDeleteLogoModal = true;
+  }
+
+  function handleModalKeydown(event, closeModal) {
+    if (event.key === 'Escape') {
+      closeModal();
+    }
   }
 
   function closeDeleteLogoModal() {
@@ -520,7 +528,7 @@
     try {
       const data = {
         backup_enabled: backupEnabled,
-        backup_retention_days: parseInt(backupRetentionDays) || 30,
+        backup_retention_days: Number(backupRetentionDays) || 30,
         backup_s3_enabled: backupS3Enabled,
       };
 
@@ -1128,369 +1136,50 @@
         {/if}
       </CollapsibleSection>
 
-      <!-- MCP Integration -->
-      <CollapsibleSection title="MCP Integration" subtitle="Claude Desktop remote access" icon="settings" bind:open={openSections.mcpIntegration}>
-        <p class="form-hint mb-4">
-          Enable remote access to Invoice Machine via Claude Desktop using the Model Context Protocol (MCP).
-          Generate an API key to allow secure connections from another computer.
-        </p>
+      <SettingsApiAccessSection
+        bind:mcpOpen={openSections.mcpIntegration}
+        bind:botOpen={openSections.botApi}
+        bind:appBaseUrl
+        {mcpEndpointUrl}
+        {mcpApiKeyConfigured}
+        {mcpApiKey}
+        {generatingMcpKey}
+        {copyMcpKey}
+        {openDeleteMcpModal}
+        {generateMcpKey}
+        {botApiKeyConfigured}
+        {botApiKey}
+        {generatingBotKey}
+        {copyBotKey}
+        {openDeleteBotModal}
+        {generateBotKey}
+      />
 
-        <div class="form-group">
-          <label for="app-base-url" class="label">Application URL</label>
-          <input
-            id="app-base-url"
-            type="url"
-            class="input"
-            placeholder="https://invoices.example.com"
-            bind:value={appBaseUrl}
-          />
-          <p class="form-hint">
-            Set this to your public URL (e.g., Cloudflare Tunnel URL). Used for MCP connections and PDF links.
-            Leave empty to use the current browser URL.
-          </p>
-        </div>
-
-        {#if mcpApiKeyConfigured}
-          <div class="mcp-status mcp-enabled">
-            <div class="mcp-status-icon">
-              <Icon name="check" size="md" />
-            </div>
-            <div class="mcp-status-info">
-              <span class="mcp-status-label">Remote access enabled</span>
-              <span class="mcp-status-endpoint">Endpoint: <code>{mcpEndpointUrl}/mcp/sse</code></span>
-            </div>
-          </div>
-
-          <div class="mcp-key-display">
-            <label class="label">API Key</label>
-            <div class="mcp-key-row">
-              <input type="password" class="input" value={mcpApiKey || '••••••••••••••••'} readonly />
-              <button class="btn btn-secondary" on:click={copyMcpKey} disabled={!mcpApiKey}>
-                <Icon name="copy" size="sm" />
-                Copy
-              </button>
-            </div>
-            {#if !mcpApiKey}
-              <p class="form-hint">Key is hidden after generation. Regenerate to copy again.</p>
-            {/if}
-          </div>
-
-          <div class="mcp-actions">
-            <button class="btn btn-secondary" on:click={generateMcpKey} disabled={generatingMcpKey}>
-              <Icon name="refresh" size="sm" />
-              Regenerate Key
-            </button>
-            <button class="btn btn-ghost btn-danger-text" on:click={openDeleteMcpModal}>
-              <Icon name="trash" size="sm" />
-              Disable Remote Access
-            </button>
-          </div>
-        {:else}
-          <div class="mcp-status mcp-disabled">
-            <div class="mcp-status-icon">
-              <Icon name="x" size="md" />
-            </div>
-            <div class="mcp-status-info">
-              <span class="mcp-status-label">Remote access disabled</span>
-              <span class="mcp-status-hint">Generate an API key to enable Claude Desktop connections</span>
-            </div>
-          </div>
-
-          <button class="btn btn-primary" on:click={generateMcpKey} disabled={generatingMcpKey}>
-            <Icon name="plus" size="sm" />
-            {generatingMcpKey ? 'Generating...' : 'Generate API Key'}
-          </button>
-        {/if}
-
-        <div class="mcp-help mt-4">
-          <details>
-            <summary>How to configure Claude Desktop</summary>
-            <div class="mcp-help-content">
-              <p>Add this to your Claude Desktop config file:</p>
-              <pre class="code-block">{`{
-  "mcpServers": {
-            "invoice-machine": {
-              "transport": "sse",
-              "url": "${mcpEndpointUrl}/mcp/sse",
-              "headers": {
-                "Authorization": "Bearer ${mcpApiKey || 'YOUR_API_KEY'}"
-      }
-    }
-  }
-}`}</pre>
-              <p class="mt-2"><strong>Config file location:</strong></p>
-              <ul>
-                <li><strong>macOS:</strong> <code>~/Library/Application Support/Claude/claude_desktop_config.json</code></li>
-                <li><strong>Windows:</strong> <code>%APPDATA%\Claude\claude_desktop_config.json</code></li>
-              </ul>
-            </div>
-          </details>
-        </div>
-      </CollapsibleSection>
-
-      <!-- Bot API Key -->
-      <CollapsibleSection title="Bot API Key" subtitle="REST API automation access" icon="settings" bind:open={openSections.botApi}>
-        <p class="form-hint mb-4">
-          Generate a separate API key for conventional REST API access with bots and agents.
-          Use this key in the <code>Authorization: Bearer ...</code> header for <code>/api/*</code> endpoints.
-        </p>
-
-        {#if botApiKeyConfigured}
-          <div class="mcp-status mcp-enabled">
-            <div class="mcp-status-icon">
-              <Icon name="check" size="md" />
-            </div>
-            <div class="mcp-status-info">
-              <span class="mcp-status-label">Bot API access enabled</span>
-              <span class="mcp-status-endpoint">Skill URL: <code>{mcpEndpointUrl}/SKILL.md</code></span>
-            </div>
-          </div>
-
-          <div class="mcp-key-display">
-            <label class="label">Bot API Key</label>
-            <div class="mcp-key-row">
-              <input type="password" class="input" value={botApiKey || '••••••••••••••••'} readonly />
-              <button class="btn btn-secondary" on:click={copyBotKey} disabled={!botApiKey}>
-                <Icon name="copy" size="sm" />
-                Copy
-              </button>
-            </div>
-            {#if !botApiKey}
-              <p class="form-hint">Key is hidden after generation. Regenerate to copy again.</p>
-            {/if}
-          </div>
-
-          <div class="mcp-actions">
-            <button class="btn btn-secondary" on:click={generateBotKey} disabled={generatingBotKey}>
-              <Icon name="refresh" size="sm" />
-              Regenerate Key
-            </button>
-            <button class="btn btn-ghost btn-danger-text" on:click={openDeleteBotModal}>
-              <Icon name="trash" size="sm" />
-              Disable Bot API Access
-            </button>
-          </div>
-        {:else}
-          <div class="mcp-status mcp-disabled">
-            <div class="mcp-status-icon">
-              <Icon name="x" size="md" />
-            </div>
-            <div class="mcp-status-info">
-              <span class="mcp-status-label">Bot API access disabled</span>
-              <span class="mcp-status-hint">Generate a key to enable bearer token access for bots</span>
-            </div>
-          </div>
-
-          <button class="btn btn-primary" on:click={generateBotKey} disabled={generatingBotKey}>
-            <Icon name="plus" size="sm" />
-            {generatingBotKey ? 'Generating...' : 'Generate Bot API Key'}
-          </button>
-        {/if}
-
-        <div class="mcp-help mt-4">
-          <details>
-            <summary>How to use this key with bots</summary>
-            <div class="mcp-help-content">
-              <p>Reference the hosted skill file at:</p>
-              <pre class="code-block">{`${mcpEndpointUrl}/SKILL.md`}</pre>
-              <p class="mt-2">Example request:</p>
-              <pre class="code-block">{`curl -H "Authorization: Bearer ${botApiKey || 'YOUR_BOT_API_KEY'}" \\
-  "${mcpEndpointUrl}/api/invoices/paginated?page=1&per_page=10"`}</pre>
-            </div>
-          </details>
-        </div>
-      </CollapsibleSection>
-
-      <!-- Backup & Restore -->
-      <CollapsibleSection title="Backup & Restore" subtitle="Manage your data backups" icon="download" bind:open={openSections.backup}>
-        <div class="section-header-actions">
-          <button
-            class="btn btn-secondary btn-sm"
-            on:click={createBackup}
-            disabled={creatingBackup}
-          >
-            <Icon name="plus" size="sm" />
-            {creatingBackup ? 'Creating...' : 'Create Backup'}
-          </button>
-        </div>
-
-        <div class="form-row">
-          <div class="form-group">
-            <label class="checkbox-label">
-              <input type="checkbox" bind:checked={backupEnabled} />
-              <span>Enable automatic daily backups</span>
-            </label>
-          </div>
-
-          <div class="form-group">
-            <label for="backup-retention" class="label">Retention (days)</label>
-            <input
-              id="backup-retention"
-              type="number"
-              class="input"
-              min="1"
-              max="365"
-              bind:value={backupRetentionDays}
-            />
-          </div>
-        </div>
-
-        <!-- S3 Configuration -->
-        <div class="s3-section">
-          <label class="checkbox-label mb-3">
-            <input type="checkbox" bind:checked={backupS3Enabled} />
-            <span>Upload backups to S3-compatible storage</span>
-          </label>
-
-          {#if backupS3Enabled}
-            <div class="s3-fields">
-              <div class="form-group">
-                <label for="s3-endpoint" class="label">Endpoint URL (optional)</label>
-                <input
-                  id="s3-endpoint"
-                  type="url"
-                  class="input"
-                  placeholder="https://s3.amazonaws.com or Backblaze/MinIO URL"
-                  bind:value={backupS3EndpointUrl}
-                />
-                <p class="form-hint">Leave empty for AWS S3, or enter custom endpoint for Backblaze B2, MinIO, etc.</p>
-              </div>
-
-              <div class="form-row">
-                <div class="form-group">
-                  <label for="s3-access-key" class="label">Access Key ID</label>
-                  <input
-                    id="s3-access-key"
-                    type="text"
-                    class="input"
-                    placeholder="AKIAIOSFODNN7EXAMPLE"
-                    bind:value={backupS3AccessKeyId}
-                  />
-                </div>
-
-                <div class="form-group">
-                  <label for="s3-secret-key" class="label">Secret Access Key</label>
-                  <input
-                    id="s3-secret-key"
-                    type="password"
-                    class="input"
-                    placeholder="Enter secret key"
-                    bind:value={backupS3SecretAccessKey}
-                  />
-                </div>
-              </div>
-
-              <div class="form-row">
-                <div class="form-group">
-                  <label for="s3-bucket" class="label">Bucket Name</label>
-                  <input
-                    id="s3-bucket"
-                    type="text"
-                    class="input"
-                    placeholder="my-backup-bucket"
-                    bind:value={backupS3Bucket}
-                  />
-                </div>
-
-                <div class="form-group">
-                  <label for="s3-region" class="label">Region</label>
-                  <input
-                    id="s3-region"
-                    type="text"
-                    class="input"
-                    placeholder="us-east-1"
-                    bind:value={backupS3Region}
-                  />
-                </div>
-              </div>
-
-              <div class="form-group">
-                <label for="s3-prefix" class="label">Path Prefix</label>
-                <input
-                  id="s3-prefix"
-                  type="text"
-                  class="input"
-                  placeholder="invoice-machine-backups"
-                  bind:value={backupS3Prefix}
-                />
-              </div>
-
-              <button
-                class="btn btn-secondary btn-sm"
-                on:click={testS3Connection}
-                disabled={testingS3}
-              >
-                {testingS3 ? 'Testing...' : 'Test S3 Connection'}
-              </button>
-            </div>
-          {/if}
-        </div>
-
-        <div class="backup-actions mt-4">
-          <button class="btn btn-secondary" on:click={saveBackupSettings}>
-            <Icon name="check" size="sm" />
-            Save Backup Settings
-          </button>
-        </div>
-
-        <!-- Backup List -->
-        <div class="backup-list mt-4">
-          <h4 class="backup-list-title">Available Backups</h4>
-
-          {#if loadingBackups}
-            <div class="loading-container">
-              <div class="spinner"></div>
-            </div>
-          {:else if backups.length === 0}
-            <p class="text-secondary">No backups yet. Create one using the button above.</p>
-          {:else}
-            <div class="backup-items">
-              {#each backups as backup}
-                <div class="backup-item">
-                  <div class="backup-info">
-                    <span class="backup-filename">{backup.filename}</span>
-                    <span class="backup-meta">
-                      {formatBytes(backup.size_bytes)} | {formatDate(backup.created_at)}
-                      {#if backup.location === 's3'}
-                        <span class="backup-location">S3</span>
-                      {/if}
-                    </span>
-                  </div>
-                  <div class="backup-item-actions">
-                    {#if backup.location === 'local'}
-                      <a
-                        href={backupsApi.download(backup.filename)}
-                        class="btn btn-ghost btn-icon btn-sm"
-                        title="Download"
-                        download
-                      >
-                        <Icon name="download" size="sm" />
-                      </a>
-                    {/if}
-                    <button
-                      class="btn btn-ghost btn-icon btn-sm"
-                      on:click={() => openRestoreModal(backup)}
-                      title="Restore"
-                      disabled={restoringBackup === backup.filename}
-                    >
-                      <Icon name="refresh" size="sm" />
-                    </button>
-                    {#if backup.location === 'local'}
-                      <button
-                        class="btn btn-ghost btn-icon btn-sm"
-                        on:click={() => openDeleteBackupModal(backup)}
-                        title="Delete"
-                      >
-                        <Icon name="trash" size="sm" />
-                      </button>
-                    {/if}
-                  </div>
-                </div>
-              {/each}
-            </div>
-          {/if}
-        </div>
-      </CollapsibleSection>
+      <SettingsBackupSection
+        bind:open={openSections.backup}
+        {creatingBackup}
+        {createBackup}
+        bind:backupEnabled
+        bind:backupRetentionDays
+        bind:backupS3Enabled
+        bind:backupS3EndpointUrl
+        bind:backupS3AccessKeyId
+        bind:backupS3SecretAccessKey
+        bind:backupS3Bucket
+        bind:backupS3Region
+        bind:backupS3Prefix
+        {testingS3}
+        {testS3Connection}
+        {saveBackupSettings}
+        {loadingBackups}
+        {backups}
+        {restoringBackup}
+        {openRestoreModal}
+        {openDeleteBackupModal}
+        {formatBytes}
+        {formatDate}
+        downloadBackupHref={backupsApi.download}
+      />
 
       <!-- Save Button -->
       <div class="form-actions">
@@ -1510,8 +1199,9 @@
 
 <!-- Delete Logo Confirmation Modal -->
 {#if showDeleteLogoModal}
-  <div class="modal-overlay" on:click={closeDeleteLogoModal} on:keydown={(e) => e.key === 'Escape' && closeDeleteLogoModal()}>
-    <div class="modal modal-sm" on:click|stopPropagation role="dialog" aria-modal="true">
+  <div class="modal-overlay" role="presentation" tabindex="-1" on:keydown={(event) => handleModalKeydown(event, closeDeleteLogoModal)}>
+    <button type="button" class="modal-backdrop" aria-label="Close delete logo dialog" on:click={closeDeleteLogoModal}></button>
+    <div class="modal modal-sm" role="dialog" aria-modal="true" tabindex="-1">
       <div class="modal-icon modal-icon-danger">
         <Icon name="trash" size="lg" />
       </div>
@@ -1531,8 +1221,9 @@
 
 <!-- Restore Backup Confirmation Modal -->
 {#if showRestoreModal && restoreTarget}
-  <div class="modal-overlay" on:click={closeRestoreModal} on:keydown={(e) => e.key === 'Escape' && closeRestoreModal()}>
-    <div class="modal modal-sm" on:click|stopPropagation role="dialog" aria-modal="true">
+  <div class="modal-overlay" role="presentation" tabindex="-1" on:keydown={(event) => handleModalKeydown(event, closeRestoreModal)}>
+    <button type="button" class="modal-backdrop" aria-label="Close restore backup dialog" on:click={closeRestoreModal}></button>
+    <div class="modal modal-sm" role="dialog" aria-modal="true" tabindex="-1">
       <div class="modal-icon modal-icon-warning">
         <Icon name="refresh" size="lg" />
       </div>
@@ -1557,8 +1248,9 @@
 
 <!-- Payment Method Modal -->
 {#if showPaymentMethodModal}
-  <div class="modal-overlay" on:click={closePaymentMethodModal} on:keydown={(e) => e.key === 'Escape' && closePaymentMethodModal()}>
-    <div class="modal" on:click|stopPropagation role="dialog" aria-modal="true">
+  <div class="modal-overlay" role="presentation" tabindex="-1" on:keydown={(event) => handleModalKeydown(event, closePaymentMethodModal)}>
+    <button type="button" class="modal-backdrop" aria-label="Close payment method dialog" on:click={closePaymentMethodModal}></button>
+    <div class="modal" role="dialog" aria-modal="true" tabindex="-1">
       <div class="modal-header">
         <h2 class="modal-title">{editingMethod ? 'Edit Payment Method' : 'Add Payment Method'}</h2>
         <button class="btn btn-ghost btn-icon btn-sm" on:click={closePaymentMethodModal}>
@@ -1810,7 +1502,17 @@
   }
 
   /* Delete Modal */
+  .modal-backdrop {
+    position: absolute;
+    inset: 0;
+    border: 0;
+    padding: 0;
+    background: transparent;
+    cursor: pointer;
+  }
+
   .modal-sm {
+    position: relative;
     max-width: 360px;
     text-align: center;
     padding: var(--space-8);
@@ -1963,253 +1665,6 @@
     .form-actions .btn {
       width: 100%;
     }
-  }
-
-  /* MCP Integration */
-  .mcp-status {
-    display: flex;
-    align-items: center;
-    gap: var(--space-3);
-    padding: var(--space-4);
-    border-radius: var(--radius-lg);
-    margin-bottom: var(--space-4);
-  }
-
-  .mcp-enabled {
-    background: var(--color-success-light);
-  }
-
-  .mcp-disabled {
-    background: var(--color-bg-sunken);
-  }
-
-  .mcp-status-icon {
-    width: 40px;
-    height: 40px;
-    border-radius: var(--radius-full);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-  }
-
-  .mcp-enabled .mcp-status-icon {
-    background: var(--color-success);
-    color: var(--color-text-inverse);
-  }
-
-  .mcp-disabled .mcp-status-icon {
-    background: var(--color-border);
-    color: var(--color-text-tertiary);
-  }
-
-  .mcp-status-info {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-1);
-  }
-
-  .mcp-status-label {
-    font-weight: 600;
-    color: var(--color-text);
-  }
-
-  .mcp-status-endpoint,
-  .mcp-status-hint {
-    font-size: 0.8125rem;
-    color: var(--color-text-secondary);
-    word-break: break-all;
-  }
-
-  .mcp-status-endpoint code {
-    background: var(--color-bg);
-    padding: 0.1em 0.3em;
-    border-radius: var(--radius-sm);
-    font-family: var(--font-mono);
-    font-size: 0.875em;
-    word-break: break-all;
-  }
-
-  .mcp-key-display {
-    margin-bottom: var(--space-4);
-  }
-
-  .mcp-key-row {
-    display: flex;
-    gap: var(--space-2);
-  }
-
-  .mcp-key-row .input {
-    flex: 1;
-    font-family: var(--font-mono);
-    font-size: 0.8125rem;
-  }
-
-  .mcp-actions {
-    display: flex;
-    gap: var(--space-2);
-    flex-wrap: wrap;
-  }
-
-  .mcp-help {
-    border-top: 1px solid var(--color-border-light);
-    padding-top: var(--space-4);
-  }
-
-  .mcp-help summary {
-    font-weight: 500;
-    cursor: pointer;
-    color: var(--color-text-secondary);
-    padding: var(--space-2) 0;
-  }
-
-  .mcp-help summary:hover {
-    color: var(--color-text);
-  }
-
-  .mcp-help-content {
-    margin-top: var(--space-3);
-    font-size: 0.875rem;
-    color: var(--color-text-secondary);
-    line-height: 1.6;
-  }
-
-  .mcp-help-content .code-block {
-    background: var(--color-bg-sunken);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-md);
-    padding: var(--space-3);
-    margin: var(--space-2) 0;
-    overflow-x: auto;
-    font-family: var(--font-mono);
-    font-size: 0.75rem;
-    line-height: 1.5;
-    white-space: pre;
-  }
-
-  .mcp-help-content ul {
-    margin-top: var(--space-2);
-    padding-left: var(--space-4);
-  }
-
-  .mcp-help-content li {
-    margin-bottom: var(--space-1);
-  }
-
-  .mcp-help-content code {
-    background: var(--color-bg-sunken);
-    padding: 0.1em 0.3em;
-    border-radius: var(--radius-sm);
-    font-family: var(--font-mono);
-    font-size: 0.875em;
-  }
-
-  /* Backup Section */
-  .checkbox-label {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-    cursor: pointer;
-    font-weight: 500;
-  }
-
-  .checkbox-label input[type="checkbox"] {
-    width: 18px;
-    height: 18px;
-    cursor: pointer;
-    accent-color: var(--color-primary);
-  }
-
-  .s3-section {
-    margin-top: var(--space-4);
-    padding-top: var(--space-4);
-    border-top: 1px solid var(--color-border-light);
-  }
-
-  .s3-fields {
-    margin-top: var(--space-3);
-    padding: var(--space-4);
-    background: var(--color-bg-sunken);
-    border-radius: var(--radius-md);
-  }
-
-  .mb-3 {
-    margin-bottom: var(--space-3);
-  }
-
-  .backup-actions {
-    display: flex;
-    gap: var(--space-2);
-  }
-
-  .backup-list {
-    border-top: 1px solid var(--color-border-light);
-    padding-top: var(--space-4);
-  }
-
-  .backup-list-title {
-    font-size: 0.9375rem;
-    font-weight: 600;
-    margin-bottom: var(--space-3);
-    color: var(--color-text);
-  }
-
-  .backup-items {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-2);
-  }
-
-  .backup-item {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: var(--space-3);
-    background: var(--color-bg-sunken);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-md);
-    gap: var(--space-3);
-  }
-
-  .backup-info {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-1);
-    min-width: 0;
-    flex: 1;
-  }
-
-  .backup-filename {
-    font-family: var(--font-mono);
-    font-size: 0.8125rem;
-    font-weight: 500;
-    color: var(--color-text);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .backup-meta {
-    font-size: 0.75rem;
-    color: var(--color-text-tertiary);
-  }
-
-  .backup-location {
-    display: inline-block;
-    padding: 0.1em 0.4em;
-    background: var(--color-primary-light);
-    color: var(--color-primary);
-    border-radius: var(--radius-sm);
-    font-weight: 500;
-    font-size: 0.6875rem;
-    text-transform: uppercase;
-    margin-left: var(--space-2);
-  }
-
-  .backup-item-actions {
-    display: flex;
-    gap: var(--space-1);
-    flex-shrink: 0;
   }
 
   .modal-icon-warning {

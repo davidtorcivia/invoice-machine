@@ -457,15 +457,6 @@
     margin: var(--space-3) 0;
   }
 
-  .help-content a {
-    color: var(--color-primary);
-    text-decoration: none;
-  }
-
-  .help-content a:hover {
-    text-decoration: underline;
-  }
-
   @media (max-width: 768px) {
     .page-content {
       padding: var(--space-4);

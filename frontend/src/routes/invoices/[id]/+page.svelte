@@ -7,7 +7,7 @@
   import Icon from '$lib/components/Icons.svelte';
   import ConfirmModal from '$lib/components/ConfirmModal.svelte';
 
-  $: id = $page.params.id;
+  $: invoiceId = $page.params.id || '';
 
   let invoice = null;
   let items = [];
@@ -39,12 +39,26 @@
   };
 
   // Reactively load when id changes (handles both initial load and navigation)
-  $: if (id) loadInvoice();
+  $: if (invoiceId) loadInvoice();
+
+  /**
+   * @param {Event} event
+   * @returns {HTMLSelectElement}
+   */
+  function getSelectTarget(event) {
+    return /** @type {HTMLSelectElement} */ (event.currentTarget);
+  }
+
+  function handleSendEmailModalKeydown(event) {
+    if (event.key === 'Escape') {
+      cancelSendEmail();
+    }
+  }
 
   async function loadInvoice() {
     loading = true;
     try {
-      const data = await invoicesApi.get(id);
+      const data = await invoicesApi.get(invoiceId);
       invoice = data;
       items = data.items || [];
     } catch (error) {
@@ -57,7 +71,7 @@
   async function generatePdf() {
     generatingPdf = true;
     try {
-      const result = await invoicesApi.generatePdf(id);
+      const result = await invoicesApi.generatePdf(invoiceId);
       toast.success('PDF generated successfully');
       window.open(result.pdf_url, '_blank');
     } catch (error) {
@@ -68,12 +82,12 @@
   }
 
   async function downloadPdf() {
-    window.open(invoicesApi.getPdfUrl(id), '_blank');
+    window.open(invoicesApi.getPdfUrl(invoiceId), '_blank');
   }
 
   async function updateStatus(status) {
     try {
-      await invoicesApi.update(id, { status });
+      await invoicesApi.update(invoiceId, { status });
       toast.success(`Invoice marked as ${status}`);
       await loadInvoice();
     } catch (error) {
@@ -88,7 +102,7 @@
   async function confirmDelete() {
     deleting = true;
     try {
-      await invoicesApi.delete(id);
+      await invoicesApi.delete(invoiceId);
       toast.success('Invoice moved to trash');
       goto('/invoices');
     } catch (error) {
@@ -113,7 +127,7 @@
   async function confirmConvert() {
     converting = true;
     try {
-      await invoicesApi.update(id, { document_type: 'invoice' });
+      await invoicesApi.update(invoiceId, { document_type: 'invoice' });
       toast.success('Quote converted to invoice');
       await loadInvoice();
     } catch (error) {
@@ -135,7 +149,7 @@
     emailRecipient = invoice?.client_email || '';
 
     try {
-      const preview = await emailApi.previewEmail(id, {});
+      const preview = await emailApi.previewEmail(invoiceId, {});
       emailSubject = preview.subject;
       emailBody = preview.body;
     } catch (error) {
@@ -161,7 +175,7 @@
 
     emailSending = true;
     try {
-      await emailApi.sendInvoice(id, {
+      await emailApi.sendInvoice(invoiceId, {
         recipient_email: emailRecipient,
         subject: emailSubject,
         body: emailBody,
@@ -201,7 +215,7 @@
             Convert to Invoice
           </button>
         {/if}
-        <a href="/invoices/{id}/edit" class="btn btn-secondary">
+        <a href="/invoices/{invoiceId}/edit" class="btn btn-secondary">
           <Icon name="pencil" size="sm" />
           Edit
         </a>
@@ -231,7 +245,7 @@
               <select
                 class="status-select {statusConfig[invoice.status]?.class || 'badge-draft'}"
                 value={invoice.status}
-                on:change={(e) => updateStatus(e.target.value)}
+                on:change={(event) => updateStatus(getSelectTarget(event).value)}
               >
                 <option value="draft">Draft</option>
                 <option value="sent">Sent</option>
@@ -432,8 +446,9 @@
 
 <!-- Send Email Modal -->
 {#if showSendEmailModal}
-  <div class="modal-overlay" on:click={cancelSendEmail} on:keydown={(e) => e.key === 'Escape' && cancelSendEmail()}>
-    <div class="modal-content email-modal" on:click|stopPropagation role="dialog" aria-modal="true">
+  <div class="modal-overlay" role="presentation" tabindex="-1" on:keydown={handleSendEmailModalKeydown}>
+    <button type="button" class="modal-backdrop" aria-label="Close send email dialog" on:click={cancelSendEmail}></button>
+    <div class="modal-content email-modal" role="dialog" aria-modal="true" tabindex="-1">
       <div class="modal-header">
         <h2 class="modal-title">
           <Icon name="send" size="md" />
@@ -926,6 +941,7 @@
   }
 
   .modal-content {
+    position: relative;
     background: var(--color-bg-elevated);
     border-radius: var(--radius-xl);
     box-shadow: var(--shadow-xl);
@@ -937,6 +953,15 @@
 
   .email-modal {
     max-width: 700px;
+  }
+
+  .modal-backdrop {
+    position: absolute;
+    inset: 0;
+    border: 0;
+    padding: 0;
+    background: transparent;
+    cursor: pointer;
   }
 
   .modal-header {

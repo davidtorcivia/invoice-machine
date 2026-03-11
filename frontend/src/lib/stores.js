@@ -5,6 +5,10 @@ import { writable, derived, get } from 'svelte/store';
 import { browser } from '$app/environment';
 import { request } from '$lib/api';
 
+/**
+ * @typedef {{ id: number, message: string, type: 'success' | 'error' | 'info' }} ToastMessage
+ */
+
 // ===== Auth Store =====
 
 function createAuthStore() {
@@ -74,6 +78,7 @@ function createThemeStore() {
 
   const { subscribe, set, update } = writable(initial);
 
+  /** @param {string} theme */
   const applyTheme = (theme) => {
     if (!browser) return;
 
@@ -121,8 +126,10 @@ export const theme = createThemeStore();
 // ===== Toast Notifications =====
 
 function createToastStore() {
+  /** @type {import('svelte/store').Writable<ToastMessage[]>} */
   const { subscribe, update } = writable([]);
 
+  /** @param {string} message @param {'success' | 'error' | 'info'} [type='info'] */
   const show = (message, type = 'info') => {
     const id = Date.now();
     update((toasts) => [...toasts, { id, message, type }]);
@@ -178,8 +185,7 @@ export const createLoadingStore = () => {
  *
  * @param {Function} fetchFn - Async function to fetch data. Receives AbortSignal as first arg.
  * @param {*} initialValue - Initial value before first fetch
- * @param {Object} options - Configuration options
- * @param {boolean} options.lazy - If true (default), only fetch on first subscription
+ * @param {{ lazy?: boolean }} [options={}] - Configuration options
  */
 export function createDataStore(fetchFn, initialValue = null, options = {}) {
   const { lazy = true } = options;

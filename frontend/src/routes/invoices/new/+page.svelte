@@ -9,6 +9,14 @@
   import Icon from '$lib/components/Icons.svelte';
   import ConfirmModal from '$lib/components/ConfirmModal.svelte';
 
+  /**
+   * @typedef {{ id: string, name: string, instructions?: string }} PaymentMethod
+   * @typedef {{ id: number|string, name?: string, business_name?: string, preferred_currency?: string, payment_terms_days?: number, tax_enabled?: boolean | null, tax_rate?: string|number, tax_name?: string }} ClientSummary
+   * @typedef {{ description: string, quantity: number, unit_price: string, unit_type: string }} InvoiceItemDraft
+   * @typedef {{ name: string, business_name: string, email: string, phone: string, address_line1: string, city: string, state: string, postal_code: string, payment_terms_days: string | number }} NewClientDraft
+   */
+
+  /** @type {ClientSummary[]} */
   let clients = [];
   let profile = null;
   let loading = false;
@@ -25,6 +33,7 @@
   let clientReference = '';
   let showPaymentInstructions = true;
   let invoiceNumberOverride = '';
+  /** @type {string[]} */
   let selectedPaymentMethods = [];
 
   // Tax settings
@@ -33,6 +42,7 @@
   let taxName = 'Tax';
 
   // Line items
+  /** @type {InvoiceItemDraft[]} */
   let items = [{ description: '', quantity: 1, unit_price: '', unit_type: 'qty' }];
 
   // Modal states
@@ -40,6 +50,7 @@
   let clientModalSaving = false;
   let showDiscardModal = false;
 
+  /** @type {NewClientDraft} */
   let newClient = {
     name: '',
     business_name: '',
@@ -114,7 +125,7 @@
     if (selectedClient.tax_enabled !== null) {
       taxEnabled = !!selectedClient.tax_enabled;
       if (selectedClient.tax_rate) {
-        taxRate = selectedClient.tax_rate;
+        taxRate = String(selectedClient.tax_rate);
       }
       if (selectedClient.tax_name) {
         taxName = selectedClient.tax_name;
@@ -123,7 +134,22 @@
   }
 
   // Parse payment methods from profile
+  /** @type {PaymentMethod[]} */
   $: availablePaymentMethods = parseJsonArray(profile?.payment_methods);
+
+  /**
+   * @param {Event} event
+   * @returns {HTMLInputElement}
+   */
+  function getInputTarget(event) {
+    return /** @type {HTMLInputElement} */ (event.currentTarget);
+  }
+
+  function handleClientModalKeydown(event) {
+    if (event.key === 'Escape') {
+      closeClientModal();
+    }
+  }
 
   function removeDefaultNotes() {
     useDefaultNotes = false;
@@ -163,9 +189,9 @@
     saving = true;
     try {
       const invoiceData = {
-        client_id: parseInt(clientId),
+        client_id: Number(clientId),
         issue_date: issueDate || undefined,
-        payment_terms_days: parseInt(paymentTermsDays) || undefined,
+        payment_terms_days: Number(paymentTermsDays) || undefined,
         currency_code: currencyCode,
         notes: effectiveNotes || undefined,
         document_type: isQuote ? 'quote' : 'invoice',
@@ -178,7 +204,7 @@
         tax_name: taxName || 'Tax',
         items: validItems.map(item => ({
           description: item.description,
-          quantity: parseInt(item.quantity) || 1,
+          quantity: Number(item.quantity) || 1,
           unit_type: item.unit_type || 'qty',
           unit_price: parseFloat(item.unit_price) || 0,
         })),
@@ -236,7 +262,7 @@
         city: newClient.city || undefined,
         state: newClient.state || undefined,
         postal_code: newClient.postal_code || undefined,
-        payment_terms_days: parseInt(newClient.payment_terms_days) || undefined,
+        payment_terms_days: Number(newClient.payment_terms_days) || undefined,
       });
 
       toast.success('Client created successfully');
@@ -387,8 +413,9 @@
             <div class="item-row">
               <div class="item-fields">
                 <div class="form-group item-desc">
-                  <label class="label">Description</label>
+                  <label class="label" for={`item-desc-${index}`}>Description</label>
                   <input
+                    id={`item-desc-${index}`}
                     type="text"
                     class="input"
                     placeholder="Service or product description"
@@ -397,16 +424,17 @@
                 </div>
 
                 <div class="form-group item-unit-type">
-                  <label class="label">Type</label>
-                  <select class="select" bind:value={item.unit_type}>
+                  <label class="label" for={`item-unit-type-${index}`}>Type</label>
+                  <select id={`item-unit-type-${index}`} class="select" bind:value={item.unit_type}>
                     <option value="qty">Qty</option>
                     <option value="hours">Hours</option>
                   </select>
                 </div>
 
                 <div class="form-group item-qty">
-                  <label class="label">{item.unit_type === 'hours' ? 'Hours' : 'Qty'}</label>
+                  <label class="label" for={`item-qty-${index}`}>{item.unit_type === 'hours' ? 'Hours' : 'Qty'}</label>
                   <input
+                    id={`item-qty-${index}`}
                     type="number"
                     class="input"
                     min="1"
@@ -416,8 +444,9 @@
                 </div>
 
                 <div class="form-group item-price">
-                  <label class="label">{item.unit_type === 'hours' ? 'Rate' : 'Price'}</label>
+                  <label class="label" for={`item-price-${index}`}>{item.unit_type === 'hours' ? 'Rate' : 'Price'}</label>
                   <input
+                    id={`item-price-${index}`}
                     type="number"
                     class="input"
                     step="0.01"
@@ -428,9 +457,9 @@
                 </div>
 
                 <div class="form-group item-total">
-                  <label class="label">Total</label>
+                  <div class="label">Total</div>
                   <div class="item-total-value">
-                    {formatCurrency((parseFloat(item.unit_price) || 0) * item.quantity)}
+                    {formatCurrency((Number(item.unit_price) || 0) * item.quantity)}
                   </div>
                 </div>
               </div>
@@ -532,7 +561,8 @@
                   type="checkbox"
                   checked={selectedPaymentMethods.includes(method.id)}
                   on:change={(e) => {
-                    if (e.target.checked) {
+                    const input = getInputTarget(e);
+                    if (input.checked) {
                       selectedPaymentMethods = [...selectedPaymentMethods, method.id];
                     } else {
                       selectedPaymentMethods = selectedPaymentMethods.filter(id => id !== method.id);
@@ -644,8 +674,9 @@
 
 <!-- New Client Modal -->
 {#if showClientModal}
-  <div class="modal-overlay" on:click={closeClientModal} on:keydown={(e) => e.key === 'Escape' && closeClientModal()}>
-    <div class="modal" on:click|stopPropagation role="dialog" aria-modal="true" aria-labelledby="modal-title">
+  <div class="modal-overlay" role="presentation" tabindex="-1" on:keydown={handleClientModalKeydown}>
+    <button type="button" class="modal-backdrop" aria-label="Close create client dialog" on:click={closeClientModal}></button>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title" tabindex="-1">
       <div class="modal-header">
         <h2 id="modal-title" class="modal-title">New Client</h2>
         <button class="btn btn-ghost btn-icon btn-sm" on:click={closeClientModal}>
@@ -769,6 +800,19 @@
 {/if}
 
 <style>
+  .modal-backdrop {
+    position: absolute;
+    inset: 0;
+    border: 0;
+    padding: 0;
+    background: transparent;
+    cursor: pointer;
+  }
+
+  :global(.modal) {
+    position: relative;
+  }
+
   .page-content {
     padding: var(--space-6) var(--space-8);
     max-width: 1000px;

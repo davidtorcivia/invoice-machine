@@ -9,7 +9,12 @@
   import Icon from '$lib/components/Icons.svelte';
   import ConfirmModal from '$lib/components/ConfirmModal.svelte';
 
-  $: id = $page.params.id;
+  $: invoiceId = $page.params.id || '';
+
+  /**
+   * @typedef {{ id: string, name: string, instructions?: string }} PaymentMethod
+   * @typedef {{ id?: number|string, description: string, quantity: number, unit_type: string, unit_price: string|number }} InvoiceItemDraft
+   */
 
   let invoice = null;
   let profile = null;
@@ -26,7 +31,9 @@
   let documentType = 'invoice';
   let clientReference = '';
   let showPaymentInstructions = true;
+  /** @type {string[]} */
   let selectedPaymentMethods = [];
+  /** @type {InvoiceItemDraft[]} */
   let items = [];
 
   // Notes handling
@@ -59,12 +66,21 @@
   }
 
   // Parse payment methods from profile
+  /** @type {PaymentMethod[]} */
   $: availablePaymentMethods = parseJsonArray(profile?.payment_methods);
+
+  /**
+   * @param {Event} event
+   * @returns {HTMLInputElement}
+   */
+  function getInputTarget(event) {
+    return /** @type {HTMLInputElement} */ (event.currentTarget);
+  }
 
   async function loadInvoice() {
     loading = true;
     try {
-      const data = await invoicesApi.get(id);
+      const data = await invoicesApi.get(invoiceId);
       invoice = data;
 
       // Populate form
@@ -119,7 +135,7 @@
   }
 
   $: subtotal = items.reduce((sum, item) => {
-    const price = parseFloat(item.unit_price) || 0;
+    const price = Number(item.unit_price) || 0;
     return sum + (price * item.quantity);
   }, 0);
 
@@ -140,10 +156,10 @@
     saving = true;
     try {
       // Update invoice details
-      await invoicesApi.update(id, {
+      await invoicesApi.update(invoiceId, {
         issue_date: issueDate || undefined,
         due_date: dueDate || undefined,
-        payment_terms_days: parseInt(paymentTermsDays) || undefined,
+        payment_terms_days: Number(paymentTermsDays) || undefined,
         notes: effectiveNotes || undefined,
         status: status,
         document_type: documentType,
@@ -156,12 +172,12 @@
       });
 
       // Delete removed items
-      const originalItemIds = new Set((invoice.items || []).map(i => i.id));
-      const currentItemIds = new Set(items.filter(i => i.id).map(i => i.id));
+      const originalItemIds = new Set((invoice.items || []).map((item) => item.id));
+      const currentItemIds = new Set(items.filter((item) => item.id).map((item) => item.id));
 
       for (const itemId of originalItemIds) {
         if (!currentItemIds.has(itemId)) {
-          await invoicesApi.deleteItem(id, itemId);
+          await invoicesApi.deleteItem(invoiceId, itemId);
         }
       }
 
@@ -169,26 +185,26 @@
       for (let i = 0; i < validItems.length; i++) {
         const item = validItems[i];
         if (item.id) {
-          await invoicesApi.updateItem(id, item.id, {
+          await invoicesApi.updateItem(invoiceId, item.id, {
             description: item.description,
-            quantity: parseInt(item.quantity) || 1,
+            quantity: Number(item.quantity) || 1,
             unit_type: item.unit_type || 'qty',
-            unit_price: parseFloat(item.unit_price) || 0,
+            unit_price: Number(item.unit_price) || 0,
             sort_order: i,
           });
         } else {
-          await invoicesApi.addItem(id, {
+          await invoicesApi.addItem(invoiceId, {
             description: item.description,
-            quantity: parseInt(item.quantity) || 1,
+            quantity: Number(item.quantity) || 1,
             unit_type: item.unit_type || 'qty',
-            unit_price: parseFloat(item.unit_price) || 0,
+            unit_price: Number(item.unit_price) || 0,
             sort_order: i,
           });
         }
       }
 
       toast.success('Invoice updated successfully');
-      goto(`/invoices/${id}`);
+      goto(`/invoices/${invoiceId}`);
     } catch (error) {
       toast.error('Failed to update invoice');
     } finally {
@@ -202,7 +218,7 @@
 
   function confirmDiscard() {
     showDiscardModal = false;
-    goto(`/invoices/${id}`);
+    goto(`/invoices/${invoiceId}`);
   }
 </script>
 
@@ -224,7 +240,7 @@
           <h3 class="card-title">Document Type</h3>
         </div>
         <label class="checkbox-label">
-          <input type="checkbox" checked={documentType === 'quote'} on:change={(e) => documentType = e.target.checked ? 'quote' : 'invoice'} />
+          <input type="checkbox" checked={documentType === 'quote'} on:change={(event) => documentType = getInputTarget(event).checked ? 'quote' : 'invoice'} />
           <span>This is a Quote</span>
         </label>
         <p class="form-hint">Changing document type will not regenerate the number. Create a new document if you need a different number format.</p>
@@ -238,7 +254,7 @@
 
         <!-- Invoice Number (read-only) -->
         <div class="form-group" style="margin-bottom: var(--space-4);">
-          <label class="label">{documentType === 'quote' ? 'Quote' : 'Invoice'} Number</label>
+          <div class="label">{documentType === 'quote' ? 'Quote' : 'Invoice'} Number</div>
           <div class="invoice-number-display">
             <span class="invoice-number-value">{invoice?.invoice_number || ''}</span>
             <span class="invoice-number-hint">Currency: {invoice?.currency_code || 'USD'}</span>
@@ -322,8 +338,9 @@
             <div class="item-row">
               <div class="item-fields">
                 <div class="form-group item-desc">
-                  <label class="label">Description</label>
+                  <label class="label" for={`item-desc-${index}`}>Description</label>
                   <input
+                    id={`item-desc-${index}`}
                     type="text"
                     class="input"
                     placeholder="Service or product description"
@@ -332,16 +349,17 @@
                 </div>
 
                 <div class="form-group item-unit-type">
-                  <label class="label">Type</label>
-                  <select class="select" bind:value={item.unit_type}>
+                  <label class="label" for={`item-unit-type-${index}`}>Type</label>
+                  <select id={`item-unit-type-${index}`} class="select" bind:value={item.unit_type}>
                     <option value="qty">Qty</option>
                     <option value="hours">Hours</option>
                   </select>
                 </div>
 
                 <div class="form-group item-qty">
-                  <label class="label">{item.unit_type === 'hours' ? 'Hours' : 'Qty'}</label>
+                  <label class="label" for={`item-qty-${index}`}>{item.unit_type === 'hours' ? 'Hours' : 'Qty'}</label>
                   <input
+                    id={`item-qty-${index}`}
                     type="number"
                     class="input"
                     min="1"
@@ -351,8 +369,9 @@
                 </div>
 
                 <div class="form-group item-price">
-                  <label class="label">{item.unit_type === 'hours' ? 'Rate' : 'Price'}</label>
+                  <label class="label" for={`item-price-${index}`}>{item.unit_type === 'hours' ? 'Rate' : 'Price'}</label>
                   <input
+                    id={`item-price-${index}`}
                     type="number"
                     class="input"
                     step="0.01"
@@ -363,9 +382,9 @@
                 </div>
 
                 <div class="form-group item-total">
-                  <label class="label">Total</label>
+                  <div class="label">Total</div>
                   <div class="item-total-value">
-                    {formatCurrency((parseFloat(item.unit_price) || 0) * item.quantity)}
+                    {formatCurrency((Number(item.unit_price) || 0) * item.quantity)}
                   </div>
                 </div>
               </div>
@@ -461,7 +480,8 @@
                   type="checkbox"
                   checked={selectedPaymentMethods.includes(method.id)}
                   on:change={(e) => {
-                    if (e.target.checked) {
+                    const input = getInputTarget(e);
+                    if (input.checked) {
                       selectedPaymentMethods = [...selectedPaymentMethods, method.id];
                     } else {
                       selectedPaymentMethods = selectedPaymentMethods.filter(id => id !== method.id);

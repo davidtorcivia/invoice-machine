@@ -403,10 +403,11 @@
         </select>
       </div>
 
-      <div class="filter-group date-range-group">
-        <label class="filter-label">Date Range</label>
+      <fieldset class="filter-group date-range-group">
+        <legend class="filter-label">Date Range</legend>
         <div class="date-range-inputs">
           <input
+            id="from-date-filter"
             type="date"
             class="input input-sm"
             bind:value={filterFromDate}
@@ -415,6 +416,7 @@
           />
           <span class="date-range-separator">to</span>
           <input
+            id="to-date-filter"
             type="date"
             class="input input-sm"
             bind:value={filterToDate}
@@ -422,7 +424,7 @@
             placeholder="To"
           />
         </div>
-      </div>
+      </fieldset>
 
       <!-- Sort dropdown (visible on mobile) -->
       <div class="filter-group sort-dropdown-mobile">
@@ -597,10 +599,11 @@
         {@const effectiveStatus = getEffectiveStatus(invoice)}
         {@const overdue = isOverdue(invoice)}
         <div class="invoice-card" class:card-overdue={overdue} class:card-selected={selectedIds.has(invoice.id)}>
-          <div class="card-checkbox" on:click|stopPropagation>
+          <div class="card-checkbox">
             <input
               type="checkbox"
               checked={selectedIds.has(invoice.id)}
+              on:click|stopPropagation
               on:change={() => toggleSelect(invoice.id)}
               aria-label="Select invoice {invoice.invoice_number}"
             />

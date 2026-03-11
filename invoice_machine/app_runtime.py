@@ -6,12 +6,12 @@ import asyncio
 import logging
 from contextlib import asynccontextmanager
 from datetime import date, timedelta
-from pathlib import Path
 
 from fastapi import FastAPI
 
 from invoice_machine.config import get_settings
-from invoice_machine.database import close_db, init_db
+from invoice_machine.database import close_db
+from invoice_machine.runtime_schema import ensure_database_schema
 from invoice_machine.utils import utc_now
 
 logger = logging.getLogger(__name__)
@@ -123,78 +123,6 @@ async def _recurring_invoice_job() -> None:
             )
 
 
-def run_alembic_migrations() -> None:
-    """Run Alembic migrations to upgrade database schema."""
-    import sqlite3
-
-    from alembic import command
-    from alembic.config import Config
-
-    OLD_TO_NEW_REVISIONS = {
-        "007_add_default_currency": "007_default_currency",
-        "008_add_line_items_fts": "008_line_items_fts",
-        "009_add_sessions": "009_recurring_enhancements",
-    }
-
-    project_root = Path(__file__).parent.parent
-    alembic_cfg = Config(str(project_root / "alembic.ini"))
-    db_path = settings.data_dir / "invoice_machine.db"
-
-    if db_path.exists():
-        try:
-            conn = sqlite3.connect(str(db_path))
-            cursor = conn.cursor()
-            cursor.execute(
-                "SELECT name FROM sqlite_master WHERE type='table' AND name='alembic_version'"
-            )
-            has_alembic_table = cursor.fetchone() is not None
-
-            has_valid_version = False
-            current_version = None
-            if has_alembic_table:
-                cursor.execute("SELECT version_num FROM alembic_version LIMIT 1")
-                row = cursor.fetchone()
-                if row:
-                    has_valid_version = True
-                    current_version = row[0]
-
-            if current_version and current_version in OLD_TO_NEW_REVISIONS:
-                new_version = OLD_TO_NEW_REVISIONS[current_version]
-                print(f"Updating alembic version from {current_version} to {new_version}...")
-                cursor.execute("UPDATE alembic_version SET version_num = ?", (new_version,))
-                conn.commit()
-                print("Alembic version updated successfully")
-
-            cursor.execute(
-                "SELECT name FROM sqlite_master WHERE type='table' AND name='users'"
-            )
-            has_users = cursor.fetchone() is not None
-            conn.close()
-
-            if has_users and not has_valid_version:
-                print("Existing database detected without valid alembic version...")
-                print("Running fallback migration to ensure schema is complete...")
-                from invoice_machine.migrations.add_new_fields import migrate
-
-                migrate(settings.data_dir / "invoice_machine.db")
-        except Exception as exc:
-            print(f"Database check failed: {exc}")
-
-    try:
-        command.upgrade(alembic_cfg, "head")
-        print("Alembic migrations completed successfully")
-    except Exception as exc:
-        print(f"Alembic migration failed: {exc}")
-        from invoice_machine.migrations.add_new_fields import migrate
-
-        migrate(settings.data_dir / "invoice_machine.db")
-        try:
-            command.stamp(alembic_cfg, "head")
-            print("Database stamped at head after fallback migration")
-        except Exception as stamp_error:
-            print(f"Warning: Could not stamp database: {stamp_error}")
-
-
 async def _rebuild_search_indexes() -> None:
     """Rebuild FTS indexes on startup when required."""
     from invoice_machine.database import async_session_maker
@@ -222,11 +150,8 @@ async def lifespan(app: FastAPI):
     """FastAPI lifespan manager."""
     _startup_notice("Starting Invoice Machine...")
     _startup_notice("Running database migrations...")
-    run_alembic_migrations()
+    await ensure_database_schema(apply_migrations=True)
     _startup_notice("Migrations complete.")
-
-    _startup_notice("Initializing database...")
-    await init_db()
     _startup_notice("Database initialized.")
 
     _startup_notice("Rebuilding FTS search indexes...")

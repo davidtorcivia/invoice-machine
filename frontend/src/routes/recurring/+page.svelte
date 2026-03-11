@@ -8,14 +8,73 @@
   import Icon from '$lib/components/Icons.svelte';
   import ConfirmModal from '$lib/components/ConfirmModal.svelte';
 
+  /**
+   * @typedef {{ id: string, name: string, instructions?: string }} PaymentMethod
+   * @typedef {{ id: number|string, name?: string, business_name?: string }} ClientSummary
+   * @typedef {{ description: string, quantity: number, unit_price: string, unit_type: string }} LineItemDraft
+   * @typedef {{
+   *   id?: number|string,
+   *   client_id: string | number,
+   *   name: string,
+   *   frequency: string,
+   *   schedule_day: string | number,
+   *   schedule_month: string | number,
+   *   quarter_month: string | number,
+   *   currency_code: string,
+   *   payment_terms_days: string | number,
+   *   notes: string,
+   *   line_items: LineItemDraft[],
+   *   is_active: boolean,
+   *   tax_enabled: boolean | null,
+   *   tax_rate: string | number,
+   *   tax_name: string,
+   *   show_payment_instructions: boolean,
+   *   selected_payment_methods: string[],
+   *   auto_email_enabled: boolean,
+   *   email_subject_template: string,
+   *   email_body_template: string,
+   *   use_default_notes: boolean
+   * }} ScheduleFormData
+   * @typedef {{
+   *   id: number|string,
+   *   client_id: number|string,
+   *   name: string,
+   *   frequency: string,
+   *   schedule_day: number,
+   *   schedule_month?: number,
+   *   quarter_month?: number,
+   *   currency_code: string,
+   *   payment_terms_days: number,
+   *   notes?: string,
+   *   line_items?: LineItemDraft[],
+   *   is_active: boolean,
+   *   tax_enabled: boolean | null,
+   *   tax_rate?: string | number,
+   *   tax_name?: string,
+   *   show_payment_instructions?: boolean,
+   *   selected_payment_methods?: string[],
+   *   auto_email_enabled?: boolean,
+   *   email_subject_template?: string,
+   *   email_body_template?: string,
+   *   use_default_notes?: boolean,
+   *   client_name?: string,
+   *   client_business?: string,
+   *   next_invoice_date?: string
+   * }} RecurringSchedule
+   */
+
+  /** @type {RecurringSchedule[]} */
   let schedules = [];
+  /** @type {ClientSummary[]} */
   let clients = [];
   let profile = null;
   let loading = true;
   let showModal = false;
+  /** @type {RecurringSchedule | null} */
   let editingSchedule = null;
 
   // Form data
+  /** @type {ScheduleFormData} */
   let formData = {
     client_id: '',
     name: '',
@@ -44,17 +103,21 @@
   };
 
   // Line item being edited
+  /** @type {LineItemDraft} */
   let newItem = { description: '', quantity: 1, unit_price: '', unit_type: 'qty' };
 
   // Delete modal
   let showDeleteModal = false;
+  /** @type {RecurringSchedule | null} */
   let deleteTarget = null;
   let deleting = false;
 
   // Trigger modal
+  /** @type {number | string | null} */
   let triggering = null;
 
   // Computed: Available payment methods from profile
+  /** @type {PaymentMethod[]} */
   $: availablePaymentMethods = parseJsonArray(profile?.payment_methods);
 
   // Computed: Default notes from profile
@@ -119,6 +182,7 @@
     showModal = true;
   }
 
+  /** @param {RecurringSchedule} schedule */
   function openEditModal(schedule) {
     editingSchedule = schedule;
     formData = {
@@ -161,6 +225,7 @@
     newItem = { description: '', quantity: 1, unit_price: '', unit_type: 'qty' };
   }
 
+  /** @param {number} index */
   function removeLineItem(index) {
     formData.line_items = formData.line_items.filter((_, i) => i !== index);
   }
@@ -178,13 +243,13 @@
     try {
       const data = {
         ...formData,
-        client_id: parseInt(formData.client_id),
-        schedule_day: parseInt(formData.schedule_day),
-        schedule_month: formData.frequency === 'yearly' ? parseInt(formData.schedule_month) : null,
-        quarter_month: formData.frequency === 'quarterly' ? parseInt(formData.quarter_month) : 1,
-        payment_terms_days: parseInt(formData.payment_terms_days),
+        client_id: Number(formData.client_id),
+        schedule_day: Number(formData.schedule_day),
+        schedule_month: formData.frequency === 'yearly' ? Number(formData.schedule_month) : null,
+        quarter_month: formData.frequency === 'quarterly' ? Number(formData.quarter_month) : 1,
+        payment_terms_days: Number(formData.payment_terms_days),
         // Handle tax_rate conversion
-        tax_rate: formData.tax_enabled && formData.tax_rate ? parseFloat(formData.tax_rate) : null,
+        tax_rate: formData.tax_enabled && formData.tax_rate ? Number(formData.tax_rate) : null,
         // If using default notes, send empty notes so backend will use profile default
         notes: formData.use_default_notes ? '' : formData.notes
       };
@@ -204,6 +269,7 @@
     }
   }
 
+  /** @param {RecurringSchedule} schedule */
   function openDeleteModal(schedule) {
     deleteTarget = schedule;
     showDeleteModal = true;
@@ -225,6 +291,7 @@
     }
   }
 
+  /** @param {RecurringSchedule} schedule */
   async function toggleActive(schedule) {
     try {
       await recurringApi.update(schedule.id, { is_active: !schedule.is_active });
@@ -235,6 +302,7 @@
     }
   }
 
+  /** @param {RecurringSchedule} schedule */
   async function triggerNow(schedule) {
     triggering = schedule.id;
     try {
@@ -262,6 +330,20 @@
   function formatDate(dateStr) {
     if (!dateStr) return '-';
     return new Date(dateStr).toLocaleDateString();
+  }
+
+  function handleModalKeydown(event) {
+    if (event.key === 'Escape') {
+      closeModal();
+    }
+  }
+
+  /**
+   * @param {Event} event
+   * @returns {HTMLInputElement}
+   */
+  function getInputTarget(event) {
+    return /** @type {HTMLInputElement} */ (event.currentTarget);
   }
 </script>
 
@@ -377,8 +459,9 @@
 
 <!-- Create/Edit Modal -->
 {#if showModal}
-  <div class="modal-overlay" on:click={closeModal} on:keydown={(e) => e.key === 'Escape' && closeModal()}>
-    <div class="modal" on:click|stopPropagation>
+  <div class="modal-overlay" role="presentation" tabindex="-1" on:keydown={handleModalKeydown}>
+    <button type="button" class="modal-backdrop" aria-label="Close recurring schedule dialog" on:click={closeModal}></button>
+    <div class="modal" role="dialog" aria-modal="true" tabindex="-1">
       <div class="modal-header">
         <h2>{editingSchedule ? 'Edit Schedule' : 'New Recurring Schedule'}</h2>
         <button class="btn btn-ghost btn-icon" on:click={closeModal}>
@@ -640,7 +723,8 @@
                   type="checkbox"
                   checked={formData.selected_payment_methods.includes(method.id)}
                   on:change={(e) => {
-                    if (e.target.checked) {
+                    const input = getInputTarget(e);
+                    if (input.checked) {
                       formData.selected_payment_methods = [...formData.selected_payment_methods, method.id];
                     } else {
                       formData.selected_payment_methods = formData.selected_payment_methods.filter(id => id !== method.id);
@@ -708,7 +792,7 @@
                 id="email-subject"
                 type="text"
                 class="input"
-                placeholder="e.g., Invoice {invoice_number} from {business_name}"
+                placeholder="e.g., Invoice &#123;invoice_number&#125; from &#123;business_name&#125;"
                 bind:value={formData.email_subject_template}
               />
             </div>
@@ -752,6 +836,15 @@
 />
 
 <style>
+  .modal-backdrop {
+    position: absolute;
+    inset: 0;
+    border: 0;
+    padding: 0;
+    background: transparent;
+    cursor: pointer;
+  }
+
   .page-content {
     padding: var(--space-8);
     max-width: 1400px;

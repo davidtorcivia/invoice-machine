@@ -19,6 +19,9 @@
 
   <!-- Screen reader only title -->
   <h1 class="sr-only">{title}</h1>
+  {#if subtitle}
+    <p class="sr-only">{subtitle}</p>
+  {/if}
 </header>
 
 <style>

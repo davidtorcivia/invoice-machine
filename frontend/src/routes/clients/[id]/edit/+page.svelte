@@ -10,7 +10,7 @@
   import Icon from '$lib/components/Icons.svelte';
   import ConfirmModal from '$lib/components/ConfirmModal.svelte';
 
-  $: id = $page.params.id;
+  $: clientId = $page.params.id || '';
 
   let client = null;
   let loading = true;
@@ -47,7 +47,7 @@
   async function loadClient() {
     loading = true;
     try {
-      const data = await clientsApi.get(id);
+      const data = await clientsApi.get(clientId);
       client = data;
 
       // Populate form
@@ -105,7 +105,7 @@
         state: state || undefined,
         postal_code: postalCode || undefined,
         country: country || undefined,
-        payment_terms_days: parseInt(paymentTermsDays) || undefined,
+        payment_terms_days: Number(paymentTermsDays) || undefined,
         notes: notes || undefined,
         preferred_currency: preferredCurrency || null,
       };
@@ -122,10 +122,10 @@
         updateData.tax_name = null;
       }
 
-      await clientsApi.update(id, updateData);
+      await clientsApi.update(clientId, updateData);
 
       toast.success('Client updated successfully');
-      goto(`/clients/${id}`);
+      goto(`/clients/${clientId}`);
     } catch (error) {
       toast.error('Failed to update client');
     } finally {
@@ -139,7 +139,7 @@
 
   function confirmDiscard() {
     showDiscardModal = false;
-    goto(`/clients/${id}`);
+    goto(`/clients/${clientId}`);
   }
 </script>
 

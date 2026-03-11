@@ -1,16 +1,28 @@
 <script>
   import Icon from './Icons.svelte';
 
+  /** @type {boolean} */
   export let show = false;
+  /** @type {string} */
   export let title = 'Confirm';
+  /** @type {string} */
   export let message = 'Are you sure?';
+  /** @type {string} */
   export let confirmText = 'Confirm';
+  /** @type {string} */
   export let cancelText = 'Cancel';
+  /** @type {'danger' | 'warning' | 'primary'} */
   export let variant = 'danger'; // 'danger', 'warning', 'primary'
+  /** @type {'danger' | 'warning' | 'primary' | undefined} */
+  export let confirmVariant = undefined;
+  /** @type {string} */
   export let icon = 'warning'; // icon name
+  /** @type {boolean} */
   export let loading = false;
 
+  /** @type {() => void} */
   export let onConfirm = () => {};
+  /** @type {() => void} */
   export let onCancel = () => {};
 
   function handleConfirm() {
@@ -27,19 +39,15 @@
     }
   }
 
-  $: buttonClass = variant === 'danger' ? 'btn-danger' : variant === 'warning' ? 'btn-warning' : 'btn-primary';
-  $: iconClass = variant === 'danger' ? 'danger' : variant === 'warning' ? 'warning' : 'primary';
+  $: activeVariant = confirmVariant || variant;
+  $: buttonClass = activeVariant === 'danger' ? 'btn-danger' : activeVariant === 'warning' ? 'btn-warning' : 'btn-primary';
+  $: iconClass = activeVariant === 'danger' ? 'danger' : activeVariant === 'warning' ? 'warning' : 'primary';
 </script>
 
 {#if show}
-  <div
-    class="modal-overlay"
-    on:click={handleCancel}
-    on:keydown={handleKeydown}
-    role="button"
-    tabindex="-1"
-  >
-    <div class="modal confirm-modal" on:click|stopPropagation role="dialog" aria-modal="true">
+  <div class="modal-overlay" role="presentation" tabindex="-1" on:keydown={handleKeydown}>
+    <button type="button" class="modal-backdrop" aria-label="Close confirmation dialog" on:click={handleCancel}></button>
+    <div class="modal confirm-modal" role="dialog" aria-modal="true" tabindex="-1">
       <div class="modal-icon {iconClass}">
         <Icon name={icon} size="lg" />
       </div>
@@ -61,7 +69,17 @@
 {/if}
 
 <style>
+  .modal-backdrop {
+    position: absolute;
+    inset: 0;
+    border: 0;
+    padding: 0;
+    background: transparent;
+    cursor: pointer;
+  }
+
   .confirm-modal {
+    position: relative;
     max-width: 400px;
     padding: var(--space-8);
     text-align: center;

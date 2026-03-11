@@ -54,7 +54,7 @@
         state: state || undefined,
         postal_code: postalCode || undefined,
         country: country || undefined,
-        payment_terms_days: parseInt(paymentTermsDays) || undefined,
+        payment_terms_days: Number(paymentTermsDays) || undefined,
         notes: notes || undefined,
         preferred_currency: preferredCurrency || undefined,
       };

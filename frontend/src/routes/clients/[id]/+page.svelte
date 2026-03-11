@@ -7,7 +7,7 @@
   import Icon from '$lib/components/Icons.svelte';
   import ConfirmModal from '$lib/components/ConfirmModal.svelte';
 
-  $: id = $page.params.id;
+  $: clientId = $page.params.id || '';
 
   let client = null;
   let invoices = [];
@@ -26,14 +26,14 @@
   };
 
   // Reactively load when id changes (handles both initial load and navigation)
-  $: if (id) loadData();
+  $: if (clientId) loadData();
 
   async function loadData() {
     loading = true;
     try {
       const [clientData, invoicesData] = await Promise.all([
-        clientsApi.get(id),
-        invoicesApi.list({ client_id: id }),
+        clientsApi.get(clientId),
+        invoicesApi.list({ client_id: clientId }),
       ]);
       client = clientData;
       invoices = invoicesData;
@@ -52,7 +52,7 @@
   async function confirmDelete() {
     deleting = true;
     try {
-      await clientsApi.delete(id);
+      await clientsApi.delete(clientId);
       toast.success('Client moved to trash');
       goto('/clients');
     } catch (error) {
@@ -97,11 +97,11 @@
         {/if}
       </div>
       <div class="page-actions">
-        <a href="/clients/{id}/edit" class="btn btn-secondary">
+        <a href="/clients/{clientId}/edit" class="btn btn-secondary">
           <Icon name="pencil" size="sm" />
           Edit
         </a>
-        <a href="/invoices/new?client={id}" class="btn btn-primary">
+        <a href="/invoices/new?client={clientId}" class="btn btn-primary">
           <Icon name="plus" size="sm" />
           New Invoice
         </a>
@@ -135,7 +135,7 @@
         <div class="card">
           <div class="card-header">
             <h3 class="card-title">Invoices</h3>
-            <button class="btn btn-secondary btn-sm" on:click={() => goto(`/invoices/new?client=${id}`)}>
+            <button class="btn btn-secondary btn-sm" on:click={() => goto(`/invoices/new?client=${clientId}`)}>
               <Icon name="plus" size="sm" />
               New Invoice
             </button>
@@ -178,7 +178,7 @@
             <div class="empty-state-small">
               <Icon name="invoice" size="lg" />
               <p>No invoices yet</p>
-              <button class="btn btn-primary btn-sm" on:click={() => goto(`/invoices/new?client=${id}`)}>
+              <button class="btn btn-primary btn-sm" on:click={() => goto(`/invoices/new?client=${clientId}`)}>
                 Create Invoice
               </button>
             </div>
@@ -271,7 +271,7 @@
             <h3 class="card-title">Actions</h3>
           </div>
           <div class="action-list">
-            <button class="btn btn-secondary btn-block" on:click={() => goto(`/clients/${id}/edit`)}>
+            <button class="btn btn-secondary btn-block" on:click={() => goto(`/clients/${clientId}/edit`)}>
               <Icon name="pencil" size="sm" />
               Edit Client
             </button>
