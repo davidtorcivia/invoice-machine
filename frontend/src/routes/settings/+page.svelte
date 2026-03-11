@@ -11,6 +11,8 @@
   import CollapsibleSection from '$lib/components/CollapsibleSection.svelte';
   import SettingsApiAccessSection from '$lib/components/settings/SettingsApiAccessSection.svelte';
   import SettingsBackupSection from '$lib/components/settings/SettingsBackupSection.svelte';
+  import SettingsPaymentMethodsSection from '$lib/components/settings/SettingsPaymentMethodsSection.svelte';
+  import SettingsSmtpSection from '$lib/components/settings/SettingsSmtpSection.svelte';
 
   let profile = null;
   let loading = true;
@@ -914,48 +916,13 @@
         </div>
       </CollapsibleSection>
 
-      <!-- Payment Methods -->
-      <CollapsibleSection title="Payment Methods" subtitle="Configure payment options" icon="invoice" bind:open={openSections.paymentMethods}>
-        <div class="section-header-actions">
-          <button type="button" class="btn btn-secondary btn-sm" on:click={openAddMethodModal}>
-            <Icon name="plus" size="sm" />
-            Add Method
-          </button>
-        </div>
-
-        <p class="form-hint mb-4">Configure payment options your clients can use. Select which methods to show on each invoice.</p>
-
-        {#if paymentMethods.length > 0}
-          <div class="payment-methods-list">
-            {#each paymentMethods as method}
-              <div class="payment-method-item">
-                <div class="payment-method-info">
-                  <span class="payment-method-name">{method.name}</span>
-                  {#if method.instructions}
-                    <span class="payment-method-preview">{method.instructions.substring(0, 60)}{method.instructions.length > 60 ? '...' : ''}</span>
-                  {/if}
-                </div>
-                <div class="payment-method-actions">
-                  <button class="btn btn-ghost btn-icon btn-sm" on:click={() => openEditMethodModal(method)} title="Edit">
-                    <Icon name="pencil" size="sm" />
-                  </button>
-                  <button class="btn btn-ghost btn-icon btn-sm" on:click={() => deletePaymentMethod(method.id)} title="Delete">
-                    <Icon name="trash" size="sm" />
-                  </button>
-                </div>
-              </div>
-            {/each}
-          </div>
-        {:else}
-          <div class="empty-methods">
-            <p class="text-secondary">No payment methods configured yet.</p>
-            <button class="btn btn-secondary btn-sm mt-2" on:click={openAddMethodModal}>
-              <Icon name="plus" size="sm" />
-              Add your first method
-            </button>
-          </div>
-        {/if}
-      </CollapsibleSection>
+      <SettingsPaymentMethodsSection
+        bind:open={openSections.paymentMethods}
+        {paymentMethods}
+        {openAddMethodModal}
+        {openEditMethodModal}
+        {deletePaymentMethod}
+      />
 
       <!-- Tax Settings -->
       <CollapsibleSection title="Tax Settings" subtitle="Default tax configuration" icon="invoice" bind:open={openSections.taxSettings}>
@@ -1002,139 +969,22 @@
         {/if}
       </CollapsibleSection>
 
-      <!-- SMTP / Email Settings -->
-      <CollapsibleSection title="Email Settings (SMTP)" subtitle="Send invoices via email" icon="send" bind:open={openSections.smtpSettings}>
-        <p class="form-hint mb-4">
-          Configure SMTP to send invoices directly via email. Leave disabled if you prefer to download and send PDFs manually.
-        </p>
-
-        <div class="form-group">
-          <label class="toggle-container">
-            <input type="checkbox" bind:checked={smtpEnabled} />
-            <span class="toggle-label">Enable email sending</span>
-          </label>
-        </div>
-
-        {#if smtpEnabled}
-          <div class="form-row">
-            <div class="form-group">
-              <label for="smtp-host" class="label">SMTP Host *</label>
-              <input
-                id="smtp-host"
-                type="text"
-                class="input"
-                placeholder="smtp.example.com"
-                bind:value={smtpHost}
-              />
-            </div>
-
-            <div class="form-group">
-              <label for="smtp-port" class="label">Port</label>
-              <input
-                id="smtp-port"
-                type="number"
-                class="input"
-                placeholder="587"
-                bind:value={smtpPort}
-              />
-            </div>
-          </div>
-
-          <div class="form-row">
-            <div class="form-group">
-              <label for="smtp-username" class="label">Username</label>
-              <input
-                id="smtp-username"
-                type="text"
-                class="input"
-                placeholder="your@email.com"
-                bind:value={smtpUsername}
-              />
-            </div>
-
-            <div class="form-group">
-              <label for="smtp-password" class="label">Password {smtpPasswordSet ? '(set)' : ''}</label>
-              <input
-                id="smtp-password"
-                type="password"
-                class="input"
-                placeholder={smtpPasswordSet ? '••••••••' : 'Enter password'}
-                bind:value={smtpPassword}
-              />
-              <p class="form-hint">Leave empty to keep existing password</p>
-            </div>
-          </div>
-
-          <div class="form-row">
-            <div class="form-group">
-              <label for="smtp-from-email" class="label">From Email *</label>
-              <input
-                id="smtp-from-email"
-                type="email"
-                class="input"
-                placeholder="invoices@example.com"
-                bind:value={smtpFromEmail}
-              />
-            </div>
-
-            <div class="form-group">
-              <label for="smtp-from-name" class="label">From Name</label>
-              <input
-                id="smtp-from-name"
-                type="text"
-                class="input"
-                placeholder="Your Business Name"
-                bind:value={smtpFromName}
-              />
-            </div>
-          </div>
-
-          <div class="form-group">
-            <label class="toggle-container">
-              <input type="checkbox" bind:checked={smtpUseTls} />
-              <span class="toggle-label">Use TLS encryption</span>
-            </label>
-            <p class="form-hint">Recommended for security. Use port 587 for STARTTLS or 465 for SSL.</p>
-          </div>
-
-          <div class="form-actions">
-            <button
-              class="btn btn-secondary"
-              on:click={testSmtpConnection}
-              disabled={testingSmtp || !smtpHost || !smtpFromEmail}
-            >
-              {#if testingSmtp}
-                <span class="spinner-sm"></span>
-                Testing...
-              {:else}
-                <Icon name="send" size="sm" />
-                Test Connection
-              {/if}
-            </button>
-
-            <button
-              class="btn btn-primary"
-              on:click={saveSmtpSettings}
-              disabled={savingSmtp}
-            >
-              {#if savingSmtp}
-                <span class="spinner-sm"></span>
-                Saving...
-              {:else}
-                Save SMTP Settings
-              {/if}
-            </button>
-          </div>
-
-          <div class="template-link">
-            <a href="/settings/email-templates" class="btn btn-ghost">
-              <Icon name="pencil" size="sm" />
-              Configure Email Templates
-            </a>
-            <p class="form-hint">Customize the default subject and body for invoice emails</p>
-          </div>
-        {/if}
-      </CollapsibleSection>
+      <SettingsSmtpSection
+        bind:open={openSections.smtpSettings}
+        bind:smtpEnabled
+        bind:smtpHost
+        bind:smtpPort
+        bind:smtpUsername
+        bind:smtpPassword
+        bind:smtpFromEmail
+        bind:smtpFromName
+        bind:smtpUseTls
+        {smtpPasswordSet}
+        {testingSmtp}
+        {savingSmtp}
+        {testSmtpConnection}
+        {saveSmtpSettings}
+      />
 
       <SettingsApiAccessSection
         bind:mcpOpen={openSections.mcpIntegration}
@@ -1495,12 +1345,6 @@
     justify-content: flex-end;
   }
 
-  .section-header-actions {
-    display: flex;
-    justify-content: flex-end;
-    margin-bottom: var(--space-4);
-  }
-
   /* Delete Modal */
   .modal-backdrop {
     position: absolute;
@@ -1551,62 +1395,8 @@
     justify-content: center;
   }
 
-  /* Payment Methods */
   .mb-4 {
     margin-bottom: var(--space-4);
-  }
-
-  .mt-2 {
-    margin-top: var(--space-2);
-  }
-
-  .payment-methods-list {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-3);
-  }
-
-  .payment-method-item {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: var(--space-3) var(--space-4);
-    background: var(--color-bg-sunken);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-md);
-    gap: var(--space-3);
-  }
-
-  .payment-method-info {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-1);
-    min-width: 0;
-    flex: 1;
-  }
-
-  .payment-method-name {
-    font-weight: 500;
-    color: var(--color-text);
-  }
-
-  .payment-method-preview {
-    font-size: 0.8125rem;
-    color: var(--color-text-tertiary);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .payment-method-actions {
-    display: flex;
-    gap: var(--space-1);
-    flex-shrink: 0;
-  }
-
-  .empty-methods {
-    text-align: center;
-    padding: var(--space-4);
   }
 
   /* Large screens */
@@ -1672,11 +1462,6 @@
     color: var(--color-warning);
   }
 
-  .text-secondary {
-    color: var(--color-text-secondary);
-    font-size: 0.875rem;
-  }
-
   /* Toggle container for checkbox toggles */
   .toggle-container {
     display: flex;
@@ -1698,29 +1483,7 @@
     color: var(--color-text);
   }
 
-  /* Spinner for buttons */
-  .spinner-sm {
-    width: 14px;
-    height: 14px;
-    border: 2px solid currentColor;
-    border-top-color: transparent;
-    border-radius: 50%;
-    animation: spin 0.75s linear infinite;
-    display: inline-block;
-  }
-
   @keyframes spin {
     to { transform: rotate(360deg); }
-  }
-
-  /* Email Template Link */
-  .template-link {
-    margin-top: var(--space-6);
-    padding-top: var(--space-4);
-    border-top: 1px solid var(--color-border-light);
-  }
-
-  .template-link .form-hint {
-    margin-top: var(--space-2);
   }
 </style>

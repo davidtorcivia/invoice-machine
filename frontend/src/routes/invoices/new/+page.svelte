@@ -3,11 +3,15 @@
   import { goto } from '$app/navigation';
   import { clientsApi, invoicesApi, profileApi } from '$lib/api';
   import { parseJsonArray, stringifyJsonArray } from '$lib/json';
-  import { formatCurrency, toast } from '$lib/stores';
+  import { toast } from '$lib/stores';
   import { currencies } from '$lib/data/currencies';
   import Header from '$lib/components/Header.svelte';
   import Icon from '$lib/components/Icons.svelte';
   import ConfirmModal from '$lib/components/ConfirmModal.svelte';
+  import InvoiceLineItemsCard from '$lib/components/invoices/InvoiceLineItemsCard.svelte';
+  import InvoiceNotesCard from '$lib/components/invoices/InvoiceNotesCard.svelte';
+  import InvoicePaymentInstructionsCard from '$lib/components/invoices/InvoicePaymentInstructionsCard.svelte';
+  import InvoiceTaxCard from '$lib/components/invoices/InvoiceTaxCard.svelte';
 
   /**
    * @typedef {{ id: string, name: string, instructions?: string }} PaymentMethod
@@ -137,42 +141,11 @@
   /** @type {PaymentMethod[]} */
   $: availablePaymentMethods = parseJsonArray(profile?.payment_methods);
 
-  /**
-   * @param {Event} event
-   * @returns {HTMLInputElement}
-   */
-  function getInputTarget(event) {
-    return /** @type {HTMLInputElement} */ (event.currentTarget);
-  }
-
   function handleClientModalKeydown(event) {
     if (event.key === 'Escape') {
       closeClientModal();
     }
   }
-
-  function removeDefaultNotes() {
-    useDefaultNotes = false;
-    notes = '';
-  }
-
-  function addItem() {
-    items = [...items, { description: '', quantity: 1, unit_price: '', unit_type: 'qty' }];
-  }
-
-  function removeItem(index) {
-    if (items.length > 1) {
-      items = items.filter((_, i) => i !== index);
-    }
-  }
-
-  $: subtotal = items.reduce((sum, item) => {
-    const price = parseFloat(item.unit_price) || 0;
-    return sum + (price * item.quantity);
-  }, 0);
-
-  $: taxAmount = taxEnabled && taxRate ? (subtotal * parseFloat(taxRate) / 100) : 0;
-  $: total = subtotal + taxAmount;
 
   async function saveInvoice() {
     if (!clientId) {
@@ -398,244 +371,27 @@
 
       </div>
 
-      <!-- Line Items -->
-      <div class="card">
-        <div class="card-header">
-          <h3 class="card-title">Line Items</h3>
-          <button type="button" class="btn btn-secondary btn-sm" on:click={addItem}>
-            <Icon name="plus" size="sm" />
-            Add Item
-          </button>
-        </div>
+      <InvoiceLineItemsCard bind:items bind:taxEnabled bind:taxRate bind:taxName />
 
-        <div class="items-list">
-          {#each items as item, index}
-            <div class="item-row">
-              <div class="item-fields">
-                <div class="form-group item-desc">
-                  <label class="label" for={`item-desc-${index}`}>Description</label>
-                  <input
-                    id={`item-desc-${index}`}
-                    type="text"
-                    class="input"
-                    placeholder="Service or product description"
-                    bind:value={item.description}
-                  />
-                </div>
+      <InvoiceTaxCard
+        bind:taxEnabled
+        bind:taxRate
+        bind:taxName
+        checkboxLabel="Apply Tax"
+        enabledHint="Tax will be calculated on the subtotal and shown on the invoice."
+        disabledHint={profile?.default_tax_enabled
+          ? `Enable tax to add a tax line to this invoice. Default tax (${profile.default_tax_rate}%) is configured in Settings.`
+          : 'Enable tax to add a tax line to this invoice.'}
+      />
 
-                <div class="form-group item-unit-type">
-                  <label class="label" for={`item-unit-type-${index}`}>Type</label>
-                  <select id={`item-unit-type-${index}`} class="select" bind:value={item.unit_type}>
-                    <option value="qty">Qty</option>
-                    <option value="hours">Hours</option>
-                  </select>
-                </div>
+      <InvoicePaymentInstructionsCard
+        {availablePaymentMethods}
+        bind:selectedPaymentMethods
+        bind:showPaymentInstructions
+        selectionHint="Select payment methods to include on the PDF. Clients will see instructions for all selected methods."
+      />
 
-                <div class="form-group item-qty">
-                  <label class="label" for={`item-qty-${index}`}>{item.unit_type === 'hours' ? 'Hours' : 'Qty'}</label>
-                  <input
-                    id={`item-qty-${index}`}
-                    type="number"
-                    class="input"
-                    min="1"
-                    step={item.unit_type === 'hours' ? '0.5' : '1'}
-                    bind:value={item.quantity}
-                  />
-                </div>
-
-                <div class="form-group item-price">
-                  <label class="label" for={`item-price-${index}`}>{item.unit_type === 'hours' ? 'Rate' : 'Price'}</label>
-                  <input
-                    id={`item-price-${index}`}
-                    type="number"
-                    class="input"
-                    step="0.01"
-                    min="0"
-                    placeholder="0.00"
-                    bind:value={item.unit_price}
-                  />
-                </div>
-
-                <div class="form-group item-total">
-                  <div class="label">Total</div>
-                  <div class="item-total-value">
-                    {formatCurrency((Number(item.unit_price) || 0) * item.quantity)}
-                  </div>
-                </div>
-              </div>
-
-              <button
-                type="button"
-                class="btn btn-ghost btn-icon btn-sm btn-remove"
-                on:click={() => removeItem(index)}
-                disabled={items.length === 1}
-                title="Remove item"
-              >
-                <Icon name="x" size="sm" />
-              </button>
-            </div>
-          {/each}
-        </div>
-
-        <div class="totals-summary">
-          <div class="totals-row">
-            <span class="totals-label">Subtotal</span>
-            <span class="totals-value">{formatCurrency(subtotal)}</span>
-          </div>
-          {#if taxEnabled && taxRate}
-            <div class="totals-row tax-row">
-              <span class="totals-label">{taxName} ({taxRate}%)</span>
-              <span class="totals-value">{formatCurrency(taxAmount)}</span>
-            </div>
-            <div class="totals-row total-row">
-              <span class="totals-label">Total</span>
-              <span class="totals-value total-value">{formatCurrency(total)}</span>
-            </div>
-          {/if}
-        </div>
-      </div>
-
-      <!-- Tax Settings -->
-      <div class="card">
-        <div class="card-header">
-          <h3 class="card-title">Tax Settings</h3>
-        </div>
-
-        <label class="checkbox-label">
-          <input type="checkbox" bind:checked={taxEnabled} />
-          <span>Apply Tax</span>
-        </label>
-
-        {#if taxEnabled}
-          <div class="form-row tax-fields">
-            <div class="form-group">
-              <label for="tax-rate" class="label">Tax Rate (%)</label>
-              <input
-                id="tax-rate"
-                type="number"
-                class="input"
-                step="0.01"
-                min="0"
-                max="100"
-                placeholder="e.g., 8.5"
-                bind:value={taxRate}
-              />
-            </div>
-
-            <div class="form-group">
-              <label for="tax-name" class="label">Tax Name</label>
-              <input
-                id="tax-name"
-                type="text"
-                class="input"
-                placeholder="Tax, VAT, GST, etc."
-                bind:value={taxName}
-              />
-            </div>
-          </div>
-          <p class="form-hint">Tax will be calculated on the subtotal and shown on the invoice.</p>
-        {:else}
-          <p class="form-hint">
-            Enable tax to add a tax line to this invoice.
-            {#if profile?.default_tax_enabled}
-              Default tax ({profile.default_tax_rate}%) is configured in Settings.
-            {/if}
-          </p>
-        {/if}
-      </div>
-
-      <!-- Payment Methods Selection -->
-      <div class="card">
-        <div class="card-header">
-          <h3 class="card-title">Payment Instructions</h3>
-        </div>
-
-        {#if availablePaymentMethods.length > 0}
-          <p class="form-hint" style="margin-top: 0; margin-bottom: var(--space-3);">
-            Select payment methods to include on the PDF. Clients will see instructions for all selected methods.
-          </p>
-          <div class="payment-methods-list">
-            {#each availablePaymentMethods as method}
-              <label class="payment-method-option">
-                <input
-                  type="checkbox"
-                  checked={selectedPaymentMethods.includes(method.id)}
-                  on:change={(e) => {
-                    const input = getInputTarget(e);
-                    if (input.checked) {
-                      selectedPaymentMethods = [...selectedPaymentMethods, method.id];
-                    } else {
-                      selectedPaymentMethods = selectedPaymentMethods.filter(id => id !== method.id);
-                    }
-                  }}
-                />
-                <div class="payment-method-info">
-                  <span class="payment-method-name">{method.name}</span>
-                  {#if method.instructions}
-                    <span class="payment-method-preview">{method.instructions.substring(0, 50)}{method.instructions.length > 50 ? '...' : ''}</span>
-                  {/if}
-                </div>
-              </label>
-            {/each}
-          </div>
-          {#if selectedPaymentMethods.length > 0}
-            <p class="form-hint selected-count">
-              {selectedPaymentMethods.length} payment method{selectedPaymentMethods.length !== 1 ? 's' : ''} will be shown on the PDF.
-            </p>
-          {/if}
-        {:else}
-          <label class="checkbox-label">
-            <input type="checkbox" bind:checked={showPaymentInstructions} />
-            <span>Include Payment Instructions</span>
-          </label>
-          <p class="form-hint">
-            Configure payment methods in <a href="/settings" class="link">Settings</a> to select which ones to show on invoices.
-          </p>
-        {/if}
-      </div>
-
-      <!-- Notes -->
-      <div class="card">
-        <div class="card-header">
-          <h3 class="card-title">Notes</h3>
-        </div>
-
-        {#if useDefaultNotes && defaultNotesText}
-          <div class="default-notes-display">
-            <div class="default-notes-header">
-              <span class="default-notes-label">Using default notes from Settings</span>
-              <button
-                type="button"
-                class="btn btn-ghost btn-sm"
-                on:click={removeDefaultNotes}
-              >
-                <Icon name="x" size="sm" />
-                Remove
-              </button>
-            </div>
-            <div class="default-notes-content">
-              {defaultNotesText}
-            </div>
-          </div>
-        {:else}
-          <textarea
-            class="textarea"
-            rows="3"
-            placeholder="Payment terms, thank you message, etc."
-            bind:value={notes}
-          ></textarea>
-          {#if defaultNotesText && !useDefaultNotes}
-            <button
-              type="button"
-              class="btn btn-ghost btn-sm mt-2"
-              on:click={() => { useDefaultNotes = true; notes = ''; }}
-            >
-              <Icon name="refresh" size="sm" />
-              Use default notes
-            </button>
-          {/if}
-        {/if}
-      </div>
+      <InvoiceNotesCard bind:useDefaultNotes {defaultNotesText} bind:notes />
 
       <!-- Actions -->
       <div class="form-actions">
@@ -843,120 +599,6 @@
     flex-shrink: 0;
   }
 
-  .items-list {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-4);
-  }
-
-  .item-row {
-    display: flex;
-    gap: var(--space-3);
-    align-items: flex-start;
-  }
-
-  .item-fields {
-    display: flex;
-    gap: var(--space-3);
-    flex: 1;
-    flex-wrap: wrap;
-  }
-
-  .item-desc {
-    flex: 2;
-    min-width: 200px;
-  }
-
-  .item-unit-type {
-    flex: 0 0 90px;
-  }
-
-  .item-qty {
-    flex: 0 0 90px;
-  }
-
-  .item-price {
-    flex: 0 0 120px;
-  }
-
-  .item-total {
-    flex: 0 0 110px;
-  }
-
-  .item-total-value {
-    padding: var(--space-2) var(--space-3);
-    background: var(--color-bg-sunken);
-    border-radius: var(--radius-md);
-    font-weight: 500;
-    text-align: right;
-    font-variant-numeric: tabular-nums;
-  }
-
-  .btn-remove {
-    margin-top: 28px;
-    color: var(--color-text-tertiary);
-  }
-
-  .btn-remove:hover:not(:disabled) {
-    color: var(--color-danger);
-  }
-
-  .btn-remove:disabled {
-    opacity: 0.3;
-  }
-
-  .totals-summary {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-end;
-    gap: var(--space-2);
-    padding-top: var(--space-4);
-    border-top: 1px solid var(--color-border-light);
-    margin-top: var(--space-4);
-  }
-
-  .totals-row {
-    display: flex;
-    justify-content: flex-end;
-    gap: var(--space-6);
-    min-width: 280px;
-  }
-
-  .totals-label {
-    font-weight: 500;
-    color: var(--color-text-secondary);
-  }
-
-  .totals-value {
-    font-size: 1rem;
-    font-weight: 600;
-    font-variant-numeric: tabular-nums;
-    min-width: 100px;
-    text-align: right;
-  }
-
-  .tax-row .totals-label {
-    color: var(--color-text-tertiary);
-  }
-
-  .tax-row .totals-value {
-    font-weight: 500;
-  }
-
-  .total-row {
-    padding-top: var(--space-2);
-    border-top: 1px solid var(--color-border-light);
-  }
-
-  .total-value {
-    font-size: 1.25rem;
-    color: var(--color-primary);
-  }
-
-  .tax-fields {
-    margin-top: var(--space-4);
-  }
-
   .form-actions {
     display: flex;
     justify-content: flex-end;
@@ -983,140 +625,10 @@
     margin-top: var(--space-2);
   }
 
-  /* Default Notes Display */
-  .default-notes-display {
-    background: var(--color-bg-sunken);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-md);
-    overflow: hidden;
-  }
-
-  .default-notes-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: var(--space-2) var(--space-3);
-    background: var(--color-bg-hover);
-    border-bottom: 1px solid var(--color-border);
-  }
-
-  .default-notes-label {
-    font-size: 0.75rem;
-    font-weight: 500;
-    color: var(--color-text-secondary);
-    text-transform: uppercase;
-    letter-spacing: 0.02em;
-  }
-
-  .default-notes-content {
-    padding: var(--space-3) var(--space-4);
-    font-size: 0.9375rem;
-    color: var(--color-text);
-    white-space: pre-wrap;
-    line-height: 1.6;
-  }
-
-  .mt-2 {
-    margin-top: var(--space-2);
-  }
-
-  /* Payment Methods Selection */
-  .payment-methods-list {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-2);
-  }
-
-  .payment-method-option {
-    display: flex;
-    align-items: flex-start;
-    gap: var(--space-3);
-    padding: var(--space-3);
-    background: var(--color-bg-sunken);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-md);
-    cursor: pointer;
-    transition: all 0.15s ease;
-  }
-
-  .payment-method-option:hover {
-    border-color: var(--color-border-emphasis);
-    background: var(--color-bg-hover);
-  }
-
-  .payment-method-option:has(input:checked) {
-    border-color: var(--color-primary);
-    background: color-mix(in srgb, var(--color-primary) 5%, var(--color-bg-sunken));
-  }
-
-  .payment-method-option input[type="checkbox"] {
-    width: 18px;
-    height: 18px;
-    margin-top: 2px;
-    accent-color: var(--color-primary);
-    flex-shrink: 0;
-  }
-
-  .payment-method-info {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-1);
-    min-width: 0;
-  }
-
-  .payment-method-name {
-    font-weight: 500;
-    color: var(--color-text);
-  }
-
-  .payment-method-preview {
-    font-size: 0.8125rem;
-    color: var(--color-text-tertiary);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-
-  .selected-count {
-    margin-top: var(--space-3);
-    color: var(--color-primary);
-    font-weight: 500;
-  }
-
-  .link {
-    color: var(--color-primary);
-    text-decoration: none;
-  }
-
-  .link:hover {
-    text-decoration: underline;
-  }
-
   /* Responsive - Large screens */
   @media (min-width: 1400px) {
     .page-content {
       max-width: 1100px;
-    }
-
-    .item-desc {
-      flex: 3;
-      min-width: 300px;
-    }
-
-    .item-unit-type {
-      flex: 0 0 100px;
-    }
-
-    .item-qty {
-      flex: 0 0 100px;
-    }
-
-    .item-price {
-      flex: 0 0 140px;
-    }
-
-    .item-total {
-      flex: 0 0 130px;
     }
   }
 
@@ -1128,24 +640,6 @@
 
     .client-select-wrapper {
       flex-direction: column;
-    }
-
-    .item-fields {
-      flex-direction: column;
-    }
-
-    .item-desc,
-    .item-unit-type,
-    .item-qty,
-    .item-price,
-    .item-total {
-      flex: 1;
-      min-width: 100%;
-    }
-
-    .btn-remove {
-      margin-top: 0;
-      align-self: flex-end;
     }
   }
 
