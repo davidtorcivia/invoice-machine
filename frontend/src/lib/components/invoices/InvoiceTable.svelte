@@ -97,7 +97,6 @@
             {#if invoice.line_items_count > 0}
               <div class="line-items-cell" title={invoice.line_items_preview}>
                 <span class="line-items-text">{invoice.line_items_preview}</span>
-                <span class="line-items-count">{invoice.line_items_count}</span>
               </div>
             {:else}
               <span class="text-secondary">---</span>
@@ -118,7 +117,7 @@
           <td class="text-right"><span class="invoice-total">{formatCurrency(invoice.total)}</span></td>
           <td class="actions-col">
             <div class="action-buttons">
-              {#if invoice.status === 'sent' || invoice.status === 'overdue'}
+              {#if invoice.document_type !== 'quote' && (invoice.status === 'sent' || invoice.status === 'overdue')}
                 <button class="btn btn-ghost btn-icon btn-sm" on:click={(event) => { event.stopPropagation(); dispatch('markpaid', invoice.id); }} title="Mark as paid">
                   <Icon name="check" size="sm" />
                 </button>
@@ -219,29 +218,16 @@
   }
 
   .line-items-cell {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
     max-width: 360px;
   }
 
   .line-items-text {
-    min-width: 0;
+    display: block;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
     color: var(--color-text-secondary);
     font-size: 0.8125rem;
-  }
-
-  .line-items-count {
-    flex-shrink: 0;
-    font-size: 0.6875rem;
-    color: var(--color-text-tertiary);
-    background: var(--color-bg-sunken);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-sm);
-    padding: 0.125rem 0.375rem;
   }
 
   .actions-col {

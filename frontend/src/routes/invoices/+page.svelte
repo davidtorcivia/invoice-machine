@@ -56,7 +56,7 @@
   $: allSelected = invoices.length > 0 && selectedIds.size === invoices.length;
   $: selectedInvoices = invoices.filter((invoice) => selectedIds.has(invoice.id));
   $: canMarkSent = selectedInvoices.some((invoice) => invoice.status === 'draft');
-  $: canMarkPaid = selectedInvoices.some((invoice) => ['sent', 'overdue'].includes(invoice.status));
+  $: canMarkPaid = selectedInvoices.some((invoice) => invoice.document_type !== 'quote' && ['sent', 'overdue'].includes(invoice.status));
   $: hasFilters = Boolean(filterStatus || filterClient || filterYear || filterFromDate || filterToDate);
 
   onMount(async () => {

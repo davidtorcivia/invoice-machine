@@ -1,11 +1,26 @@
 <script>
   import { createEventDispatcher } from 'svelte';
   import Icon from '$lib/components/Icons.svelte';
-  import { statusConfig } from '$lib/invoices/list';
+  import { getNormalizedStatus, statusConfig } from '$lib/invoices/list';
 
   export let status = 'draft';
+  export let isQuote = false;
 
   const dispatch = createEventDispatcher();
+
+  $: statusOptions = isQuote
+    ? [
+        { value: 'draft', label: 'Draft' },
+        { value: 'sent', label: 'Sent' },
+        { value: 'cancelled', label: 'Cancelled' }
+      ]
+    : [
+        { value: 'draft', label: 'Draft' },
+        { value: 'sent', label: 'Sent' },
+        { value: 'paid', label: 'Paid' },
+        { value: 'overdue', label: 'Overdue' },
+        { value: 'cancelled', label: 'Cancelled' }
+      ];
 
   /**
    * @param {Event} event
@@ -14,6 +29,11 @@
   function getSelectTarget(event) {
     return /** @type {HTMLSelectElement} */ (event.currentTarget);
   }
+
+  $: currentStatus = getNormalizedStatus({
+    status,
+    document_type: isQuote ? 'quote' : 'invoice'
+  });
 </script>
 
 <div class="status-banner">
@@ -21,42 +41,52 @@
     <span class="status-label">Status</span>
     <div class="status-select-wrapper">
       <select
-        class="status-select {statusConfig[status]?.class || 'badge-draft'}"
-        value={status}
+        class="status-select {statusConfig[currentStatus]?.class || 'badge-draft'}"
+        value={currentStatus}
         on:change={(event) => dispatch('statuschange', getSelectTarget(event).value)}
       >
-        <option value="draft">Draft</option>
-        <option value="sent">Sent</option>
-        <option value="paid">Paid</option>
-        <option value="overdue">Overdue</option>
-        <option value="cancelled">Cancelled</option>
+        {#each statusOptions as option}
+          <option value={option.value}>{option.label}</option>
+        {/each}
       </select>
     </div>
   </div>
 
   <div class="status-actions">
-    {#if status === 'draft'}
+    {#if currentStatus === 'draft'}
       <button class="btn btn-secondary btn-sm" on:click={() => dispatch('statuschange', 'sent')}>
         <Icon name="send" size="sm" />
         Mark as Sent
       </button>
     {/if}
-    {#if status === 'sent' || status === 'overdue'}
+    {#if !isQuote && (currentStatus === 'sent' || currentStatus === 'overdue')}
       <button class="btn btn-primary btn-sm" on:click={() => dispatch('statuschange', 'paid')}>
         <Icon name="check" size="sm" />
         Mark as Paid
       </button>
     {/if}
-    {#if status === 'paid'}
+    {#if !isQuote && currentStatus === 'paid'}
       <button class="btn btn-secondary btn-sm" on:click={() => dispatch('statuschange', 'sent')}>
         <Icon name="refresh" size="sm" />
         Revert to Sent
       </button>
     {/if}
-    {#if status === 'sent' || status === 'paid'}
+    {#if isQuote}
+      <button class="btn btn-primary btn-sm" on:click={() => dispatch('convert')}>
+        <Icon name="check" size="sm" />
+        Convert to Invoice
+      </button>
+    {/if}
+    {#if currentStatus === 'sent' || (!isQuote && currentStatus === 'paid') || currentStatus === 'cancelled'}
       <button class="btn btn-ghost btn-sm" on:click={() => dispatch('statuschange', 'draft')}>
         <Icon name="pencil" size="sm" />
         Back to Draft
+      </button>
+    {/if}
+    {#if isQuote && currentStatus !== 'cancelled'}
+      <button class="btn btn-secondary btn-sm" on:click={() => dispatch('statuschange', 'cancelled')}>
+        <Icon name="x" size="sm" />
+        Cancel Quote
       </button>
     {/if}
     <button class="btn btn-ghost btn-sm text-danger" on:click={() => dispatch('delete')}>

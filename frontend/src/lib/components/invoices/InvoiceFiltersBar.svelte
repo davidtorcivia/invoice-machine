@@ -128,7 +128,14 @@
   }
 
   .date-range-group {
+    border: 0;
+    padding: 0;
+    margin: 0;
     min-width: auto;
+  }
+
+  .date-range-group legend {
+    padding: 0;
   }
 
   .date-range-inputs {

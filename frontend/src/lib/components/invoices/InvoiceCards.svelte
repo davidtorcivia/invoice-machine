@@ -47,7 +47,7 @@
         </div>
       </button>
       <div class="invoice-card-actions">
-        {#if invoice.status === 'sent' || invoice.status === 'overdue'}
+        {#if invoice.document_type !== 'quote' && (invoice.status === 'sent' || invoice.status === 'overdue')}
           <button class="btn btn-ghost btn-icon" on:click={() => dispatch('markpaid', invoice.id)} title="Mark as paid">
             <Icon name="check" size="sm" />
           </button>

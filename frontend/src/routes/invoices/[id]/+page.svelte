@@ -176,9 +176,7 @@
       {invoiceId}
       {invoice}
       {documentLabel}
-      {isQuote}
       {generatingPdf}
-      on:convert={openConvertModal}
       on:generatepdf={generatePdf}
       on:downloadpdf={downloadPdf}
       on:sendemail={openSendEmailModal}
@@ -186,7 +184,13 @@
 
     <div class="invoice-layout">
       <div class="invoice-main">
-        <InvoiceStatusBanner status={invoice.status} on:statuschange={(event) => updateStatus(event.detail)} on:delete={openDeleteModal} />
+        <InvoiceStatusBanner
+          status={invoice.status}
+          {isQuote}
+          on:statuschange={(event) => updateStatus(event.detail)}
+          on:convert={openConvertModal}
+          on:delete={openDeleteModal}
+        />
         <InvoiceClientCard {invoice} />
         <InvoiceLineItemsSummaryCard {invoice} {items} />
 

@@ -1,4 +1,6 @@
 <script>
+  import { getNormalizedStatus } from '$lib/invoices/list';
+
   export let invoice = {};
   export let documentType = 'invoice';
   export let issueDate = '';
@@ -6,6 +8,26 @@
   export let paymentTermsDays = 30;
   export let status = 'draft';
   export let clientReference = '';
+
+  $: statusOptions = documentType === 'quote'
+    ? [
+        { value: 'draft', label: 'Draft' },
+        { value: 'sent', label: 'Sent' },
+        { value: 'cancelled', label: 'Cancelled' }
+      ]
+    : [
+        { value: 'draft', label: 'Draft' },
+        { value: 'sent', label: 'Sent' },
+        { value: 'paid', label: 'Paid' },
+        { value: 'overdue', label: 'Overdue' },
+        { value: 'cancelled', label: 'Cancelled' }
+      ];
+
+  $: if (documentType === 'quote' && ['paid', 'overdue'].includes(status)) {
+    status = getNormalizedStatus({ status, document_type: documentType });
+  } else if (!statusOptions.some((option) => option.value === status)) {
+    status = 'draft';
+  }
 </script>
 
 <div class="card">
@@ -43,11 +65,9 @@
     <div class="form-group">
       <label for="status" class="label">Status</label>
       <select id="status" class="select" bind:value={status}>
-        <option value="draft">Draft</option>
-        <option value="sent">Sent</option>
-        <option value="paid">Paid</option>
-        <option value="overdue">Overdue</option>
-        <option value="cancelled">Cancelled</option>
+        {#each statusOptions as option}
+          <option value={option.value}>{option.label}</option>
+        {/each}
       </select>
     </div>
   </div>

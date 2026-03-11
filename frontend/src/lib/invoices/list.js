@@ -23,9 +23,22 @@ export const statusConfig = {
 export const yearOptions = Array.from({ length: 6 }, (_, index) => new Date().getFullYear() - index);
 
 /**
- * @param {{ status: string, due_date?: string }} invoice
+ * @param {{ status: string, document_type?: string }} invoice
+ */
+export function getNormalizedStatus(invoice) {
+  if (invoice.document_type === 'quote' && ['paid', 'overdue'].includes(invoice.status)) {
+    return 'sent';
+  }
+  return invoice.status;
+}
+
+/**
+ * @param {{ status: string, due_date?: string, document_type?: string }} invoice
  */
 export function isOverdue(invoice) {
+  if (invoice.document_type === 'quote') {
+    return false;
+  }
   if (invoice.status === 'paid' || invoice.status === 'cancelled' || invoice.status === 'draft') {
     return false;
   }
@@ -37,13 +50,14 @@ export function isOverdue(invoice) {
 }
 
 /**
- * @param {{ status: string, due_date?: string }} invoice
+ * @param {{ status: string, due_date?: string, document_type?: string }} invoice
  */
 export function getEffectiveStatus(invoice) {
+  const normalizedStatus = getNormalizedStatus(invoice);
   if (isOverdue(invoice) && invoice.status !== 'overdue') {
     return 'overdue';
   }
-  return invoice.status;
+  return normalizedStatus;
 }
 
 export function getBulkActionLabel(action) {

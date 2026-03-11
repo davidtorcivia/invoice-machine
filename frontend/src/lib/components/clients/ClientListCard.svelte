@@ -60,6 +60,23 @@
 <style>
   .client-card {
     cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    min-height: 100%;
+    padding: var(--space-5);
+    background: var(--color-bg-elevated);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-sm);
+    transition: border-color var(--transition-fast), box-shadow var(--transition-fast), transform var(--transition-fast);
+  }
+
+  .client-card:hover,
+  .client-card:focus-visible {
+    border-color: var(--color-border-dark);
+    box-shadow: var(--shadow-md);
+    transform: translateY(-1px);
+    outline: none;
   }
 
   .client-card-header {
@@ -116,6 +133,8 @@
 
   .client-footer {
     margin-top: var(--space-4);
+    padding-top: var(--space-4);
+    border-top: 1px solid var(--color-border-light);
   }
 
   .payment-terms {

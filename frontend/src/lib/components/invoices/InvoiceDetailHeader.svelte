@@ -5,7 +5,6 @@
   export let invoiceId = '';
   export let invoice = {};
   export let documentLabel = 'Invoice';
-  export let isQuote = false;
   export let generatingPdf = false;
 
   const dispatch = createEventDispatcher();
@@ -17,12 +16,6 @@
     <p class="page-subtitle">{invoice.client_business || invoice.client_name || ''}</p>
   </div>
   <div class="page-actions">
-    {#if isQuote}
-      <button class="btn btn-success" on:click={() => dispatch('convert')}>
-        <Icon name="check" size="sm" />
-        Convert to Invoice
-      </button>
-    {/if}
     <a href="/invoices/{invoiceId}/edit" class="btn btn-secondary">
       <Icon name="pencil" size="sm" />
       Edit
@@ -70,18 +63,6 @@
     gap: var(--space-2);
     flex-wrap: wrap;
   }
-
-  :global(.btn-success) {
-    background: var(--color-success);
-    color: white;
-    border-color: var(--color-success);
-  }
-
-  :global(.btn-success:hover) {
-    background: color-mix(in srgb, var(--color-success) 90%, black);
-    border-color: color-mix(in srgb, var(--color-success) 90%, black);
-  }
-
   @media (max-width: 768px) {
     .page-header {
       flex-direction: column;
