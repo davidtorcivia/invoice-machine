@@ -2,13 +2,29 @@
   import { onMount } from 'svelte';
   import { profileApi, backupsApi, emailApi } from '$lib/api';
   import { parseJsonArray, stringifyJsonArray } from '$lib/json';
+  import {
+    buildBackupPayload,
+    buildProfilePayload,
+    buildSmtpPayload,
+    createApiAccessState,
+    createBackupForm,
+    createPaymentMethodDraft,
+    createProfileForm,
+    createSmtpForm,
+    DEFAULT_SETTINGS_SECTIONS,
+    formatBackupBytes,
+    formatBackupDate,
+    mapBackupSettingsToForm,
+    mapProfileToApiAccess,
+    mapProfileToProfileForm,
+    mapSmtpSettingsToForm
+  } from '$lib/settings/forms';
   import { toast } from '$lib/stores';
   import { countries } from '$lib/data/countries';
   import { currencies } from '$lib/data/currencies';
   import Header from '$lib/components/Header.svelte';
   import Icon from '$lib/components/Icons.svelte';
   import ConfirmModal from '$lib/components/ConfirmModal.svelte';
-  import CollapsibleSection from '$lib/components/CollapsibleSection.svelte';
   import SettingsApiAccessSection from '$lib/components/settings/SettingsApiAccessSection.svelte';
   import SettingsAddressSection from '$lib/components/settings/SettingsAddressSection.svelte';
   import SettingsBackupSection from '$lib/components/settings/SettingsBackupSection.svelte';
@@ -23,111 +39,44 @@
   let profile = null;
   let loading = true;
   let saving = false;
+  let openSections = { ...DEFAULT_SETTINGS_SECTIONS };
+  let profileForm = createProfileForm();
+  let smtpForm = createSmtpForm();
+  let backupForm = createBackupForm();
+  let apiAccess = createApiAccessState();
 
-  // Collapsible section states
-  let openSections = {
-    logo: true,
-    business: true,
-    address: false,
-    invoiceDefaults: false,
-    taxSettings: false,
-    paymentMethods: false,
-    smtpSettings: false,
-    mcpIntegration: false,
-    botApi: false,
-    backup: false
-  };
-
-  // Form data
-  let name = '';
-  let businessName = '';
-  let email = '';
-  let phone = '';
-  let addressLine1 = '';
-  let addressLine2 = '';
-  let city = '';
-  let state = '';
-  let postalCode = '';
-  let country = 'United States';
-  let ein = '';
-  let accentColor = '#16a34a';
-  let defaultPaymentTermsDays = 30;
-  let defaultCurrencyCode = 'USD';
-  let defaultNotes = '';
-  let defaultPaymentInstructions = '';
-
-  // Tax settings
-  let defaultTaxEnabled = false;
-  let defaultTaxRate = '';
-  let defaultTaxName = 'Tax';
-
-  // SMTP settings
-  let smtpEnabled = false;
-  let smtpHost = '';
-  let smtpPort = 587;
-  let smtpUsername = '';
-  let smtpPassword = '';
-  let smtpFromEmail = '';
-  let smtpFromName = '';
-  let smtpUseTls = true;
-  let smtpPasswordSet = false;
-  let testingSmtp = false;
-  let savingSmtp = false;
-
-  // Payment methods (array of {id, name, instructions})
   let paymentMethods = [];
   let editingMethod = null;
-  let newMethodName = '';
-  let newMethodInstructions = '';
+  let paymentMethodDraft = createPaymentMethodDraft();
   let showPaymentMethodModal = false;
 
-  // Logo upload
   let logoPreview = null;
   let logoUploading = false;
   let uploadProgress = 0;
   let showDeleteLogoModal = false;
   let deletingLogo = false;
 
-  // MCP Integration
-  let mcpApiKey = '';
-  let mcpApiKeyConfigured = false;
-  let botApiKey = '';
-  let botApiKeyConfigured = false;
-  let appBaseUrl = '';
-  let generatingMcpKey = false;
-  let generatingBotKey = false;
-
-  // Computed MCP endpoint URL
-  $: mcpEndpointUrl = appBaseUrl || (typeof window !== 'undefined' ? window.location.origin : '');
-
-  // Backup settings
-  let backupEnabled = true;
-  let backupRetentionDays = 30;
-  let backupS3Enabled = false;
-  let backupS3EndpointUrl = '';
-  let backupS3AccessKeyId = '';
-  let backupS3SecretAccessKey = '';
-  let backupS3Bucket = '';
-  let backupS3Region = '';
-  let backupS3Prefix = 'invoice-machine-backups';
-  let backups = [];
   let loadingBackups = false;
+  let backups = [];
   let creatingBackup = false;
   let restoringBackup = null;
   let testingS3 = false;
   let showRestoreModal = false;
   let restoreTarget = null;
-
-  // Backup delete modal state
   let showDeleteBackupModal = false;
   let deleteBackupTarget = null;
   let deletingBackup = false;
 
-  // MCP key delete modal state
+  let testingSmtp = false;
+  let savingSmtp = false;
   let showDeleteMcpModal = false;
   let deletingMcpKey = false;
   let showDeleteBotModal = false;
   let deletingBotKey = false;
+  let generatingMcpKey = false;
+  let generatingBotKey = false;
+
+  $: mcpEndpointUrl = apiAccess.appBaseUrl || (typeof window !== 'undefined' ? window.location.origin : '');
 
   onMount(async () => {
     await loadProfile();
@@ -139,44 +88,10 @@
     loading = true;
     try {
       profile = await profileApi.get();
-
-      // Populate form
-      name = profile.name || '';
-      businessName = profile.business_name || '';
-      email = profile.email || '';
-      phone = profile.phone || '';
-      addressLine1 = profile.address_line1 || '';
-      addressLine2 = profile.address_line2 || '';
-      city = profile.city || '';
-      state = profile.state || '';
-      postalCode = profile.postal_code || '';
-      country = profile.country || 'United States';
-      ein = profile.ein || '';
-      accentColor = profile.accent_color || '#16a34a';
-      defaultPaymentTermsDays = profile.default_payment_terms_days || 30;
-      defaultCurrencyCode = profile.default_currency_code || 'USD';
-      defaultNotes = profile.default_notes || '';
-      defaultPaymentInstructions = profile.default_payment_instructions || '';
-
+      profileForm = mapProfileToProfileForm(profile);
+      apiAccess = mapProfileToApiAccess(profile);
       paymentMethods = parseJsonArray(profile.payment_methods);
-
-      if (profile.logo_path) {
-        logoPreview = `/api/profile/logo/${profile.logo_path}`;
-      }
-
-      // MCP settings
-      mcpApiKeyConfigured = !!profile.mcp_api_key_configured;
-      botApiKeyConfigured = !!profile.bot_api_key_configured;
-      mcpApiKey = '';
-      botApiKey = '';
-      appBaseUrl = profile.app_base_url || '';
-
-      // Tax settings
-      defaultTaxEnabled = profile.default_tax_enabled || false;
-      defaultTaxRate = profile.default_tax_rate || '';
-      defaultTaxName = profile.default_tax_name || 'Tax';
-
-      // Load SMTP settings separately
+      logoPreview = profile.logo_path ? `/api/profile/logo/${profile.logo_path}` : null;
       await loadSmtpSettings();
     } catch (error) {
       toast.error('Failed to load profile');
@@ -187,16 +102,7 @@
 
   async function loadSmtpSettings() {
     try {
-      const settings = await emailApi.getSmtpSettings();
-      smtpEnabled = settings.smtp_enabled || false;
-      smtpHost = settings.smtp_host || '';
-      smtpPort = settings.smtp_port || 587;
-      smtpUsername = settings.smtp_username || '';
-      smtpFromEmail = settings.smtp_from_email || '';
-      smtpFromName = settings.smtp_from_name || '';
-      smtpUseTls = settings.smtp_use_tls !== false;
-      smtpPasswordSet = settings.smtp_password_set || false;
-      smtpPassword = ''; // Never show actual password
+      smtpForm = mapSmtpSettingsToForm(await emailApi.getSmtpSettings());
     } catch (error) {
       console.error('Failed to load SMTP settings:', error);
     }
@@ -205,23 +111,9 @@
   async function saveSmtpSettings() {
     savingSmtp = true;
     try {
-      const data = {
-        smtp_enabled: smtpEnabled,
-        smtp_host: smtpHost || undefined,
-        smtp_port: Number(smtpPort) || 587,
-        smtp_username: smtpUsername || undefined,
-        smtp_from_email: smtpFromEmail || undefined,
-        smtp_from_name: smtpFromName || undefined,
-        smtp_use_tls: smtpUseTls,
-      };
-      // Only include password if changed
-      if (smtpPassword) {
-        data.smtp_password = smtpPassword;
-      }
-      await emailApi.updateSmtpSettings(data);
+      await emailApi.updateSmtpSettings(buildSmtpPayload(smtpForm));
       toast.success('SMTP settings saved');
-      smtpPasswordSet = !!smtpPassword || smtpPasswordSet;
-      smtpPassword = '';
+      smtpForm = { ...smtpForm, passwordSet: !!smtpForm.password || smtpForm.passwordSet, password: '' };
     } catch (error) {
       toast.error(error.message || 'Failed to save SMTP settings');
     } finally {
@@ -243,38 +135,14 @@
   }
 
   async function saveProfile() {
-    if (!name.trim()) {
+    if (!profileForm.name.trim()) {
       toast.error('Please enter your name');
       return;
     }
 
     saving = true;
     try {
-      await profileApi.update({
-        name: name || undefined,
-        business_name: businessName || undefined,
-        email: email || undefined,
-        phone: phone || undefined,
-        address_line1: addressLine1 || undefined,
-        address_line2: addressLine2 || undefined,
-        city: city || undefined,
-        state: state || undefined,
-        postal_code: postalCode || undefined,
-        country: country || undefined,
-        ein: ein || undefined,
-        accent_color: accentColor || undefined,
-        default_payment_terms_days: Number(defaultPaymentTermsDays) || undefined,
-        default_currency_code: defaultCurrencyCode || undefined,
-        default_notes: defaultNotes || undefined,
-        default_payment_instructions: defaultPaymentInstructions || undefined,
-        payment_methods: stringifyJsonArray(paymentMethods),
-        app_base_url: appBaseUrl || undefined,
-        // Tax settings
-        default_tax_enabled: defaultTaxEnabled,
-        default_tax_rate: defaultTaxRate || undefined,
-        default_tax_name: defaultTaxName || undefined,
-      });
-
+      await profileApi.update(buildProfilePayload(profileForm, stringifyJsonArray(paymentMethods), apiAccess.appBaseUrl));
       toast.success('Settings saved successfully');
     } catch (error) {
       toast.error('Failed to save settings');
@@ -286,39 +154,27 @@
   async function handleLogoSelect(event) {
     const file = event.target.files[0];
     if (!file) return;
-
-    // Validate file type
     if (!file.type.startsWith('image/')) {
       toast.error('Please select an image file');
       return;
     }
-
-    // Validate file size (5MB max)
     if (file.size > 5 * 1024 * 1024) {
       toast.error('Image must be less than 5MB');
       return;
     }
 
-    // Start upload immediately
     logoUploading = true;
     uploadProgress = 0;
 
     try {
-      // Simulate progress for better UX
       const progressInterval = setInterval(() => {
-        if (uploadProgress < 90) {
-          uploadProgress += Math.random() * 20;
-        }
+        if (uploadProgress < 90) uploadProgress += Math.random() * 20;
       }, 100);
 
       const result = await profileApi.uploadLogo(file);
-
       clearInterval(progressInterval);
       uploadProgress = 100;
-
-      // Short delay to show 100% before hiding
-      await new Promise(resolve => setTimeout(resolve, 300));
-
+      await new Promise((resolve) => setTimeout(resolve, 300));
       logoPreview = `/api/profile/logo/${result.logo_path}`;
       toast.success('Logo uploaded successfully');
     } catch (error) {
@@ -326,7 +182,6 @@
     } finally {
       logoUploading = false;
       uploadProgress = 0;
-      // Reset input so same file can be selected again
       event.target.value = '';
     }
   }
@@ -353,65 +208,55 @@
     }
   }
 
-  // Payment method functions
   function openAddMethodModal() {
     editingMethod = null;
-    newMethodName = '';
-    newMethodInstructions = '';
+    paymentMethodDraft = createPaymentMethodDraft();
     showPaymentMethodModal = true;
   }
 
   function openEditMethodModal(method) {
     editingMethod = method;
-    newMethodName = method.name;
-    newMethodInstructions = method.instructions;
+    paymentMethodDraft = { name: method.name, instructions: method.instructions };
     showPaymentMethodModal = true;
   }
 
   function closePaymentMethodModal() {
     showPaymentMethodModal = false;
     editingMethod = null;
-    newMethodName = '';
-    newMethodInstructions = '';
+    paymentMethodDraft = createPaymentMethodDraft();
   }
 
   function savePaymentMethod() {
-    if (!newMethodName.trim()) {
+    if (!paymentMethodDraft.name.trim()) {
       toast.error('Please enter a method name');
       return;
     }
 
     if (editingMethod) {
-      // Update existing
-      paymentMethods = paymentMethods.map(m =>
-        m.id === editingMethod.id
-          ? { ...m, name: newMethodName.trim(), instructions: newMethodInstructions.trim() }
-          : m
+      paymentMethods = paymentMethods.map((method) =>
+        method.id === editingMethod.id
+          ? { ...method, name: paymentMethodDraft.name.trim(), instructions: paymentMethodDraft.instructions.trim() }
+          : method
       );
     } else {
-      // Add new
-      const newMethod = {
-        id: Date.now().toString(),
-        name: newMethodName.trim(),
-        instructions: newMethodInstructions.trim()
-      };
-      paymentMethods = [...paymentMethods, newMethod];
+      paymentMethods = [
+        ...paymentMethods,
+        { id: Date.now().toString(), name: paymentMethodDraft.name.trim(), instructions: paymentMethodDraft.instructions.trim() }
+      ];
     }
 
     closePaymentMethodModal();
   }
 
   function deletePaymentMethod(id) {
-    paymentMethods = paymentMethods.filter(m => m.id !== id);
+    paymentMethods = paymentMethods.filter((method) => method.id !== id);
   }
 
-  // MCP functions
   async function generateMcpKey() {
     generatingMcpKey = true;
     try {
       const result = await profileApi.generateMcpKey();
-      mcpApiKey = result.mcp_api_key;
-      mcpApiKeyConfigured = true;
+      apiAccess = { ...apiAccess, mcpApiKey: result.mcp_api_key, mcpApiKeyConfigured: true };
       toast.success('MCP API key generated');
     } catch (error) {
       toast.error('Failed to generate API key');
@@ -420,16 +265,32 @@
     }
   }
 
+  async function generateBotKey() {
+    generatingBotKey = true;
+    try {
+      const result = await profileApi.generateBotKey();
+      apiAccess = { ...apiAccess, botApiKey: result.bot_api_key, botApiKeyConfigured: true };
+      toast.success('Bot API key generated');
+    } catch (error) {
+      toast.error('Failed to generate bot API key');
+    } finally {
+      generatingBotKey = false;
+    }
+  }
+
   function openDeleteMcpModal() {
     showDeleteMcpModal = true;
+  }
+
+  function openDeleteBotModal() {
+    showDeleteBotModal = true;
   }
 
   async function confirmDeleteMcpKey() {
     deletingMcpKey = true;
     try {
       await profileApi.deleteMcpKey();
-      mcpApiKey = '';
-      mcpApiKeyConfigured = false;
+      apiAccess = { ...apiAccess, mcpApiKey: '', mcpApiKeyConfigured: false };
       toast.success('MCP API key deleted');
       showDeleteMcpModal = false;
     } catch (error) {
@@ -439,44 +300,11 @@
     }
   }
 
-  function cancelDeleteMcpKey() {
-    showDeleteMcpModal = false;
-  }
-
-  function copyMcpKey() {
-    if (!mcpApiKey) {
-      toast.error('Regenerate key to copy it again');
-      return;
-    }
-    navigator.clipboard.writeText(mcpApiKey);
-    toast.success('API key copied to clipboard');
-  }
-
-  // Bot API key functions
-  async function generateBotKey() {
-    generatingBotKey = true;
-    try {
-      const result = await profileApi.generateBotKey();
-      botApiKey = result.bot_api_key;
-      botApiKeyConfigured = true;
-      toast.success('Bot API key generated');
-    } catch (error) {
-      toast.error('Failed to generate bot API key');
-    } finally {
-      generatingBotKey = false;
-    }
-  }
-
-  function openDeleteBotModal() {
-    showDeleteBotModal = true;
-  }
-
   async function confirmDeleteBotKey() {
     deletingBotKey = true;
     try {
       await profileApi.deleteBotKey();
-      botApiKey = '';
-      botApiKeyConfigured = false;
+      apiAccess = { ...apiAccess, botApiKey: '', botApiKeyConfigured: false };
       toast.success('Bot API key deleted');
       showDeleteBotModal = false;
     } catch (error) {
@@ -486,39 +314,36 @@
     }
   }
 
-  function cancelDeleteBotKey() {
-    showDeleteBotModal = false;
-  }
-
-  function copyBotKey() {
-    if (!botApiKey) {
+  function copyMcpKey() {
+    if (!apiAccess.mcpApiKey) {
       toast.error('Regenerate key to copy it again');
       return;
     }
-    navigator.clipboard.writeText(botApiKey);
+    navigator.clipboard.writeText(apiAccess.mcpApiKey);
+    toast.success('API key copied to clipboard');
+  }
+
+  function copyBotKey() {
+    if (!apiAccess.botApiKey) {
+      toast.error('Regenerate key to copy it again');
+      return;
+    }
+    navigator.clipboard.writeText(apiAccess.botApiKey);
     toast.success('Bot API key copied to clipboard');
   }
 
-  // Backup functions
   async function loadBackupSettings() {
     try {
-      const settings = await backupsApi.getSettings();
-      backupEnabled = settings.backup_enabled;
-      backupRetentionDays = settings.backup_retention_days;
-      backupS3Enabled = settings.backup_s3_enabled;
-      backupS3EndpointUrl = settings.backup_s3_endpoint_url || '';
-      backupS3Bucket = settings.backup_s3_bucket || '';
-      backupS3Region = settings.backup_s3_region || '';
-      backupS3Prefix = settings.backup_s3_prefix || 'invoice-machine-backups';
+      backupForm = mapBackupSettingsToForm(await backupsApi.getSettings());
     } catch (error) {
-      // Settings might not exist yet, use defaults
+      // Use defaults.
     }
   }
 
   async function loadBackups() {
     loadingBackups = true;
     try {
-      backups = await backupsApi.list(backupS3Enabled);
+      backups = await backupsApi.list(backupForm.s3Enabled);
     } catch (error) {
       backups = [];
     } finally {
@@ -528,28 +353,7 @@
 
   async function saveBackupSettings() {
     try {
-      const data = {
-        backup_enabled: backupEnabled,
-        backup_retention_days: Number(backupRetentionDays) || 30,
-        backup_s3_enabled: backupS3Enabled,
-      };
-
-      if (backupS3Enabled) {
-        data.backup_s3_endpoint_url = backupS3EndpointUrl || null;
-        data.backup_s3_bucket = backupS3Bucket || null;
-        data.backup_s3_region = backupS3Region || null;
-        data.backup_s3_prefix = backupS3Prefix || null;
-
-        // Only send credentials if they're provided (not masked)
-        if (backupS3AccessKeyId && !backupS3AccessKeyId.includes('*')) {
-          data.backup_s3_access_key_id = backupS3AccessKeyId;
-        }
-        if (backupS3SecretAccessKey && !backupS3SecretAccessKey.includes('*')) {
-          data.backup_s3_secret_access_key = backupS3SecretAccessKey;
-        }
-      }
-
-      await backupsApi.updateSettings(data);
+      await backupsApi.updateSettings(buildBackupPayload(backupForm));
       toast.success('Backup settings saved');
     } catch (error) {
       toast.error('Failed to save backup settings');
@@ -581,11 +385,9 @@
 
   async function restoreBackup() {
     if (!restoreTarget) return;
-
     restoringBackup = restoreTarget.filename;
     try {
-      const downloadFromS3 = restoreTarget.location === 's3';
-      const result = await backupsApi.restore(restoreTarget.filename, downloadFromS3);
+      const result = await backupsApi.restore(restoreTarget.filename, restoreTarget.location === 's3');
       toast.success(result.message);
       closeRestoreModal();
     } catch (error) {
@@ -616,15 +418,9 @@
     }
   }
 
-  function cancelDeleteBackup() {
-    showDeleteBackupModal = false;
-    deleteBackupTarget = null;
-  }
-
   async function testS3Connection() {
     testingS3 = true;
     try {
-      // Save settings first
       await saveBackupSettings();
       const result = await backupsApi.testS3();
       toast.success(result.message);
@@ -633,18 +429,6 @@
     } finally {
       testingS3 = false;
     }
-  }
-
-  function formatBytes(bytes) {
-    if (bytes === 0) return '0 B';
-    const k = 1024;
-    const sizes = ['B', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
-  }
-
-  function formatDate(isoString) {
-    return new Date(isoString).toLocaleString();
   }
 </script>
 
@@ -668,32 +452,32 @@
 
       <SettingsBusinessInfoSection
         bind:open={openSections.business}
-        bind:name
-        bind:businessName
-        bind:email
-        bind:phone
-        bind:ein
+        bind:name={profileForm.name}
+        bind:businessName={profileForm.businessName}
+        bind:email={profileForm.email}
+        bind:phone={profileForm.phone}
+        bind:ein={profileForm.ein}
       />
 
       <SettingsAddressSection
         bind:open={openSections.address}
-        bind:addressLine1
-        bind:addressLine2
-        bind:city
-        bind:state
-        bind:postalCode
-        bind:country
+        bind:addressLine1={profileForm.addressLine1}
+        bind:addressLine2={profileForm.addressLine2}
+        bind:city={profileForm.city}
+        bind:state={profileForm.state}
+        bind:postalCode={profileForm.postalCode}
+        bind:country={profileForm.country}
         {countries}
       />
 
       <SettingsInvoiceDefaultsSection
         bind:open={openSections.invoiceDefaults}
-        bind:defaultPaymentTermsDays
-        bind:defaultCurrencyCode
+        bind:defaultPaymentTermsDays={profileForm.defaultPaymentTermsDays}
+        bind:defaultCurrencyCode={profileForm.defaultCurrencyCode}
         {currencies}
-        bind:accentColor
-        bind:defaultNotes
-        bind:defaultPaymentInstructions
+        bind:accentColor={profileForm.accentColor}
+        bind:defaultNotes={profileForm.defaultNotes}
+        bind:defaultPaymentInstructions={profileForm.defaultPaymentInstructions}
       />
 
       <SettingsPaymentMethodsSection
@@ -706,22 +490,22 @@
 
       <SettingsTaxSection
         bind:open={openSections.taxSettings}
-        bind:defaultTaxEnabled
-        bind:defaultTaxName
-        bind:defaultTaxRate
+        bind:defaultTaxEnabled={profileForm.defaultTaxEnabled}
+        bind:defaultTaxName={profileForm.defaultTaxName}
+        bind:defaultTaxRate={profileForm.defaultTaxRate}
       />
 
       <SettingsSmtpSection
         bind:open={openSections.smtpSettings}
-        bind:smtpEnabled
-        bind:smtpHost
-        bind:smtpPort
-        bind:smtpUsername
-        bind:smtpPassword
-        bind:smtpFromEmail
-        bind:smtpFromName
-        bind:smtpUseTls
-        {smtpPasswordSet}
+        bind:smtpEnabled={smtpForm.enabled}
+        bind:smtpHost={smtpForm.host}
+        bind:smtpPort={smtpForm.port}
+        bind:smtpUsername={smtpForm.username}
+        bind:smtpPassword={smtpForm.password}
+        bind:smtpFromEmail={smtpForm.fromEmail}
+        bind:smtpFromName={smtpForm.fromName}
+        bind:smtpUseTls={smtpForm.useTls}
+        smtpPasswordSet={smtpForm.passwordSet}
         {testingSmtp}
         {savingSmtp}
         {testSmtpConnection}
@@ -731,16 +515,16 @@
       <SettingsApiAccessSection
         bind:mcpOpen={openSections.mcpIntegration}
         bind:botOpen={openSections.botApi}
-        bind:appBaseUrl
+        bind:appBaseUrl={apiAccess.appBaseUrl}
         {mcpEndpointUrl}
-        {mcpApiKeyConfigured}
-        {mcpApiKey}
+        mcpApiKeyConfigured={apiAccess.mcpApiKeyConfigured}
+        mcpApiKey={apiAccess.mcpApiKey}
         {generatingMcpKey}
         {copyMcpKey}
         {openDeleteMcpModal}
         {generateMcpKey}
-        {botApiKeyConfigured}
-        {botApiKey}
+        botApiKeyConfigured={apiAccess.botApiKeyConfigured}
+        botApiKey={apiAccess.botApiKey}
         {generatingBotKey}
         {copyBotKey}
         {openDeleteBotModal}
@@ -751,15 +535,15 @@
         bind:open={openSections.backup}
         {creatingBackup}
         {createBackup}
-        bind:backupEnabled
-        bind:backupRetentionDays
-        bind:backupS3Enabled
-        bind:backupS3EndpointUrl
-        bind:backupS3AccessKeyId
-        bind:backupS3SecretAccessKey
-        bind:backupS3Bucket
-        bind:backupS3Region
-        bind:backupS3Prefix
+        bind:backupEnabled={backupForm.enabled}
+        bind:backupRetentionDays={backupForm.retentionDays}
+        bind:backupS3Enabled={backupForm.s3Enabled}
+        bind:backupS3EndpointUrl={backupForm.s3EndpointUrl}
+        bind:backupS3AccessKeyId={backupForm.s3AccessKeyId}
+        bind:backupS3SecretAccessKey={backupForm.s3SecretAccessKey}
+        bind:backupS3Bucket={backupForm.s3Bucket}
+        bind:backupS3Region={backupForm.s3Region}
+        bind:backupS3Prefix={backupForm.s3Prefix}
         {testingS3}
         {testS3Connection}
         {saveBackupSettings}
@@ -768,19 +552,13 @@
         {restoringBackup}
         {openRestoreModal}
         {openDeleteBackupModal}
-        {formatBytes}
-        {formatDate}
+        formatBytes={formatBackupBytes}
+        formatDate={formatBackupDate}
         downloadBackupHref={backupsApi.download}
       />
 
-      <!-- Save Button -->
       <div class="form-actions">
-        <button
-          type="button"
-          class="btn btn-primary"
-          on:click={saveProfile}
-          disabled={saving}
-        >
+        <button type="button" class="btn btn-primary" on:click={saveProfile} disabled={saving}>
           <Icon name="check" size="sm" />
           {saving ? 'Saving...' : 'Save Settings'}
         </button>
@@ -820,13 +598,12 @@
 <SettingsPaymentMethodModal
   show={showPaymentMethodModal}
   {editingMethod}
-  bind:newMethodName
-  bind:newMethodInstructions
+  bind:newMethodName={paymentMethodDraft.name}
+  bind:newMethodInstructions={paymentMethodDraft.instructions}
   {closePaymentMethodModal}
   {savePaymentMethod}
 />
 
-<!-- Delete MCP Key Modal -->
 <ConfirmModal
   show={showDeleteMcpModal}
   title="Disable Remote Access"
@@ -837,10 +614,9 @@
   icon="trash"
   loading={deletingMcpKey}
   onConfirm={confirmDeleteMcpKey}
-  onCancel={cancelDeleteMcpKey}
+  onCancel={() => showDeleteMcpModal = false}
 />
 
-<!-- Delete Bot API Key Modal -->
 <ConfirmModal
   show={showDeleteBotModal}
   title="Disable Bot API Access"
@@ -851,10 +627,9 @@
   icon="trash"
   loading={deletingBotKey}
   onConfirm={confirmDeleteBotKey}
-  onCancel={cancelDeleteBotKey}
+  onCancel={() => showDeleteBotModal = false}
 />
 
-<!-- Delete Backup Modal -->
 <ConfirmModal
   show={showDeleteBackupModal}
   title="Delete Backup"
@@ -865,7 +640,10 @@
   icon="trash"
   loading={deletingBackup}
   onConfirm={confirmDeleteBackup}
-  onCancel={cancelDeleteBackup}
+  onCancel={() => {
+    showDeleteBackupModal = false;
+    deleteBackupTarget = null;
+  }}
 />
 
 <style>
@@ -891,7 +669,6 @@
     justify-content: flex-end;
   }
 
-  /* Large screens */
   @media (min-width: 1400px) {
     .page-content {
       max-width: 900px;
@@ -904,7 +681,6 @@
     }
   }
 
-  /* Small screens */
   @media (max-width: 480px) {
     .page-content {
       padding: var(--space-3);

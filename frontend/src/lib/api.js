@@ -43,6 +43,43 @@ function normalizeHeaders(headers) {
   return { ...headers };
 }
 
+/**
+ * @param {unknown} body
+ * @returns {body is Record<string, unknown>}
+ */
+function isJsonBody(body) {
+  return !!body && typeof body === 'object' && !(body instanceof FormData);
+}
+
+/**
+ * @param {QueryValue} value
+ */
+function booleanQuery(value) {
+  return value ? 'true' : undefined;
+}
+
+/**
+ * @param {string} endpoint
+ * @param {QueryParams} [params={}]
+ */
+function withQuery(endpoint, params = {}) {
+  return `${endpoint}${buildQuery(params)}`;
+}
+
+/**
+ * @param {string} basePath
+ * @param {(params: QueryParams) => QueryParams} [buildListParams]
+ */
+function createCrudApi(basePath, buildListParams) {
+  return {
+    list: (params = {}) => get(withQuery(basePath, buildListParams ? buildListParams(params) : params)),
+    get: (id) => get(`${basePath}/${id}`),
+    create: (data) => post(basePath, data),
+    update: (id, data) => put(`${basePath}/${id}`, data),
+    delete: (id) => del(`${basePath}/${id}`),
+  };
+}
+
 export function getCsrfToken() {
   if (typeof document === 'undefined') return null;
   const match = document.cookie.match(/(?:^|; )csrf_token=([^;]+)/);
@@ -71,16 +108,8 @@ export function buildQuery(params = {}) {
 export async function request(endpoint, options = {}) {
   const url = `${API_BASE}${endpoint}`;
 
-  /** @type {{ headers: Record<string, string> }} */
-  const defaultOptions = {
-    headers: {
-      'Content-Type': 'application/json',
-    },
-  };
-
   /** @type {Record<string, string>} */
   const headers = {
-    ...normalizeHeaders(defaultOptions.headers),
     ...normalizeHeaders(options.headers),
   };
   const method = (options.method || 'GET').toUpperCase();
@@ -93,10 +122,10 @@ export async function request(endpoint, options = {}) {
   }
 
   /** @type {ApiRequestOptions} */
-  const config = { ...defaultOptions, ...options, headers };
+  const config = { ...options, headers };
 
-  // Handle body
-  if (config.body && typeof config.body === 'object' && !(config.body instanceof FormData)) {
+  if (isJsonBody(config.body)) {
+    headers['Content-Type'] ||= 'application/json';
     config.body = JSON.stringify(config.body);
   }
 
@@ -166,24 +195,10 @@ export const profileApi = {
   update: (data) => put('/profile', data),
 
   /** @param {File} file */
-  uploadLogo: async (file) => {
+  uploadLogo: (file) => {
     const formData = new FormData();
     formData.append('file', file);
-    const csrfToken = getCsrfToken();
-    /** @type {Record<string, string>} */
-    const headers = csrfToken ? { 'X-CSRF-Token': csrfToken } : {};
-
-    const response = await fetch(`${API_BASE}/profile/logo`, {
-      method: 'POST',
-      headers,
-      body: formData,
-    });
-
-    if (!response.ok) {
-      throw new Error('Failed to upload logo');
-    }
-
-    return response.json();
+    return request('/profile/logo', { method: 'POST', body: formData });
   },
 
   deleteLogo: () => del('/profile/logo'),
@@ -200,99 +215,53 @@ export const profileApi = {
 // ===== Clients =====
 
 export const clientsApi = {
-  /** @param {QueryParams} [params={}] */
-  list: (params = {}) => {
-    return get(
-      `/clients${buildQuery({
-        search: params.search,
-        include_deleted: params.include_deleted ? 'true' : undefined,
-        sort_by: params.sort_by,
-        sort_dir: params.sort_dir,
-      })}`
-    );
-  },
-
-  /** @param {number | string} id */
-  get: (id) => get(`/clients/${id}`),
-
-  /** @param {Record<string, unknown>} data */
-  create: (data) => post('/clients', data),
-
-  /** @param {number | string} id @param {Record<string, unknown>} data */
-  update: (id, data) => put(`/clients/${id}`, data),
-
-  /** @param {number | string} id */
-  delete: (id) => del(`/clients/${id}`),
-
-  /** @param {number | string} id */
+  ...createCrudApi('/clients', (params) => ({
+    search: params.search,
+    include_deleted: booleanQuery(params.include_deleted),
+    sort_by: params.sort_by,
+    sort_dir: params.sort_dir,
+  })),
   restore: (id) => post(`/clients/${id}/restore`),
 };
 
 // ===== Invoices =====
 
 export const invoicesApi = {
-  /** @param {QueryParams} [params={}] */
-  list: (params = {}) => {
-    return get(
-      `/invoices${buildQuery({
-        status: params.status,
-        document_type: params.document_type,
-        client_id: params.client_id,
-        from_date: params.from_date,
-        to_date: params.to_date,
-        include_deleted: params.include_deleted ? 'true' : undefined,
-        sort_by: params.sort_by,
-        sort_dir: params.sort_dir,
-        limit: params.limit || 100,
-      })}`
-    );
-  },
-
-  /** @param {QueryParams} [params={}] */
-  listPaginated: (params = {}) => {
-    return get(
-      `/invoices/paginated${buildQuery({
-        status: params.status,
-        document_type: params.document_type,
-        client_id: params.client_id,
-        from_date: params.from_date,
-        to_date: params.to_date,
-        include_deleted: params.include_deleted ? 'true' : undefined,
-        sort_by: params.sort_by,
-        sort_dir: params.sort_dir,
-        page: params.page || 1,
-        per_page: params.per_page || 25,
-      })}`
-    );
-  },
-
-  /** @param {number | string} id */
-  get: (id) => get(`/invoices/${id}`),
-
-  /** @param {Record<string, unknown>} data */
-  create: (data) => post('/invoices', data),
-
-  /** @param {number | string} id @param {Record<string, unknown>} data */
-  update: (id, data) => put(`/invoices/${id}`, data),
-
-  /** @param {number | string} id */
-  delete: (id) => del(`/invoices/${id}`),
-
-  /** @param {number | string} id */
+  ...createCrudApi('/invoices', (params) => ({
+    status: params.status,
+    document_type: params.document_type,
+    client_id: params.client_id,
+    from_date: params.from_date,
+    to_date: params.to_date,
+    include_deleted: booleanQuery(params.include_deleted),
+    sort_by: params.sort_by,
+    sort_dir: params.sort_dir,
+    limit: params.limit || 100,
+  })),
+  listPaginated: (params = {}) =>
+    get(withQuery('/invoices/paginated', {
+      status: params.status,
+      document_type: params.document_type,
+      client_id: params.client_id,
+      from_date: params.from_date,
+      to_date: params.to_date,
+      include_deleted: booleanQuery(params.include_deleted),
+      sort_by: params.sort_by,
+      sort_dir: params.sort_dir,
+      page: params.page || 1,
+      per_page: params.per_page || 25,
+    })),
   restore: (id) => post(`/invoices/${id}/restore`),
 
   /** @param {number | string} id @param {{description?: string, quantity?: number, unit_type?: string, unit_price?: string | number, sort_order?: number}} item */
-  addItem: (id, item) => {
-    return post(
-      `/invoices/${id}/items${buildQuery({
-        description: item.description,
-        quantity: item.quantity,
-        unit_type: item.unit_type || 'qty',
-        unit_price: item.unit_price,
-        sort_order: item.sort_order || 0,
-      })}`
-    );
-  },
+  addItem: (id, item) =>
+    post(withQuery(`/invoices/${id}/items`, {
+      description: item.description,
+      quantity: item.quantity,
+      unit_type: item.unit_type || 'qty',
+      unit_price: item.unit_price,
+      sort_order: item.sort_order || 0,
+    })),
 
   /** @param {number | string} id @param {number | string} itemId @param {Record<string, unknown>} data */
   updateItem: (id, itemId, data) => put(`/invoices/${id}/items/${itemId}`, data),
@@ -333,14 +302,14 @@ export const backupsApi = {
   updateSettings: (data) => put('/backups/settings', data),
 
   /** @param {boolean} [includeS3=true] */
-  list: (includeS3 = true) => get(`/backups?include_s3=${includeS3}`),
+  list: (includeS3 = true) => get(withQuery('/backups', { include_s3: includeS3 })),
 
   /** @param {boolean} [compress=true] */
-  create: (compress = true) => post(`/backups?compress=${compress}`),
+  create: (compress = true) => post(withQuery('/backups', { compress })),
 
   /** @param {string} filename @param {boolean} [downloadFromS3=false] */
   restore: (filename, downloadFromS3 = false) =>
-    post(`/backups/restore/${encodeURIComponent(filename)}?download_from_s3=${downloadFromS3}`),
+    post(withQuery(`/backups/restore/${encodeURIComponent(filename)}`, { download_from_s3: downloadFromS3 })),
 
   /** @param {string} filename */
   download: (filename) => `${API_BASE}/backups/download/${encodeURIComponent(filename)}`,
@@ -356,29 +325,10 @@ export const backupsApi = {
 // ===== Recurring Schedules =====
 
 export const recurringApi = {
-  /** @param {QueryParams} [params={}] */
-  list: (params = {}) => {
-    return get(
-      `/recurring${buildQuery({
-        client_id: params.client_id,
-        active_only: params.active_only,
-      })}`
-    );
-  },
-
-  /** @param {number | string} id */
-  get: (id) => get(`/recurring/${id}`),
-
-  /** @param {Record<string, unknown>} data */
-  create: (data) => post('/recurring', data),
-
-  /** @param {number | string} id @param {Record<string, unknown>} data */
-  update: (id, data) => put(`/recurring/${id}`, data),
-
-  /** @param {number | string} id */
-  delete: (id) => del(`/recurring/${id}`),
-
-  /** @param {number | string} id */
+  ...createCrudApi('/recurring', (params) => ({
+    client_id: params.client_id,
+    active_only: params.active_only,
+  })),
   trigger: (id) => post(`/recurring/${id}/trigger`),
 };
 
@@ -409,16 +359,12 @@ export const emailApi = {
 
 export const searchApi = {
   /** @param {string} query @param {QueryParams} [params={}] */
-  search: (query, params = {}) => {
-    return get(
-      `/search${buildQuery({
-        q: query,
-        invoices: params.invoices,
-        clients: params.clients,
-        limit: params.limit,
-      })}`
-    );
-  },
+  search: (query, params = {}) => get(withQuery('/search', {
+    q: query,
+    invoices: params.invoices,
+    clients: params.clients,
+    limit: params.limit,
+  })),
 };
 
 // ===== Analytics =====
@@ -427,23 +373,15 @@ export const analyticsApi = {
   getDashboardSummary: () => get('/analytics/dashboard'),
 
   /** @param {QueryParams} [params={}] */
-  getRevenue: (params = {}) => {
-    return get(
-      `/analytics/revenue${buildQuery({
-        from_date: params.from_date,
-        to_date: params.to_date,
-        group_by: params.group_by,
-      })}`
-    );
-  },
+  getRevenue: (params = {}) => get(withQuery('/analytics/revenue', {
+    from_date: params.from_date,
+    to_date: params.to_date,
+    group_by: params.group_by,
+  })),
 
   /** @param {QueryParams} [params={}] */
-  getClientLifetimeValues: (params = {}) => {
-    return get(
-      `/analytics/clients${buildQuery({
-        client_id: params.client_id,
-        limit: params.limit,
-      })}`
-    );
-  },
+  getClientLifetimeValues: (params = {}) => get(withQuery('/analytics/clients', {
+    client_id: params.client_id,
+    limit: params.limit,
+  })),
 };

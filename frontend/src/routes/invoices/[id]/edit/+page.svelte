@@ -8,10 +8,12 @@
   import Header from '$lib/components/Header.svelte';
   import Icon from '$lib/components/Icons.svelte';
   import ConfirmModal from '$lib/components/ConfirmModal.svelte';
+  import InvoiceEditDetailsCard from '$lib/components/invoices/InvoiceEditDetailsCard.svelte';
   import InvoiceLineItemsCard from '$lib/components/invoices/InvoiceLineItemsCard.svelte';
   import InvoiceNotesCard from '$lib/components/invoices/InvoiceNotesCard.svelte';
   import InvoicePaymentInstructionsCard from '$lib/components/invoices/InvoicePaymentInstructionsCard.svelte';
   import InvoiceTaxCard from '$lib/components/invoices/InvoiceTaxCard.svelte';
+  import InvoiceTypeCard from '$lib/components/invoices/InvoiceTypeCard.svelte';
 
   $: invoiceId = $page.params.id || '';
 
@@ -68,14 +70,6 @@
   // Parse payment methods from profile
   /** @type {PaymentMethod[]} */
   $: availablePaymentMethods = parseJsonArray(profile?.payment_methods);
-
-  /**
-   * @param {Event} event
-   * @returns {HTMLInputElement}
-   */
-  function getInputTarget(event) {
-    return /** @type {HTMLInputElement} */ (event.currentTarget);
-  }
 
   async function loadInvoice() {
     loading = true;
@@ -215,94 +209,20 @@
     </div>
   {:else}
     <form on:submit|preventDefault={saveInvoice} class="form-layout">
-      <!-- Document Type -->
-      <div class="card">
-        <div class="card-header">
-          <h3 class="card-title">Document Type</h3>
-        </div>
-        <label class="checkbox-label">
-          <input type="checkbox" checked={documentType === 'quote'} on:change={(event) => documentType = getInputTarget(event).checked ? 'quote' : 'invoice'} />
-          <span>This is a Quote</span>
-        </label>
-        <p class="form-hint">Changing document type will not regenerate the number. Create a new document if you need a different number format.</p>
-      </div>
+      <InvoiceTypeCard
+        bind:documentType
+        helpText="Changing document type will not regenerate the number. Create a new document if you need a different number format."
+      />
 
-      <!-- Invoice Details -->
-      <div class="card">
-        <div class="card-header">
-          <h3 class="card-title">{documentType === 'quote' ? 'Quote' : 'Invoice'} Details</h3>
-        </div>
-
-        <!-- Invoice Number (read-only) -->
-        <div class="form-group" style="margin-bottom: var(--space-4);">
-          <div class="label">{documentType === 'quote' ? 'Quote' : 'Invoice'} Number</div>
-          <div class="invoice-number-display">
-            <span class="invoice-number-value">{invoice?.invoice_number || ''}</span>
-            <span class="invoice-number-hint">Currency: {invoice?.currency_code || 'USD'}</span>
-          </div>
-        </div>
-
-        <div class="form-row">
-          <div class="form-group">
-            <label for="issue-date" class="label">Issue Date</label>
-            <input
-              id="issue-date"
-              type="date"
-              class="input"
-              bind:value={issueDate}
-            />
-            <p class="form-hint">Changing the issue date may update the invoice number.</p>
-          </div>
-
-          <div class="form-group">
-            <label for="due-date" class="label">Due Date</label>
-            <input
-              id="due-date"
-              type="date"
-              class="input"
-              bind:value={dueDate}
-            />
-          </div>
-        </div>
-
-        <div class="form-row">
-          <div class="form-group">
-            <label for="terms" class="label">Payment Terms (days)</label>
-            <input
-              id="terms"
-              type="number"
-              class="input"
-              min="0"
-              bind:value={paymentTermsDays}
-            />
-          </div>
-
-          <div class="form-group">
-            <label for="status" class="label">Status</label>
-            <select id="status" class="select" bind:value={status}>
-              <option value="draft">Draft</option>
-              <option value="sent">Sent</option>
-              <option value="paid">Paid</option>
-              <option value="overdue">Overdue</option>
-              <option value="cancelled">Cancelled</option>
-            </select>
-          </div>
-        </div>
-
-        <div class="form-row">
-          <div class="form-group">
-            <label for="client-ref" class="label">Client Reference / PO Number</label>
-            <input
-              id="client-ref"
-              type="text"
-              class="input"
-              placeholder="PO-12345"
-              bind:value={clientReference}
-            />
-          </div>
-        </div>
-
-      </div>
+      <InvoiceEditDetailsCard
+        {invoice}
+        bind:documentType
+        bind:issueDate
+        bind:dueDate
+        bind:paymentTermsDays
+        bind:status
+        bind:clientReference
+      />
 
       <InvoiceLineItemsCard bind:items bind:taxEnabled bind:taxRate bind:taxName />
 
@@ -373,53 +293,10 @@
     gap: var(--space-6);
   }
 
-  .form-hint {
-    font-size: 0.8125rem;
-    color: var(--color-text-tertiary);
-    margin-top: var(--space-1);
-  }
-
   .form-actions {
     display: flex;
     justify-content: flex-end;
     gap: var(--space-3);
-  }
-
-  .checkbox-label {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-    cursor: pointer;
-    font-weight: 500;
-  }
-
-  .checkbox-label input[type="checkbox"] {
-    width: 18px;
-    height: 18px;
-    accent-color: var(--color-primary);
-  }
-
-  /* Invoice Number Display */
-  .invoice-number-display {
-    display: flex;
-    align-items: center;
-    gap: var(--space-3);
-    padding: var(--space-2) var(--space-3);
-    background: var(--color-bg-sunken);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-md);
-  }
-
-  .invoice-number-value {
-    font-family: var(--font-mono);
-    font-weight: 600;
-    color: var(--color-text);
-  }
-
-  .invoice-number-hint {
-    font-size: 0.8125rem;
-    color: var(--color-text-tertiary);
-    margin-left: auto;
   }
 
   /* Responsive - Large screens */

@@ -12,6 +12,47 @@
   let showResults = false;
   let searchInput;
 
+  const navItems = [
+    { path: '/dashboard', label: 'Dashboard', icon: 'home' },
+    { path: '/invoices', label: 'Invoices', icon: 'invoice' },
+    { path: '/recurring', label: 'Recurring', icon: 'repeat' },
+    { path: '/clients', label: 'Clients', icon: 'users' },
+    { path: '/reports', label: 'Reports', icon: 'chart' },
+    { path: '/settings', label: 'Settings', icon: 'settings' },
+    { path: '/trash', label: 'Trash', icon: 'trash' },
+    { path: '/help', label: 'Help', icon: 'help' },
+  ];
+
+  const searchGroups = [
+    {
+      key: 'invoices',
+      label: 'Invoices',
+      icon: 'invoice',
+      type: 'invoice',
+      getId: (item) => item.id,
+      getTitle: (item) => item.invoice_number,
+      getSubtitle: (item) => item.client_name || item.client_business || 'No client'
+    },
+    {
+      key: 'clients',
+      label: 'Clients',
+      icon: 'users',
+      type: 'client',
+      getId: (item) => item.id,
+      getTitle: (item) => item.business_name || item.name,
+      getSubtitle: (item) => item.email
+    },
+    {
+      key: 'line_items',
+      label: 'Line Items',
+      icon: 'invoice',
+      type: 'invoice',
+      getId: (item) => item.invoice_id,
+      getTitle: (item) => item.description,
+      getSubtitle: (item) => `${item.invoice_number} - ${item.client_name || item.client_business || 'No client'}`
+    }
+  ];
+
   async function handleLogout() {
     await auth.logout();
     goto('/login');
@@ -50,28 +91,24 @@
     searchResults = null;
   }
 
-  function navigateToResult(type, id) {
-    closeSearch();
+  function closeSidebarOnMobile() {
     if (window.innerWidth < 768) {
       sidebarOpen.set(false);
     }
+  }
+
+  function navigateToResult(type, id) {
+    closeSearch();
+    closeSidebarOnMobile();
     const path = type === 'invoice' ? `/invoices/${id}` : `/clients/${id}`;
     goto(path);
   }
 
-  const navItems = [
-    { path: '/dashboard', label: 'Dashboard', icon: 'home' },
-    { path: '/invoices', label: 'Invoices', icon: 'invoice' },
-    { path: '/recurring', label: 'Recurring', icon: 'repeat' },
-    { path: '/clients', label: 'Clients', icon: 'users' },
-    { path: '/reports', label: 'Reports', icon: 'chart' },
-    { path: '/settings', label: 'Settings', icon: 'settings' },
-    { path: '/trash', label: 'Trash', icon: 'trash' },
-    { path: '/help', label: 'Help', icon: 'help' },
-  ];
-
   // Reactive current path to ensure menu updates on navigation
   $: currentPath = $page.url.pathname;
+  $: visibleSearchGroups = searchGroups
+    .map((group) => ({ ...group, items: searchResults?.[group.key] || [] }))
+    .filter((group) => group.items.length > 0);
 
   function isActive(path, current) {
     if (path === '/dashboard') {
@@ -129,62 +166,28 @@
         {#if searching}
           <div class="search-loading">Searching...</div>
         {:else if searchResults}
-          {#if searchResults.invoices?.length === 0 && searchResults.clients?.length === 0 && searchResults.line_items?.length === 0}
+          {#if visibleSearchGroups.length === 0}
             <div class="search-empty">No results found</div>
           {:else}
-            {#if searchResults.invoices?.length > 0}
+            {#each visibleSearchGroups as group}
               <div class="search-group">
-                <div class="search-group-label">Invoices</div>
-                {#each searchResults.invoices as invoice}
+                <div class="search-group-label">{group.label}</div>
+                {#each group.items as item}
                   <button
                     class="search-result"
-                    on:click={() => navigateToResult('invoice', invoice.id)}
+                    on:click={() => navigateToResult(group.type, group.getId(item))}
                   >
-                    <Icon name="invoice" size="sm" />
+                    <Icon name={group.icon} size="sm" />
                     <div class="search-result-info">
-                      <span class="search-result-title">{invoice.invoice_number}</span>
-                      <span class="search-result-subtitle">{invoice.client_name || invoice.client_business || 'No client'}</span>
-                    </div>
-                  </button>
-                {/each}
-              </div>
-            {/if}
-            {#if searchResults.clients?.length > 0}
-              <div class="search-group">
-                <div class="search-group-label">Clients</div>
-                {#each searchResults.clients as client}
-                  <button
-                    class="search-result"
-                    on:click={() => navigateToResult('client', client.id)}
-                  >
-                    <Icon name="users" size="sm" />
-                    <div class="search-result-info">
-                      <span class="search-result-title">{client.business_name || client.name}</span>
-                      {#if client.email}
-                        <span class="search-result-subtitle">{client.email}</span>
+                      <span class="search-result-title">{group.getTitle(item)}</span>
+                      {#if group.getSubtitle(item)}
+                        <span class="search-result-subtitle">{group.getSubtitle(item)}</span>
                       {/if}
                     </div>
                   </button>
                 {/each}
               </div>
-            {/if}
-            {#if searchResults.line_items?.length > 0}
-              <div class="search-group">
-                <div class="search-group-label">Line Items</div>
-                {#each searchResults.line_items as item}
-                  <button
-                    class="search-result"
-                    on:click={() => navigateToResult('invoice', item.invoice_id)}
-                  >
-                    <Icon name="invoice" size="sm" />
-                    <div class="search-result-info">
-                      <span class="search-result-title">{item.description}</span>
-                      <span class="search-result-subtitle">{item.invoice_number} - {item.client_name || item.client_business || 'No client'}</span>
-                    </div>
-                  </button>
-                {/each}
-              </div>
-            {/if}
+            {/each}
           {/if}
         {/if}
       </div>
@@ -197,11 +200,7 @@
         href={item.path}
         class="nav-item"
         class:active={isActive(item.path, currentPath)}
-        on:click={() => {
-          if (window.innerWidth < 768) {
-            sidebarOpen.set(false);
-          }
-        }}
+        on:click={closeSidebarOnMobile}
       >
         <Icon name={item.icon} size="md" />
         <span>{item.label}</span>

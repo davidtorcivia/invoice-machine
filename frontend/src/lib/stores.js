@@ -1,7 +1,7 @@
 /**
  * Svelte stores for Invoice Machine
  */
-import { writable, derived, get } from 'svelte/store';
+import { writable, get } from 'svelte/store';
 import { browser } from '$app/environment';
 import { request } from '$lib/api';
 
@@ -11,12 +11,26 @@ import { request } from '$lib/api';
 
 // ===== Auth Store =====
 
+const DEFAULT_AUTH_STATE = {
+  loading: false,
+  authenticated: false,
+  needsSetup: false,
+  username: null,
+};
+
+function buildAuthState(data = {}) {
+  return {
+    ...DEFAULT_AUTH_STATE,
+    authenticated: !!data.authenticated,
+    needsSetup: !!data.needs_setup,
+    username: data.username ?? null,
+  };
+}
+
 function createAuthStore() {
   const { subscribe, set } = writable({
+    ...DEFAULT_AUTH_STATE,
     loading: true,
-    authenticated: false,
-    needsSetup: false,
-    username: null,
   });
 
   return {
@@ -24,15 +38,10 @@ function createAuthStore() {
     check: async () => {
       try {
         const data = await request('/auth/status');
-        set({
-          loading: false,
-          authenticated: data.authenticated,
-          needsSetup: data.needs_setup,
-          username: data.username,
-        });
+        set(buildAuthState(data));
         return data;
       } catch (e) {
-        set({ loading: false, authenticated: false, needsSetup: false, username: null });
+        set(DEFAULT_AUTH_STATE);
         return { authenticated: false, needs_setup: false };
       }
     },
@@ -41,7 +50,7 @@ function createAuthStore() {
         method: 'POST',
         body: { username, password },
       });
-      set({ loading: false, authenticated: true, needsSetup: false, username: data.username });
+      set(buildAuthState({ authenticated: true, username: data.username }));
       return data;
     },
     setup: async (username, password) => {
@@ -49,12 +58,12 @@ function createAuthStore() {
         method: 'POST',
         body: { username, password },
       });
-      set({ loading: false, authenticated: true, needsSetup: false, username: data.username });
+      set(buildAuthState({ authenticated: true, username: data.username }));
       return data;
     },
     logout: async () => {
       await request('/auth/logout', { method: 'POST' });
-      set({ loading: false, authenticated: false, needsSetup: false, username: null });
+      set(DEFAULT_AUTH_STATE);
     },
   };
 }
@@ -71,29 +80,35 @@ export const toggleSidebar = () => {
 
 // ===== Theme Store =====
 
+function applyTheme(theme) {
+  if (!browser) return;
+
+  const root = document.documentElement;
+  root.classList.remove('light', 'dark');
+
+  if (theme === 'light') {
+    root.classList.add('light');
+  } else if (theme === 'dark') {
+    root.classList.add('dark');
+  }
+}
+
+function persistTheme(theme) {
+  if (browser) {
+    localStorage.setItem('theme', theme);
+  }
+}
+
+function getNextTheme(theme) {
+  return theme === 'system' ? 'light' : theme === 'light' ? 'dark' : 'system';
+}
+
 function createThemeStore() {
-  // Get initial value from localStorage or default to 'system'
   const stored = browser ? localStorage.getItem('theme') : null;
   const initial = stored || 'system';
 
   const { subscribe, set, update } = writable(initial);
 
-  /** @param {string} theme */
-  const applyTheme = (theme) => {
-    if (!browser) return;
-
-    const root = document.documentElement;
-    root.classList.remove('light', 'dark');
-
-    if (theme === 'light') {
-      root.classList.add('light');
-    } else if (theme === 'dark') {
-      root.classList.add('dark');
-    }
-    // 'system' uses media query, no class needed
-  };
-
-  // Apply initial theme
   if (browser) {
     applyTheme(initial);
   }
@@ -101,19 +116,14 @@ function createThemeStore() {
   return {
     subscribe,
     set: (value) => {
-      if (browser) {
-        localStorage.setItem('theme', value);
-      }
+      persistTheme(value);
       applyTheme(value);
       set(value);
     },
     toggle: () => {
       update((current) => {
-        // Cycle: system -> light -> dark -> system
-        const next = current === 'system' ? 'light' : current === 'light' ? 'dark' : 'system';
-        if (browser) {
-          localStorage.setItem('theme', next);
-        }
+        const next = getNextTheme(current);
+        persistTheme(next);
         applyTheme(next);
         return next;
       });
@@ -157,7 +167,7 @@ export const toast = createToastStore();
 // ===== Loading State =====
 
 export const createLoadingStore = () => {
-  const { subscribe, set, update } = writable(false);
+  const { subscribe, set } = writable(false);
 
   return {
     subscribe,
