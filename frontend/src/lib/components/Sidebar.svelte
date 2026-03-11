@@ -11,6 +11,7 @@
   let searching = false;
   let showResults = false;
   let searchInput;
+  let searchContainer;
 
   const navItems = [
     { path: '/dashboard', label: 'Dashboard', icon: 'home' },
@@ -77,6 +78,16 @@
     }
   }
 
+  function handleSearchInput() {
+    if (searchQuery.trim().length >= 2) {
+      handleSearch();
+    } else {
+      searchResults = null;
+      showResults = false;
+      searching = false;
+    }
+  }
+
   function handleSearchKeydown(e) {
     if (e.key === 'Enter') {
       handleSearch();
@@ -85,10 +96,21 @@
     }
   }
 
+  function dismissSearchResults() {
+    showResults = false;
+  }
+
   function closeSearch() {
     showResults = false;
     searchQuery = '';
     searchResults = null;
+  }
+
+  function handleWindowPointerDown(event) {
+    if (!showResults || !searchContainer) return;
+    if (!searchContainer.contains(/** @type {Node} */ (event.target))) {
+      dismissSearchResults();
+    }
   }
 
   function closeSidebarOnMobile() {
@@ -118,6 +140,8 @@
   }
 </script>
 
+<svelte:window on:mousedown={handleWindowPointerDown} />
+
 <!-- Mobile overlay -->
 {#if $sidebarOpen}
   <div
@@ -142,7 +166,7 @@
   </div>
 
   <!-- Search Bar -->
-  <div class="sidebar-search">
+  <div class="sidebar-search" bind:this={searchContainer}>
     <div class="search-input-wrapper">
       <Icon name="search" size="sm" />
       <input
@@ -152,7 +176,8 @@
         bind:value={searchQuery}
         bind:this={searchInput}
         on:keydown={handleSearchKeydown}
-        on:input={() => searchQuery.length >= 2 && handleSearch()}
+        on:focus={() => searchResults && (showResults = true)}
+        on:input={handleSearchInput}
       />
       {#if searchQuery}
         <button class="search-clear" on:click={closeSearch}>
@@ -163,6 +188,12 @@
 
     {#if showResults}
       <div class="search-results">
+        <div class="search-results-header">
+          <span class="search-results-title">Search Results</span>
+          <button class="search-results-close" on:click={dismissSearchResults} aria-label="Close search results">
+            <Icon name="x" size="sm" />
+          </button>
+        </div>
         {#if searching}
           <div class="search-loading">Searching...</div>
         {:else if searchResults}
@@ -317,6 +348,41 @@
     max-height: 320px;
     overflow-y: auto;
     margin-top: var(--space-1);
+  }
+
+  .search-results-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2);
+    padding: var(--space-3) var(--space-4) var(--space-2);
+    border-bottom: 1px solid var(--color-border-light);
+  }
+
+  .search-results-title {
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--color-text-tertiary);
+  }
+
+  .search-results-close {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    background: none;
+    color: var(--color-text-tertiary);
+    border-radius: var(--radius-sm);
+    padding: var(--space-1);
+    cursor: pointer;
+    transition: background-color var(--transition-fast), color var(--transition-fast);
+  }
+
+  .search-results-close:hover {
+    color: var(--color-text);
+    background: var(--color-bg-hover);
   }
 
   .search-loading,
