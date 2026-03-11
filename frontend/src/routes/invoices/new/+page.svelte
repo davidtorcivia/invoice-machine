@@ -2,12 +2,15 @@
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import { clientsApi, invoicesApi, profileApi } from '$lib/api';
+  import { buildClientPayload, createClientDraft } from '$lib/clients/config';
   import { parseJsonArray, stringifyJsonArray } from '$lib/json';
   import { toast } from '$lib/stores';
-  import { currencies } from '$lib/data/currencies';
   import Header from '$lib/components/Header.svelte';
   import Icon from '$lib/components/Icons.svelte';
   import ConfirmModal from '$lib/components/ConfirmModal.svelte';
+  import ClientQuickCreateModal from '$lib/components/clients/ClientQuickCreateModal.svelte';
+  import InvoiceClientDetailsCard from '$lib/components/invoices/InvoiceClientDetailsCard.svelte';
+  import InvoiceDocumentTypeCard from '$lib/components/invoices/InvoiceDocumentTypeCard.svelte';
   import InvoiceLineItemsCard from '$lib/components/invoices/InvoiceLineItemsCard.svelte';
   import InvoiceNotesCard from '$lib/components/invoices/InvoiceNotesCard.svelte';
   import InvoicePaymentInstructionsCard from '$lib/components/invoices/InvoicePaymentInstructionsCard.svelte';
@@ -141,12 +144,6 @@
   /** @type {PaymentMethod[]} */
   $: availablePaymentMethods = parseJsonArray(profile?.payment_methods);
 
-  function handleClientModalKeydown(event) {
-    if (event.key === 'Escape') {
-      closeClientModal();
-    }
-  }
-
   async function saveInvoice() {
     if (!clientId) {
       toast.error('Please select a client');
@@ -200,17 +197,7 @@
   }
 
   function openClientModal() {
-    newClient = {
-      name: '',
-      business_name: '',
-      email: '',
-      phone: '',
-      address_line1: '',
-      city: '',
-      state: '',
-      postal_code: '',
-      payment_terms_days: 30,
-    };
+    newClient = createClientDraft();
     showClientModal = true;
   }
 
@@ -226,17 +213,7 @@
 
     clientModalSaving = true;
     try {
-      const client = await clientsApi.create({
-        name: newClient.name || undefined,
-        business_name: newClient.business_name || undefined,
-        email: newClient.email || undefined,
-        phone: newClient.phone || undefined,
-        address_line1: newClient.address_line1 || undefined,
-        city: newClient.city || undefined,
-        state: newClient.state || undefined,
-        postal_code: newClient.postal_code || undefined,
-        payment_terms_days: Number(newClient.payment_terms_days) || undefined,
-      });
+      const client = await clientsApi.create(buildClientPayload(newClient));
 
       toast.success('Client created successfully');
       await loadClients();
@@ -268,108 +245,19 @@
     </div>
   {:else}
     <form on:submit|preventDefault={saveInvoice} class="form-layout">
-      <!-- Document Type -->
-      <div class="card">
-        <div class="card-header">
-          <h3 class="card-title">Document Type</h3>
-        </div>
-        <label class="checkbox-label">
-          <input type="checkbox" bind:checked={isQuote} />
-          <span>This is a Quote</span>
-        </label>
-        <p class="form-hint">Quotes use a different number format (Q-YYYYMMDD-N) and show "Quote" instead of "Invoice" on the PDF.</p>
-      </div>
+      <InvoiceDocumentTypeCard bind:isQuote />
 
-      <!-- Client & Dates -->
-      <div class="card">
-        <div class="card-header">
-          <h3 class="card-title">Client & Dates</h3>
-        </div>
-
-        <div class="form-row">
-          <div class="form-group">
-            <label for="client" class="label">Client *</label>
-            <div class="client-select-wrapper">
-              <select id="client" class="select" bind:value={clientId} required>
-                <option value="">Select a client...</option>
-                {#each clients as client}
-                  <option value={client.id}>{client.business_name || client.name}</option>
-                {/each}
-              </select>
-              <button
-                type="button"
-                class="btn btn-secondary btn-sm new-client-btn"
-                on:click={openClientModal}
-              >
-                <Icon name="plus" size="sm" />
-                New
-              </button>
-            </div>
-          </div>
-
-          <div class="form-group">
-            <label for="issue-date" class="label">Issue Date</label>
-            <input
-              id="issue-date"
-              type="date"
-              class="input"
-              bind:value={issueDate}
-            />
-          </div>
-        </div>
-
-        <div class="form-row">
-          <div class="form-group">
-            <label for="terms" class="label">Payment Terms (days)</label>
-            <input
-              id="terms"
-              type="number"
-              class="input"
-              min="0"
-              bind:value={paymentTermsDays}
-            />
-          </div>
-
-          <div class="form-group">
-            <label for="currency" class="label">Currency</label>
-            <select id="currency" class="select" bind:value={currencyCode}>
-              {#each currencies as currency}
-                {#if currency.disabled}
-                  <option value="" disabled>{currency.name}</option>
-                {:else}
-                  <option value={currency.code}>{currency.code} - {currency.name}</option>
-                {/if}
-              {/each}
-            </select>
-          </div>
-        </div>
-
-        <div class="form-row">
-          <div class="form-group">
-            <label for="client-ref" class="label">Client Reference / PO Number</label>
-            <input
-              id="client-ref"
-              type="text"
-              class="input"
-              placeholder="PO-12345"
-              bind:value={clientReference}
-            />
-          </div>
-
-          <div class="form-group">
-            <label for="invoice-number" class="label">{isQuote ? 'Quote' : 'Invoice'} Number Override</label>
-            <input
-              id="invoice-number"
-              type="text"
-              class="input"
-              placeholder="Auto-generated"
-              bind:value={invoiceNumberOverride}
-            />
-            <p class="form-hint">Leave blank for automatic numbering.</p>
-          </div>
-        </div>
-
-      </div>
+      <InvoiceClientDetailsCard
+        {clients}
+        bind:clientId
+        bind:issueDate
+        bind:paymentTermsDays
+        bind:currencyCode
+        bind:clientReference
+        bind:invoiceNumberOverride
+        {isQuote}
+        {openClientModal}
+      />
 
       <InvoiceLineItemsCard bind:items bind:taxEnabled bind:taxRate bind:taxName />
 
@@ -428,147 +316,9 @@
   onCancel={() => showDiscardModal = false}
 />
 
-<!-- New Client Modal -->
-{#if showClientModal}
-  <div class="modal-overlay" role="presentation" tabindex="-1" on:keydown={handleClientModalKeydown}>
-    <button type="button" class="modal-backdrop" aria-label="Close create client dialog" on:click={closeClientModal}></button>
-    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title" tabindex="-1">
-      <div class="modal-header">
-        <h2 id="modal-title" class="modal-title">New Client</h2>
-        <button class="btn btn-ghost btn-icon btn-sm" on:click={closeClientModal}>
-          <Icon name="x" size="md" />
-        </button>
-      </div>
-
-      <div class="modal-body">
-        <div class="form-row">
-          <div class="form-group">
-            <label for="client-name" class="label">Contact Name</label>
-            <input
-              id="client-name"
-              type="text"
-              class="input"
-              placeholder="John Smith"
-              bind:value={newClient.name}
-            />
-          </div>
-
-          <div class="form-group">
-            <label for="client-business" class="label">Business Name</label>
-            <input
-              id="client-business"
-              type="text"
-              class="input"
-              placeholder="Acme Inc."
-              bind:value={newClient.business_name}
-            />
-          </div>
-        </div>
-
-        <div class="form-row">
-          <div class="form-group">
-            <label for="client-email" class="label">Email</label>
-            <input
-              id="client-email"
-              type="email"
-              class="input"
-              placeholder="john@example.com"
-              bind:value={newClient.email}
-            />
-          </div>
-
-          <div class="form-group">
-            <label for="client-phone" class="label">Phone</label>
-            <input
-              id="client-phone"
-              type="tel"
-              class="input"
-              placeholder="(555) 123-4567"
-              bind:value={newClient.phone}
-            />
-          </div>
-        </div>
-
-        <div class="form-group">
-          <label for="client-address" class="label">Street Address</label>
-          <input
-            id="client-address"
-            type="text"
-            class="input"
-            placeholder="123 Main St"
-            bind:value={newClient.address_line1}
-          />
-        </div>
-
-        <div class="form-row">
-          <div class="form-group">
-            <label for="client-city" class="label">City</label>
-            <input
-              id="client-city"
-              type="text"
-              class="input"
-              bind:value={newClient.city}
-            />
-          </div>
-
-          <div class="form-group">
-            <label for="client-state" class="label">State</label>
-            <input
-              id="client-state"
-              type="text"
-              class="input"
-              bind:value={newClient.state}
-            />
-          </div>
-
-          <div class="form-group">
-            <label for="client-postal" class="label">ZIP Code</label>
-            <input
-              id="client-postal"
-              type="text"
-              class="input"
-              bind:value={newClient.postal_code}
-            />
-          </div>
-        </div>
-      </div>
-
-      <div class="modal-footer">
-        <button
-          type="button"
-          class="btn btn-secondary"
-          on:click={closeClientModal}
-          disabled={clientModalSaving}
-        >
-          Cancel
-        </button>
-        <button
-          type="button"
-          class="btn btn-primary"
-          on:click={saveNewClient}
-          disabled={clientModalSaving}
-        >
-          {clientModalSaving ? 'Creating...' : 'Create Client'}
-        </button>
-      </div>
-    </div>
-  </div>
-{/if}
+<ClientQuickCreateModal show={showClientModal} saving={clientModalSaving} draft={newClient} close={closeClientModal} save={saveNewClient} />
 
 <style>
-  .modal-backdrop {
-    position: absolute;
-    inset: 0;
-    border: 0;
-    padding: 0;
-    background: transparent;
-    cursor: pointer;
-  }
-
-  :global(.modal) {
-    position: relative;
-  }
-
   .page-content {
     padding: var(--space-6) var(--space-8);
     max-width: 1000px;
@@ -586,43 +336,10 @@
     gap: var(--space-6);
   }
 
-  .client-select-wrapper {
-    display: flex;
-    gap: var(--space-2);
-  }
-
-  .client-select-wrapper .select {
-    flex: 1;
-  }
-
-  .new-client-btn {
-    flex-shrink: 0;
-  }
-
   .form-actions {
     display: flex;
     justify-content: flex-end;
     gap: var(--space-3);
-  }
-
-  .checkbox-label {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-    cursor: pointer;
-    font-weight: 500;
-  }
-
-  .checkbox-label input[type="checkbox"] {
-    width: 18px;
-    height: 18px;
-    accent-color: var(--color-primary);
-  }
-
-  .form-hint {
-    font-size: 0.8125rem;
-    color: var(--color-text-tertiary);
-    margin-top: var(--space-2);
   }
 
   /* Responsive - Large screens */
@@ -637,20 +354,12 @@
     .page-content {
       padding: var(--space-4);
     }
-
-    .client-select-wrapper {
-      flex-direction: column;
-    }
   }
 
   /* Responsive - Small screens */
   @media (max-width: 480px) {
     .page-content {
       padding: var(--space-3);
-    }
-
-    .form-row {
-      grid-template-columns: 1fr;
     }
 
     .form-actions {

@@ -2,56 +2,25 @@
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import { clientsApi } from '$lib/api';
+  import { clientSortOptions } from '$lib/clients/config';
   import { toast } from '$lib/stores';
   import Header from '$lib/components/Header.svelte';
   import Icon from '$lib/components/Icons.svelte';
   import ConfirmModal from '$lib/components/ConfirmModal.svelte';
-
-  // Avatar color palette - visually distinct colors
-  const avatarColors = [
-    { bg: '#dbeafe', fg: '#1d4ed8' }, // blue
-    { bg: '#dcfce7', fg: '#15803d' }, // green
-    { bg: '#fef3c7', fg: '#b45309' }, // amber
-    { bg: '#fce7f3', fg: '#be185d' }, // pink
-    { bg: '#e0e7ff', fg: '#4338ca' }, // indigo
-    { bg: '#fed7aa', fg: '#c2410c' }, // orange
-    { bg: '#d1fae5', fg: '#047857' }, // emerald
-    { bg: '#ede9fe', fg: '#6d28d9' }, // violet
-    { bg: '#fecaca', fg: '#b91c1c' }, // red
-    { bg: '#ccfbf1', fg: '#0f766e' }, // teal
-  ];
-
-  function getAvatarColor(clientId) {
-    // Simple hash based on client ID to get consistent color
-    const index = clientId % avatarColors.length;
-    return avatarColors[index];
-  }
+  import ClientListCard from '$lib/components/clients/ClientListCard.svelte';
+  import ClientsToolbar from '$lib/components/clients/ClientsToolbar.svelte';
 
   let clients = [];
   let loading = true;
   let searchQuery = '';
   let sortBy = 'created_at';
   let sortDir = 'desc';
-
-  // Sort options for dropdown
-  const sortOptions = [
-    { value: 'created_at-desc', label: 'Newest first', field: 'created_at', dir: 'desc' },
-    { value: 'created_at-asc', label: 'Oldest first', field: 'created_at', dir: 'asc' },
-    { value: 'name-asc', label: 'Name (A-Z)', field: 'name', dir: 'asc' },
-    { value: 'name-desc', label: 'Name (Z-A)', field: 'name', dir: 'desc' },
-    { value: 'city-asc', label: 'City (A-Z)', field: 'city', dir: 'asc' },
-    { value: 'city-desc', label: 'City (Z-A)', field: 'city', dir: 'desc' },
-    { value: 'payment_terms-asc', label: 'Payment terms (shortest)', field: 'payment_terms', dir: 'asc' },
-    { value: 'payment_terms-desc', label: 'Payment terms (longest)', field: 'payment_terms', dir: 'desc' },
-  ];
-
-  $: selectedSortOption = `${sortBy}-${sortDir}`;
-
-  // Delete modal state
   let showDeleteModal = false;
   let deleteTargetId = null;
   let deleteTargetName = '';
   let deleting = false;
+
+  $: selectedSortOption = `${sortBy}-${sortDir}`;
 
   onMount(async () => {
     await loadClients();
@@ -60,10 +29,7 @@
   async function loadClients() {
     loading = true;
     try {
-      const params = {
-        sort_by: sortBy,
-        sort_dir: sortDir,
-      };
+      const params = { sort_by: sortBy, sort_dir: sortDir };
       if (searchQuery) params.search = searchQuery;
       clients = await clientsApi.list(params);
     } catch (error) {
@@ -73,19 +39,17 @@
     }
   }
 
-  function handleSortChange(e) {
-    const option = sortOptions.find(o => o.value === e.target.value);
-    if (option) {
-      sortBy = option.field;
-      sortDir = option.dir;
-      loadClients();
-    }
+  function handleSortChange(value) {
+    const option = clientSortOptions.find((item) => item.value === value);
+    if (!option) return;
+    sortBy = option.field;
+    sortDir = option.dir;
+    loadClients();
   }
 
-  function openDeleteModal(e, id, name) {
-    e.stopPropagation();
-    deleteTargetId = id;
-    deleteTargetName = name;
+  function openDeleteModal(client) {
+    deleteTargetId = client.id;
+    deleteTargetName = client.business_name || client.name;
     showDeleteModal = true;
   }
 
@@ -127,43 +91,17 @@
     </a>
   </div>
 
-  <!-- Search and Sort -->
-  <div class="search-bar">
-    <div class="search-input-wrapper">
-      <Icon name="search" size="md" />
-      <input
-        type="text"
-        class="search-input"
-        placeholder="Search clients..."
-        bind:value={searchQuery}
-        on:keydown={(e) => {
-          if (e.key === 'Enter') loadClients();
-        }}
-      />
-      {#if searchQuery}
-        <button
-          class="btn btn-ghost btn-icon btn-sm"
-          on:click={() => { searchQuery = ''; loadClients(); }}
-        >
-          <Icon name="x" size="sm" />
-        </button>
-      {/if}
-    </div>
-    <div class="sort-group">
-      <label for="sort-select" class="sort-label">Sort</label>
-      <select
-        id="sort-select"
-        class="select"
-        value={selectedSortOption}
-        on:change={handleSortChange}
-      >
-        {#each sortOptions as option}
-          <option value={option.value}>{option.label}</option>
-        {/each}
-      </select>
-    </div>
-    <button class="btn btn-secondary" on:click={loadClients}>Search</button>
-  </div>
+  <ClientsToolbar
+    bind:searchQuery
+    {selectedSortOption}
+    sortOptions={clientSortOptions}
+    on:search={loadClients}
+    on:clear={() => {
+      searchQuery = '';
+      loadClients();
+    }}
+    on:sortchange={(event) => handleSortChange(event.detail)}
+  />
 
   {#if loading}
     <div class="loading-container">
@@ -172,65 +110,12 @@
   {:else if clients.length > 0}
     <div class="clients-grid">
       {#each clients as client}
-        <div class="client-card" on:click={() => goto(`/clients/${client.id}`)} role="button" tabindex="0" on:keydown={(e) => e.key === 'Enter' && goto(`/clients/${client.id}`)}>
-          <div class="client-card-header">
-            <div
-              class="client-avatar"
-              style="background-color: {getAvatarColor(client.id).bg}; color: {getAvatarColor(client.id).fg};"
-            >
-              {(client.business_name || client.name || '?').charAt(0).toUpperCase()}
-            </div>
-            <div class="client-identity">
-              <h3 class="client-name">{client.business_name || client.name}</h3>
-              {#if client.business_name && client.name}
-                <p class="client-contact">{client.name}</p>
-              {/if}
-            </div>
-            <div class="client-actions">
-              <button
-                class="btn btn-ghost btn-icon btn-sm"
-                on:click={(e) => { e.stopPropagation(); goto(`/clients/${client.id}/edit`); }}
-                title="Edit"
-              >
-                <Icon name="pencil" size="sm" />
-              </button>
-              <button
-                class="btn btn-ghost btn-icon btn-sm"
-                on:click={(e) => openDeleteModal(e, client.id, client.business_name || client.name)}
-                title="Delete"
-              >
-                <Icon name="trash" size="sm" />
-              </button>
-            </div>
-          </div>
-
-          <div class="client-details">
-            {#if client.email}
-              <div class="client-field">
-                <Icon name="mail" size="sm" />
-                <span>{client.email}</span>
-              </div>
-            {/if}
-
-            {#if client.phone}
-              <div class="client-field">
-                <Icon name="phone" size="sm" />
-                <span>{client.phone}</span>
-              </div>
-            {/if}
-
-            {#if client.city || client.state}
-              <div class="client-field">
-                <Icon name="location" size="sm" />
-                <span>{[client.city, client.state].filter(Boolean).join(', ')}</span>
-              </div>
-            {/if}
-          </div>
-
-          <div class="client-footer">
-            <span class="payment-terms">Net {client.payment_terms_days || 30} days</span>
-          </div>
-        </div>
+        <ClientListCard
+          {client}
+          on:open={(event) => goto(`/clients/${event.detail}`)}
+          on:edit={(event) => goto(`/clients/${event.detail}/edit`)}
+          on:delete={(event) => openDeleteModal(event.detail)}
+        />
       {/each}
     </div>
   {:else}
@@ -238,9 +123,7 @@
       <div class="empty-state-icon">
         <Icon name="users" size="xl" />
       </div>
-      <div class="empty-state-title">
-        {searchQuery ? 'No clients found' : 'No clients yet'}
-      </div>
+      <div class="empty-state-title">{searchQuery ? 'No clients found' : 'No clients yet'}</div>
       <div class="empty-state-description">
         {#if searchQuery}
           Try a different search term or create a new client.
@@ -296,256 +179,52 @@
     margin: var(--space-1) 0 0 0;
   }
 
-  .search-bar {
-    display: flex;
-    align-items: flex-end;
-    gap: var(--space-3);
-    margin-bottom: var(--space-6);
-  }
-
-  .sort-group {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-1);
-  }
-
-  .sort-label {
-    font-size: 0.75rem;
-    font-weight: 500;
-    color: var(--color-text-tertiary);
-  }
-
-  .sort-group .select {
-    min-width: 180px;
-  }
-
-  .search-input-wrapper {
-    flex: 1;
-    max-width: 400px;
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-    padding: 0 var(--space-3);
-    background: var(--color-bg-elevated);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-md);
-    transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
-  }
-
-  .search-input-wrapper:focus-within {
-    border-color: var(--color-border-focus);
-    box-shadow: 0 0 0 3px rgb(59 130 246 / 0.1);
-  }
-
-  .search-input-wrapper :global(.icon) {
-    color: var(--color-text-tertiary);
-  }
-
-  .search-input {
-    flex: 1;
-    padding: var(--space-2) 0;
-    border: none;
-    background: none;
-    font-size: 0.9375rem;
-    color: var(--color-text);
-  }
-
-  .search-input:focus {
-    outline: none;
-  }
-
-  .search-input::placeholder {
-    color: var(--color-text-tertiary);
-  }
-
   .loading-container {
     display: flex;
     justify-content: center;
     padding: var(--space-12);
   }
 
+  .spinner {
+    width: 32px;
+    height: 32px;
+    border: 3px solid var(--color-border);
+    border-top-color: var(--color-primary);
+    border-radius: 50%;
+    animation: spin 0.75s linear infinite;
+  }
+
   .clients-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
-    gap: var(--space-5);
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    gap: var(--space-4);
   }
 
-  .client-card {
+  .empty-state {
+    text-align: center;
+    padding: var(--space-12);
     background: var(--color-bg-elevated);
     border: 1px solid var(--color-border);
-    border-radius: var(--radius-lg);
-    padding: var(--space-5);
-    cursor: pointer;
-    transition: all var(--transition-fast);
+    border-radius: var(--radius-xl);
   }
 
-  .client-card:hover {
-    border-color: var(--color-border);
-    box-shadow: var(--shadow-md);
-    transform: translateY(-2px);
-  }
-
-  .client-card-header {
-    display: flex;
-    align-items: flex-start;
-    gap: var(--space-3);
+  .empty-state-icon {
+    color: var(--color-text-muted);
     margin-bottom: var(--space-4);
   }
 
-  .client-avatar {
-    width: 44px;
-    height: 44px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
+  .empty-state-title {
+    font-size: 1.25rem;
     font-weight: 600;
-    font-size: 1.125rem;
-    border-radius: var(--radius-md);
-    flex-shrink: 0;
+    color: var(--color-text);
+    margin-bottom: var(--space-2);
   }
 
-  .client-identity {
-    flex: 1;
-    min-width: 0;
-  }
-
-  .client-name {
-    font-size: 1.0625rem;
-    font-weight: 600;
-    margin: 0 0 var(--space-1) 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .client-contact {
-    font-size: 0.875rem;
-    color: var(--color-text-secondary);
-    margin: 0;
-  }
-
-  .client-actions {
-    display: flex;
-    gap: var(--space-1);
-    opacity: 0;
-    transition: opacity var(--transition-fast);
-  }
-
-  .client-card:hover .client-actions {
-    opacity: 1;
-  }
-
-  .client-details {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-2);
-    padding-bottom: var(--space-4);
-    border-bottom: 1px solid var(--color-border-light);
-    margin-bottom: var(--space-3);
-  }
-
-  .client-field {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-    font-size: 0.875rem;
+  .empty-state-description {
     color: var(--color-text-secondary);
   }
 
-  .client-field :global(.icon) {
-    color: var(--color-text-tertiary);
-  }
-
-  .client-footer {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-  }
-
-  .payment-terms {
-    font-size: 0.8125rem;
-    color: var(--color-text-tertiary);
-    background: var(--color-bg-sunken);
-    padding: var(--space-1) var(--space-3);
-    border-radius: var(--radius-full);
-  }
-
-  /* Large screens */
-  @media (min-width: 1400px) {
-    .clients-grid {
-      grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
-      gap: var(--space-6);
-    }
-
-    .client-card {
-      padding: var(--space-6);
-    }
-  }
-
-  @media (max-width: 768px) {
-    .page-content {
-      padding: var(--space-4);
-    }
-
-    .search-bar {
-      flex-wrap: wrap;
-    }
-
-    .search-input-wrapper {
-      flex: 1 1 100%;
-      max-width: none;
-      order: 1;
-    }
-
-    .sort-group {
-      flex: 1;
-      order: 2;
-    }
-
-    .sort-group .select {
-      min-width: 0;
-      width: 100%;
-    }
-
-    .search-bar > .btn {
-      order: 3;
-    }
-
-    .clients-grid {
-      grid-template-columns: 1fr;
-    }
-
-    .client-actions {
-      opacity: 1;
-    }
-  }
-
-  /* Small screens */
-  @media (max-width: 480px) {
-    .page-content {
-      padding: var(--space-3);
-    }
-
-    .clients-grid {
-      gap: var(--space-3);
-    }
-
-    .client-card {
-      padding: var(--space-4);
-    }
-
-    .client-avatar {
-      width: 36px;
-      height: 36px;
-      font-size: 1rem;
-    }
-
-    .client-name {
-      font-size: 0.9375rem;
-    }
-
-    .client-field {
-      font-size: 0.8125rem;
-    }
+  @keyframes spin {
+    to { transform: rotate(360deg); }
   }
 </style>
