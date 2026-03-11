@@ -3,20 +3,19 @@
 import re
 import smtplib
 import ssl
-from email.mime.multipart import MIMEMultipart
-from email.mime.base import MIMEBase
-from email.mime.text import MIMEText
 from email import encoders
+from email.mime.base import MIMEBase
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
 from pathlib import Path
-from typing import Optional
 
 from starlette.concurrency import run_in_threadpool
 
-from invoice_machine.database import Invoice, BusinessProfile
-from invoice_machine.services import format_currency
-from invoice_machine.utils import sanitize_filename_component
 from invoice_machine.config import get_settings
 from invoice_machine.crypto import decrypt_credential
+from invoice_machine.database import BusinessProfile, Invoice
+from invoice_machine.services import format_currency
+from invoice_machine.utils import sanitize_filename_component
 
 settings = get_settings()
 
@@ -180,7 +179,7 @@ class EmailService:
         """
         self.profile = profile
 
-    def _get_smtp_password(self) -> Optional[str]:
+    def _get_smtp_password(self) -> str | None:
         """Get decrypted SMTP password."""
         if not self.profile.smtp_password:
             return None
@@ -206,8 +205,8 @@ class EmailService:
         to_email: str,
         subject: str,
         body: str,
-        attachment_path: Optional[Path] = None,
-        attachment_filename: Optional[str] = None,
+        attachment_path: Path | None = None,
+        attachment_filename: str | None = None,
     ) -> bool:
         """
         Synchronous email sending (runs in thread pool).
@@ -286,9 +285,9 @@ class EmailService:
     async def send_invoice(
         self,
         invoice: Invoice,
-        recipient_email: Optional[str] = None,
-        subject: Optional[str] = None,
-        body: Optional[str] = None,
+        recipient_email: str | None = None,
+        subject: str | None = None,
+        body: str | None = None,
     ) -> dict:
         """
         Send invoice PDF via email.

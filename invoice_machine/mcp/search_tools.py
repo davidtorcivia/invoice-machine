@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from invoice_machine.presenters import serialize_client, serialize_invoice
 from invoice_machine.services import SearchService
 
 from .context import get_session, mcp
+
 
 @mcp.tool()
 async def search(

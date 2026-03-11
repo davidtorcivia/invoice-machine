@@ -9,20 +9,20 @@ These tests verify:
 """
 
 import tempfile
-from datetime import date, timedelta
+from datetime import date
 from decimal import Decimal
 from pathlib import Path
-from unittest.mock import patch, MagicMock, AsyncMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from invoice_machine.database import Invoice, InvoiceItem, BusinessProfile
+from invoice_machine.database import BusinessProfile, Invoice, InvoiceItem
 
 try:
     from invoice_machine.pdf.generator import (
         format_money,
-        get_logo_base64,
         generate_pdf,
+        get_logo_base64,
         strftime_filter,
         zfill_filter,
     )

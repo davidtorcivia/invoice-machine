@@ -1,10 +1,7 @@
 """Compatibility exports for the service layer."""
 
-from datetime import date
 
-import boto3
 
-from invoice_machine.config import get_settings
 from invoice_machine.service.backups import BackupService, get_backup_service
 from invoice_machine.service.clients import ClientService
 from invoice_machine.service.common import (

@@ -3,7 +3,6 @@
 import json
 from datetime import date, timedelta
 from decimal import Decimal
-from typing import Optional
 
 from dateutil.relativedelta import relativedelta
 from sqlalchemy import select
@@ -36,12 +35,12 @@ class RecurringService:
         schedule_day: int = 1,
         currency_code: str = "USD",
         payment_terms_days: int = 30,
-        notes: Optional[str] = None,
-        line_items: Optional[list] = None,
-        tax_enabled: Optional[int] = None,
-        tax_rate: Optional[Decimal] = None,
-        tax_name: Optional[str] = None,
-        next_invoice_date: Optional[date] = None,
+        notes: str | None = None,
+        line_items: list | None = None,
+        tax_enabled: int | None = None,
+        tax_rate: Decimal | None = None,
+        tax_name: str | None = None,
+        next_invoice_date: date | None = None,
     ) -> RecurringSchedule:
         """Create a new recurring schedule."""
         validate_recurring_schedule(
@@ -98,7 +97,7 @@ class RecurringService:
     @staticmethod
     async def get_schedule(
         session: AsyncSession, schedule_id: int
-    ) -> Optional[RecurringSchedule]:
+    ) -> RecurringSchedule | None:
         """Get a recurring schedule by ID."""
         result = await session.execute(
             select(RecurringSchedule).where(RecurringSchedule.id == schedule_id)
@@ -108,7 +107,7 @@ class RecurringService:
     @staticmethod
     async def list_schedules(
         session: AsyncSession,
-        client_id: Optional[int] = None,
+        client_id: int | None = None,
         active_only: bool = True,
     ) -> list[RecurringSchedule]:
         """List recurring schedules."""
@@ -124,7 +123,7 @@ class RecurringService:
     @staticmethod
     async def update_schedule(
         session: AsyncSession, schedule_id: int, **kwargs
-    ) -> Optional[RecurringSchedule]:
+    ) -> RecurringSchedule | None:
         """Update a recurring schedule."""
         schedule = await RecurringService.get_schedule(session, schedule_id)
         if not schedule:

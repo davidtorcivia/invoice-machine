@@ -1,12 +1,10 @@
 """Tests for new features: tax handling, recurring invoices, and search."""
 
-from datetime import date, timedelta
+from datetime import date
 from decimal import Decimal
 
 import pytest
-from sqlalchemy import select
 
-from invoice_machine.database import Client, Invoice, BusinessProfile, RecurringSchedule
 from invoice_machine.services import (
     ClientService,
     InvoiceService,
@@ -306,7 +304,7 @@ class TestRecurringInvoices:
     async def test_list_schedules_active_only(self, db_session, test_client):
         """List schedules filters by active status."""
         # Create active schedule
-        active = await RecurringService.create_schedule(
+        _active = await RecurringService.create_schedule(
             db_session,
             client_id=test_client.id,
             name="Active",

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Any, Optional
+from typing import Any
 
 from invoice_machine.database import (
     BusinessProfile,
@@ -38,7 +38,7 @@ def parse_json_list(value: Any) -> list:
         return []
 
 
-def dump_json_list(values: list | None) -> Optional[str]:
+def dump_json_list(values: list | None) -> str | None:
     """Serialize a list field or return None for empty values."""
     if not values:
         return None

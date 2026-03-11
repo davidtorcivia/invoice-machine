@@ -2,19 +2,15 @@
 
 from __future__ import annotations
 
-from decimal import Decimal
-from typing import Optional
-
-from invoice_machine.database import Client
 from invoice_machine.presenters import serialize_client
 from invoice_machine.services import ClientService
-from invoice_machine.utils import utc_now
 
 from .context import get_session, mcp
 
+
 @mcp.tool()
 async def list_clients(
-    search: Optional[str] = None,
+    search: str | None = None,
     include_deleted: bool = False,
 ) -> list:
     """
@@ -33,7 +29,7 @@ async def list_clients(
 
 
 @mcp.tool()
-async def get_client(client_id: int) -> Optional[dict]:
+async def get_client(client_id: int) -> dict | None:
     """
     Get client by ID.
 
@@ -52,21 +48,21 @@ async def get_client(client_id: int) -> Optional[dict]:
 
 @mcp.tool()
 async def create_client(
-    name: Optional[str] = None,
-    business_name: Optional[str] = None,
-    address_line1: Optional[str] = None,
-    address_line2: Optional[str] = None,
-    city: Optional[str] = None,
-    state: Optional[str] = None,
-    postal_code: Optional[str] = None,
-    country: Optional[str] = None,
-    email: Optional[str] = None,
-    phone: Optional[str] = None,
+    name: str | None = None,
+    business_name: str | None = None,
+    address_line1: str | None = None,
+    address_line2: str | None = None,
+    city: str | None = None,
+    state: str | None = None,
+    postal_code: str | None = None,
+    country: str | None = None,
+    email: str | None = None,
+    phone: str | None = None,
     payment_terms_days: int = 30,
-    notes: Optional[str] = None,
-    tax_enabled: Optional[int] = None,
-    tax_rate: Optional[float] = None,
-    tax_name: Optional[str] = None,
+    notes: str | None = None,
+    tax_enabled: int | None = None,
+    tax_rate: float | None = None,
+    tax_name: str | None = None,
 ) -> dict:
     """
     Create a new client.
@@ -123,22 +119,22 @@ async def create_client(
 @mcp.tool()
 async def update_client(
     client_id: int,
-    name: Optional[str] = None,
-    business_name: Optional[str] = None,
-    address_line1: Optional[str] = None,
-    address_line2: Optional[str] = None,
-    city: Optional[str] = None,
-    state: Optional[str] = None,
-    postal_code: Optional[str] = None,
-    country: Optional[str] = None,
-    email: Optional[str] = None,
-    phone: Optional[str] = None,
-    payment_terms_days: Optional[int] = None,
-    notes: Optional[str] = None,
-    tax_enabled: Optional[int] = None,
-    tax_rate: Optional[float] = None,
-    tax_name: Optional[str] = None,
-) -> Optional[dict]:
+    name: str | None = None,
+    business_name: str | None = None,
+    address_line1: str | None = None,
+    address_line2: str | None = None,
+    city: str | None = None,
+    state: str | None = None,
+    postal_code: str | None = None,
+    country: str | None = None,
+    email: str | None = None,
+    phone: str | None = None,
+    payment_terms_days: int | None = None,
+    notes: str | None = None,
+    tax_enabled: int | None = None,
+    tax_rate: float | None = None,
+    tax_name: str | None = None,
+) -> dict | None:
     """
     Update client fields.
 

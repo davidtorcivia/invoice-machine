@@ -4,17 +4,21 @@ from __future__ import annotations
 
 from datetime import date
 from decimal import Decimal
-from typing import Optional, Union
 
-from invoice_machine.database import Client
-from invoice_machine.services import ClientService, InvoiceService, format_currency, is_invoice_document
+from invoice_machine.services import (
+    ClientService,
+    InvoiceService,
+    format_currency,
+    is_invoice_document,
+)
 
 from .context import get_session, mcp
 
+
 @mcp.tool()
 async def get_revenue_summary(
-    from_date: Optional[str] = None,
-    to_date: Optional[str] = None,
+    from_date: str | None = None,
+    to_date: str | None = None,
     group_by: str = "month",
 ) -> dict:
     """
@@ -96,7 +100,7 @@ async def get_revenue_summary(
 
 @mcp.tool()
 async def get_client_lifetime_value(
-    client_id: Optional[int] = None,
+    client_id: int | None = None,
     limit: int = 20,
 ) -> list:
     """

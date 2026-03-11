@@ -4,21 +4,19 @@ from __future__ import annotations
 
 from datetime import date
 from decimal import Decimal
-from typing import Optional, Union
 
-from invoice_machine.database import BusinessProfile, Client, Invoice
-from invoice_machine.presenters import serialize_invoice, serialize_invoice_item
-from invoice_machine.services import InvoiceService, format_currency, is_invoice_document
-from invoice_machine.utils import ensure_utc, utc_now
+from invoice_machine.presenters import dump_json_list, serialize_invoice, serialize_invoice_item
+from invoice_machine.services import InvoiceService
 
 from .context import get_session, mcp
 
+
 @mcp.tool()
 async def list_invoices(
-    status: Optional[str] = None,
-    client_id: Optional[int] = None,
-    from_date: Optional[str] = None,
-    to_date: Optional[str] = None,
+    status: str | None = None,
+    client_id: int | None = None,
+    from_date: str | None = None,
+    to_date: str | None = None,
     include_deleted: bool = False,
     limit: int = 50,
 ) -> list:
@@ -63,7 +61,7 @@ async def list_invoices(
 
 
 @mcp.tool()
-async def get_invoice(invoice_id: int) -> Optional[dict]:
+async def get_invoice(invoice_id: int) -> dict | None:
     """
     Get invoice or quote with line items.
 
@@ -88,21 +86,21 @@ async def get_invoice(invoice_id: int) -> Optional[dict]:
 
 @mcp.tool()
 async def create_invoice(
-    client_id: Optional[int] = None,
-    issue_date: Optional[str] = None,
-    due_date: Optional[str] = None,
-    payment_terms_days: Optional[int] = None,
+    client_id: int | None = None,
+    issue_date: str | None = None,
+    due_date: str | None = None,
+    payment_terms_days: int | None = None,
     currency_code: str = "USD",
-    notes: Optional[str] = None,
+    notes: str | None = None,
     document_type: str = "invoice",
-    client_reference: Optional[str] = None,
+    client_reference: str | None = None,
     show_payment_instructions: bool = True,
-    selected_payment_methods: Optional[list[str]] = None,
-    invoice_number_override: Optional[str] = None,
-    items: Optional[list[dict]] = None,
-    tax_enabled: Optional[bool] = None,
-    tax_rate: Optional[float] = None,
-    tax_name: Optional[str] = None,
+    selected_payment_methods: list[str] | None = None,
+    invoice_number_override: str | None = None,
+    items: list[dict] | None = None,
+    tax_enabled: bool | None = None,
+    tax_rate: float | None = None,
+    tax_name: str | None = None,
 ) -> dict:
     """
     Create a new invoice or quote.
@@ -166,15 +164,15 @@ async def create_invoice(
 @mcp.tool()
 async def update_invoice(
     invoice_id: int,
-    issue_date: Optional[str] = None,
-    due_date: Optional[str] = None,
-    status: Optional[str] = None,
-    notes: Optional[str] = None,
-    document_type: Optional[str] = None,
-    client_reference: Optional[str] = None,
-    show_payment_instructions: Optional[bool] = None,
-    selected_payment_methods: Optional[list[str]] = None,
-) -> Optional[dict]:
+    issue_date: str | None = None,
+    due_date: str | None = None,
+    status: str | None = None,
+    notes: str | None = None,
+    document_type: str | None = None,
+    client_reference: str | None = None,
+    show_payment_instructions: bool | None = None,
+    selected_payment_methods: list[str] | None = None,
+) -> dict | None:
     """
     Update invoice or quote fields.
 
@@ -274,7 +272,7 @@ async def add_invoice_item(
     invoice_id: int,
     description: str,
     quantity: int = 1,
-    unit_price: Union[float, str] = 0,
+    unit_price: float | str = 0,
     unit_type: str = "qty",
 ) -> dict:
     """
@@ -306,11 +304,11 @@ async def add_invoice_item(
 @mcp.tool()
 async def update_invoice_item(
     item_id: int,
-    description: Optional[str] = None,
-    quantity: Optional[int] = None,
-    unit_price: Optional[Union[float, str]] = None,
-    unit_type: Optional[str] = None,
-) -> Optional[dict]:
+    description: str | None = None,
+    quantity: int | None = None,
+    unit_price: float | str | None = None,
+    unit_type: str | None = None,
+) -> dict | None:
     """
     Update a line item.
 

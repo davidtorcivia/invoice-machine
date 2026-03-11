@@ -4,18 +4,18 @@ from datetime import date, timedelta
 from decimal import Decimal
 
 import pytest
-from sqlalchemy import select, func
+from sqlalchemy import func, select
 
-from invoice_machine.database import Client, Invoice, InvoiceItem, BusinessProfile
+from invoice_machine.database import Client, Invoice, InvoiceItem
 from invoice_machine.services import (
-    generate_invoice_number,
-    calculate_due_date,
-    recalculate_invoice_totals,
-    snapshot_client_info,
-    format_currency,
     ClientService,
     InvoiceService,
+    calculate_due_date,
+    format_currency,
+    generate_invoice_number,
     purge_trashed_records,
+    recalculate_invoice_totals,
+    snapshot_client_info,
 )
 
 

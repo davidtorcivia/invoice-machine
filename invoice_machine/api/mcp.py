@@ -1,15 +1,14 @@
 """MCP SSE endpoints for remote access via Claude Desktop."""
 
-from typing import Optional
 
 from starlette.requests import Request
 from starlette.responses import Response as StarletteResponse
 
-from invoice_machine.database import async_session_maker, BusinessProfile
 from invoice_machine.crypto import verify_api_key
+from invoice_machine.database import BusinessProfile, async_session_maker
 
 
-async def get_mcp_api_key_hash() -> Optional[str]:
+async def get_mcp_api_key_hash() -> str | None:
     """Get the MCP API key hash from the database."""
     async with async_session_maker() as session:
         profile = await BusinessProfile.get(session)
@@ -50,6 +49,7 @@ def get_sse_transport():
 
     if _sse_transport is None:
         from mcp.server.sse import SseServerTransport
+
         from invoice_machine.mcp.server import mcp
 
         _sse_transport = SseServerTransport("/messages/")

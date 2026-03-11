@@ -12,18 +12,18 @@ import tempfile
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
-from unittest.mock import patch, MagicMock, AsyncMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
-from invoice_machine.database import Invoice, InvoiceItem, BusinessProfile
+from invoice_machine.database import BusinessProfile, Invoice
 from invoice_machine.email import (
+    DEFAULT_BODY_TEMPLATE,
+    DEFAULT_SUBJECT_TEMPLATE,
+    EmailService,
     _sanitize_email,
     _sanitize_header,
     expand_template,
-    EmailService,
-    DEFAULT_SUBJECT_TEMPLATE,
-    DEFAULT_BODY_TEMPLATE,
 )
 
 

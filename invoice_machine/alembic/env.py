@@ -2,13 +2,13 @@
 
 from logging.config import fileConfig
 
+from alembic import context
 from sqlalchemy import create_engine, pool
 
-from alembic import context
+from invoice_machine.config import get_settings
 
 # Import app models and config
 from invoice_machine.database import Base
-from invoice_machine.config import get_settings
 
 # This is the Alembic Config object
 config = context.config

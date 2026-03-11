@@ -5,14 +5,11 @@ import os
 import shutil
 import sqlite3
 import tempfile
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Optional
 
-import boto3
 from botocore.config import Config
 
-from invoice_machine.config import get_settings
 from invoice_machine.utils import utc_now
 
 
@@ -35,9 +32,9 @@ class BackupService:
 
     def __init__(
         self,
-        backup_dir: Optional[Path] = None,
+        backup_dir: Path | None = None,
         retention_days: int = 30,
-        s3_config: Optional[dict] = None,
+        s3_config: dict | None = None,
     ):
         settings = _compat_get_settings()
         self.backup_dir = backup_dir or settings.data_dir / "backups"
@@ -114,7 +111,7 @@ class BackupService:
                     "filename": path.name,
                     "path": str(path),
                     "size_bytes": stat.st_size,
-                    "created_at": datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc).isoformat(),
+                    "created_at": datetime.fromtimestamp(stat.st_mtime, tz=UTC).isoformat(),
                     "compressed": path.suffix == ".gz",
                 })
 
@@ -128,7 +125,7 @@ class BackupService:
 
         for pattern in ["invoice_machine_backup_*.db*", "invoicely_backup_*.db*"]:
             for path in self.backup_dir.glob(pattern):
-                created = datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc)
+                created = datetime.fromtimestamp(path.stat().st_mtime, tz=UTC)
                 if created < cutoff:
                     path.unlink()
                     deleted += 1
@@ -323,8 +320,8 @@ class BackupService:
 
 
 def get_backup_service(
-    retention_days: Optional[int] = None,
-    s3_config: Optional[dict] = None,
+    retention_days: int | None = None,
+    s3_config: dict | None = None,
 ) -> BackupService:
     """Get a BackupService instance with optional configuration."""
     return BackupService(

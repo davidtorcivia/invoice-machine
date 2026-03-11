@@ -7,8 +7,8 @@ Run via cron or manually:
 import asyncio
 from datetime import timedelta
 
-from invoice_machine.database import async_session_maker
 from invoice_machine.config import get_settings
+from invoice_machine.database import async_session_maker
 from invoice_machine.services import purge_trashed_records
 from invoice_machine.utils import utc_now
 

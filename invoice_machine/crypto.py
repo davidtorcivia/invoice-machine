@@ -12,12 +12,11 @@ import logging
 import os
 import re
 import secrets
-from typing import Optional
 
 from cryptography.fernet import Fernet, InvalidToken
 
 # Cache the encryption key after first retrieval
-_cached_key: Optional[bytes] = None
+_cached_key: bytes | None = None
 
 
 class EncryptionKeyError(Exception):

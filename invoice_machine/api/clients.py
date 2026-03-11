@@ -2,15 +2,14 @@
 
 from datetime import datetime
 from decimal import Decimal
-from typing import Optional, List
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from invoice_machine.database import Client, get_session
-from invoice_machine.services import ClientService
 from invoice_machine.rate_limit import limiter
+from invoice_machine.services import ClientService
 
 router = APIRouter(prefix="/api/clients", tags=["clients"])
 
@@ -19,27 +18,27 @@ class ClientSchema(BaseModel):
     """Client schema."""
 
     id: int
-    name: Optional[str] = None
-    business_name: Optional[str] = None
-    address_line1: Optional[str] = None
-    address_line2: Optional[str] = None
-    city: Optional[str] = None
-    state: Optional[str] = None
-    postal_code: Optional[str] = None
-    country: Optional[str] = None
-    email: Optional[str] = None
-    phone: Optional[str] = None
+    name: str | None = None
+    business_name: str | None = None
+    address_line1: str | None = None
+    address_line2: str | None = None
+    city: str | None = None
+    state: str | None = None
+    postal_code: str | None = None
+    country: str | None = None
+    email: str | None = None
+    phone: str | None = None
     payment_terms_days: int = 30
-    notes: Optional[str] = None
+    notes: str | None = None
     # Tax settings (null = use global default)
-    tax_enabled: Optional[int] = None
-    tax_rate: Optional[str] = None
-    tax_name: Optional[str] = None
+    tax_enabled: int | None = None
+    tax_rate: str | None = None
+    tax_name: str | None = None
     # Currency preference (null = use global default)
-    preferred_currency: Optional[str] = None
+    preferred_currency: str | None = None
     created_at: datetime
     updated_at: datetime
-    deleted_at: Optional[datetime] = None
+    deleted_at: datetime | None = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -47,57 +46,57 @@ class ClientSchema(BaseModel):
 class ClientCreate(BaseModel):
     """Client creation schema."""
 
-    name: Optional[str] = Field(None, max_length=255)
-    business_name: Optional[str] = Field(None, max_length=255)
-    address_line1: Optional[str] = Field(None, max_length=500)
-    address_line2: Optional[str] = Field(None, max_length=500)
-    city: Optional[str] = Field(None, max_length=100)
-    state: Optional[str] = Field(None, max_length=100)
-    postal_code: Optional[str] = Field(None, max_length=20)
-    country: Optional[str] = Field(None, max_length=100)
-    email: Optional[str] = Field(None, max_length=255)
-    phone: Optional[str] = Field(None, max_length=50)
+    name: str | None = Field(None, max_length=255)
+    business_name: str | None = Field(None, max_length=255)
+    address_line1: str | None = Field(None, max_length=500)
+    address_line2: str | None = Field(None, max_length=500)
+    city: str | None = Field(None, max_length=100)
+    state: str | None = Field(None, max_length=100)
+    postal_code: str | None = Field(None, max_length=20)
+    country: str | None = Field(None, max_length=100)
+    email: str | None = Field(None, max_length=255)
+    phone: str | None = Field(None, max_length=50)
     payment_terms_days: int = Field(30, ge=0, le=365)
-    notes: Optional[str] = Field(None, max_length=10000)
+    notes: str | None = Field(None, max_length=10000)
     # Tax settings (null = use global default)
-    tax_enabled: Optional[int] = Field(None, ge=0, le=1)
-    tax_rate: Optional[Decimal] = Field(None, ge=0, le=100)
-    tax_name: Optional[str] = Field(None, max_length=50)
+    tax_enabled: int | None = Field(None, ge=0, le=1)
+    tax_rate: Decimal | None = Field(None, ge=0, le=100)
+    tax_name: str | None = Field(None, max_length=50)
     # Currency preference (null = use global default)
-    preferred_currency: Optional[str] = Field(None, max_length=3)
+    preferred_currency: str | None = Field(None, max_length=3)
 
 
 class ClientUpdate(BaseModel):
     """Client update schema."""
 
-    name: Optional[str] = Field(None, max_length=255)
-    business_name: Optional[str] = Field(None, max_length=255)
-    address_line1: Optional[str] = Field(None, max_length=500)
-    address_line2: Optional[str] = Field(None, max_length=500)
-    city: Optional[str] = Field(None, max_length=100)
-    state: Optional[str] = Field(None, max_length=100)
-    postal_code: Optional[str] = Field(None, max_length=20)
-    country: Optional[str] = Field(None, max_length=100)
-    email: Optional[str] = Field(None, max_length=255)
-    phone: Optional[str] = Field(None, max_length=50)
-    payment_terms_days: Optional[int] = Field(None, ge=0, le=365)
-    notes: Optional[str] = Field(None, max_length=10000)
+    name: str | None = Field(None, max_length=255)
+    business_name: str | None = Field(None, max_length=255)
+    address_line1: str | None = Field(None, max_length=500)
+    address_line2: str | None = Field(None, max_length=500)
+    city: str | None = Field(None, max_length=100)
+    state: str | None = Field(None, max_length=100)
+    postal_code: str | None = Field(None, max_length=20)
+    country: str | None = Field(None, max_length=100)
+    email: str | None = Field(None, max_length=255)
+    phone: str | None = Field(None, max_length=50)
+    payment_terms_days: int | None = Field(None, ge=0, le=365)
+    notes: str | None = Field(None, max_length=10000)
     # Tax settings (null = use global default)
-    tax_enabled: Optional[int] = Field(None, ge=0, le=1)
-    tax_rate: Optional[Decimal] = Field(None, ge=0, le=100)
-    tax_name: Optional[str] = Field(None, max_length=50)
+    tax_enabled: int | None = Field(None, ge=0, le=1)
+    tax_rate: Decimal | None = Field(None, ge=0, le=100)
+    tax_name: str | None = Field(None, max_length=50)
     # Currency preference (null = use global default)
-    preferred_currency: Optional[str] = Field(None, max_length=3)
+    preferred_currency: str | None = Field(None, max_length=3)
 
 
-@router.get("", response_model=List[ClientSchema])
+@router.get("", response_model=list[ClientSchema])
 @limiter.limit("120/minute")
 async def list_clients(
     request: Request,
-    search: Optional[str] = Query(None, description="Search by name or business name"),
+    search: str | None = Query(None, description="Search by name or business name"),
     include_deleted: bool = Query(False, description="Include soft-deleted clients"),
     session: AsyncSession = Depends(get_session),
-) -> List[Client]:
+) -> list[Client]:
     """List all clients."""
     return await ClientService.list_clients(
         session, search=search, include_deleted=include_deleted

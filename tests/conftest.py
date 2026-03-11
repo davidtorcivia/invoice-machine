@@ -1,6 +1,5 @@
 """Test fixtures and configuration."""
 
-import asyncio
 import tempfile
 from datetime import date, timedelta
 from decimal import Decimal
@@ -9,8 +8,7 @@ from pathlib import Path
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from invoice_machine.database import Base, BusinessProfile, Client, Invoice, InvoiceItem, RecurringSchedule
-from invoice_machine.services import generate_invoice_number, calculate_due_date, RecurringService, SearchService
+from invoice_machine.database import Base, BusinessProfile, Client, Invoice, InvoiceItem
 
 
 @pytest.fixture(scope="function")

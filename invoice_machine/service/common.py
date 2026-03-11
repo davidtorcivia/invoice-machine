@@ -2,7 +2,6 @@
 
 from datetime import date, datetime, timedelta
 from decimal import Decimal
-from typing import Optional, Union
 
 from sqlalchemy import and_, delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -37,10 +36,10 @@ async def generate_invoice_number(
 
 def calculate_due_date(
     issue_date: date,
-    payment_terms_days: Optional[int] = None,
-    explicit_due_date: Optional[date] = None,
-    client: Optional[Client] = None,
-    business: Optional[BusinessProfile] = None,
+    payment_terms_days: int | None = None,
+    explicit_due_date: date | None = None,
+    client: Client | None = None,
+    business: BusinessProfile | None = None,
 ) -> date:
     """Calculate invoice due date using invoice, client, business, then default terms."""
     if explicit_due_date:
@@ -106,7 +105,7 @@ async def snapshot_client_info(session: AsyncSession, client: Client, invoice: I
     invoice.client_address = "\n".join(address_lines) if address_lines else None
 
 
-def format_currency(amount: Union[Decimal, float], currency_code: str = "USD") -> str:
+def format_currency(amount: Decimal | float, currency_code: str = "USD") -> str:
     """Format a money value for display."""
     amount = Decimal(str(amount))
     if currency_code == "USD":
@@ -133,8 +132,8 @@ def _replace_with_valid_day(target_date: date, schedule_day: int) -> date:
 def validate_recurring_schedule(
     frequency: str,
     schedule_day: int,
-    payment_terms_days: Optional[int] = None,
-    tax_rate: Optional[Decimal] = None,
+    payment_terms_days: int | None = None,
+    tax_rate: Decimal | None = None,
 ) -> None:
     """Validate recurring schedule cadence and financial fields."""
     if frequency not in VALID_RECURRING_FREQUENCIES:
@@ -157,7 +156,7 @@ def validate_recurring_schedule(
 
 async def purge_trashed_records(
     session: AsyncSession,
-    deleted_before: Optional[datetime] = None,
+    deleted_before: datetime | None = None,
 ) -> dict[str, int]:
     """Delete trashed invoices and only then delete unreferenced trashed clients."""
     invoice_conditions = [Invoice.deleted_at.is_not(None)]

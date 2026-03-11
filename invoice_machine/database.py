@@ -1,20 +1,18 @@
 """Database models and connection management."""
 
-from datetime import datetime, date
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Optional
 
 from sqlalchemy import (
-    String,
-    Integer,
-    Text,
     DECIMAL,
-    DateTime,
     Date,
+    DateTime,
     ForeignKey,
-    CheckConstraint,
     Index,
-    UniqueConstraint,
+    Integer,
+    String,
+    Text,
 )
 from sqlalchemy.ext.asyncio import (
     AsyncSession,
@@ -51,7 +49,7 @@ class User(Base):
     @classmethod
     async def get_by_username(cls, session: "AsyncSession", username: str) -> Optional["User"]:
         """Get user by username (case-insensitive)."""
-        from sqlalchemy import select, func
+        from sqlalchemy import func, select
         result = await session.execute(
             select(cls).where(func.lower(cls.username) == username.lower())
         )
@@ -60,7 +58,7 @@ class User(Base):
     @classmethod
     async def count(cls, session: "AsyncSession") -> int:
         """Count total users."""
-        from sqlalchemy import select, func
+        from sqlalchemy import func, select
         result = await session.execute(select(func.count(cls.id)))
         return result.scalar() or 0
 
@@ -72,53 +70,53 @@ class BusinessProfile(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
-    business_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
-    address_line1: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    address_line2: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    city: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
-    state: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
-    postal_code: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+    business_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    address_line1: Mapped[str | None] = mapped_column(Text, nullable=True)
+    address_line2: Mapped[str | None] = mapped_column(Text, nullable=True)
+    city: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    state: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    postal_code: Mapped[str | None] = mapped_column(String(20), nullable=True)
     country: Mapped[str] = mapped_column(String(100), default="United States")
-    email: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
-    phone: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
-    ein: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)  # Tax ID
-    logo_path: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    email: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    phone: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    ein: Mapped[str | None] = mapped_column(String(50), nullable=True)  # Tax ID
+    logo_path: Mapped[str | None] = mapped_column(String(500), nullable=True)
     accent_color: Mapped[str] = mapped_column(String(7), default="#16a34a")
     default_payment_terms_days: Mapped[int] = mapped_column(Integer, default=30)
     default_currency_code: Mapped[str] = mapped_column(String(3), default="USD")
-    default_notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    default_payment_instructions: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    default_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    default_payment_instructions: Mapped[str | None] = mapped_column(Text, nullable=True)
     # JSON array: [{id, name, instructions}]
-    payment_methods: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    payment_methods: Mapped[str | None] = mapped_column(Text, nullable=True)
     theme_preference: Mapped[str] = mapped_column(String(20), default="system")
     # MCP API key for remote access
-    mcp_api_key: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    mcp_api_key: Mapped[str | None] = mapped_column(String(64), nullable=True)
     # Bot API key for conventional REST API automation
-    bot_api_key: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    bot_api_key: Mapped[str | None] = mapped_column(String(64), nullable=True)
     # App base URL for links and MCP configuration
-    app_base_url: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    app_base_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     # Backup settings
     backup_enabled: Mapped[int] = mapped_column(Integer, default=1)  # Daily auto-backup
     backup_retention_days: Mapped[int] = mapped_column(Integer, default=30)
     backup_s3_enabled: Mapped[int] = mapped_column(Integer, default=0)
     # JSON: {endpoint_url, access_key_id, secret_access_key, bucket, region, prefix}
-    backup_s3_config: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    backup_s3_config: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Tax settings (optional - disabled by default)
     default_tax_enabled: Mapped[int] = mapped_column(Integer, default=0)
     default_tax_rate: Mapped[Decimal] = mapped_column(DECIMAL(5, 2), default=Decimal("0.00"))
     default_tax_name: Mapped[str] = mapped_column(String(50), default="Tax")
     # SMTP settings (optional - user must configure to enable email)
     smtp_enabled: Mapped[int] = mapped_column(Integer, default=0)
-    smtp_host: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    smtp_host: Mapped[str | None] = mapped_column(String(255), nullable=True)
     smtp_port: Mapped[int] = mapped_column(Integer, default=587)
-    smtp_username: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
-    smtp_password: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
-    smtp_from_email: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
-    smtp_from_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    smtp_username: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    smtp_password: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    smtp_from_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    smtp_from_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     smtp_use_tls: Mapped[int] = mapped_column(Integer, default=1)
     # Email template settings (optional - defaults used if not set)
-    email_subject_template: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
-    email_body_template: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    email_subject_template: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    email_body_template: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=utc_now, onupdate=utc_now
@@ -173,31 +171,31 @@ class Client(Base):
     __tablename__ = "clients"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)  # Contact name
-    business_name: Mapped[Optional[str]] = mapped_column(
+    name: Mapped[str | None] = mapped_column(String(255), nullable=True)  # Contact name
+    business_name: Mapped[str | None] = mapped_column(
         String(255), nullable=True
     )  # Company
-    address_line1: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    address_line2: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    city: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
-    state: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
-    postal_code: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
-    country: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
-    email: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
-    phone: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    address_line1: Mapped[str | None] = mapped_column(Text, nullable=True)
+    address_line2: Mapped[str | None] = mapped_column(Text, nullable=True)
+    city: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    state: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    postal_code: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    country: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    email: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    phone: Mapped[str | None] = mapped_column(String(50), nullable=True)
     payment_terms_days: Mapped[int] = mapped_column(Integer, default=30)
-    notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Per-client tax settings (None = use global default, explicit value = override)
-    tax_enabled: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
-    tax_rate: Mapped[Optional[Decimal]] = mapped_column(DECIMAL(5, 2), nullable=True)
-    tax_name: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    tax_enabled: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    tax_rate: Mapped[Decimal | None] = mapped_column(DECIMAL(5, 2), nullable=True)
+    tax_name: Mapped[str | None] = mapped_column(String(50), nullable=True)
     # Per-client currency preference (None = use global default)
-    preferred_currency: Mapped[Optional[str]] = mapped_column(String(3), nullable=True)
+    preferred_currency: Mapped[str | None] = mapped_column(String(3), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=utc_now, onupdate=utc_now
     )
-    deleted_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     invoices: Mapped[list["Invoice"]] = relationship(
         "Invoice",
@@ -231,24 +229,24 @@ class Invoice(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     invoice_number: Mapped[str] = mapped_column(String(50), nullable=False, unique=True)
-    client_id: Mapped[Optional[int]] = mapped_column(
+    client_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("clients.id"), nullable=True
     )
 
     # Denormalized client snapshot
-    client_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
-    client_business: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
-    client_address: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    client_email: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    client_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    client_business: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    client_address: Mapped[str | None] = mapped_column(Text, nullable=True)
+    client_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     status: Mapped[str] = mapped_column(String(20), default="draft")
     document_type: Mapped[str] = mapped_column(String(20), default="invoice")  # invoice/quote
-    client_reference: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)  # PO/job number
+    client_reference: Mapped[str | None] = mapped_column(String(100), nullable=True)  # PO/job number
     show_payment_instructions: Mapped[int] = mapped_column(Integer, default=1)
     # JSON array of payment method IDs selected for this invoice
-    selected_payment_methods: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    selected_payment_methods: Mapped[str | None] = mapped_column(Text, nullable=True)
     issue_date: Mapped[date] = mapped_column(Date, nullable=False)
-    due_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    due_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     payment_terms_days: Mapped[int] = mapped_column(Integer, default=30)
     currency_code: Mapped[str] = mapped_column(String(3), default="USD")
     subtotal: Mapped[Decimal] = mapped_column(DECIMAL(10, 2), default=0)
@@ -258,16 +256,16 @@ class Invoice(Base):
     tax_name: Mapped[str] = mapped_column(String(50), default="Tax")
     tax_amount: Mapped[Decimal] = mapped_column(DECIMAL(10, 2), default=Decimal("0.00"))
     total: Mapped[Decimal] = mapped_column(DECIMAL(10, 2), default=0)
-    notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
 
-    pdf_path: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
-    pdf_generated_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    pdf_path: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    pdf_generated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=utc_now, onupdate=utc_now
     )
-    deleted_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     client: Mapped[Optional["Client"]] = relationship(
         "Client",
@@ -365,8 +363,8 @@ class Session(Base):
     # CSRF token for form protection
     csrf_token: Mapped[str] = mapped_column(String(64), nullable=False)
     # Optional: track session metadata for security auditing
-    user_agent: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
-    ip_address: Mapped[Optional[str]] = mapped_column(String(45), nullable=True)  # IPv6 max length
+    user_agent: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    ip_address: Mapped[str | None] = mapped_column(String(45), nullable=True)  # IPv6 max length
 
     user: Mapped["User"] = relationship("User", lazy="selectin")
 
@@ -381,8 +379,8 @@ class Session(Base):
         session: "AsyncSession",
         user_id: int,
         expires_at: datetime,
-        user_agent: Optional[str] = None,
-        ip_address: Optional[str] = None,
+        user_agent: str | None = None,
+        ip_address: str | None = None,
     ) -> "Session":
         """Create a new session."""
         import secrets
@@ -461,17 +459,17 @@ class RecurringSchedule(Base):
     # Invoice template fields
     currency_code: Mapped[str] = mapped_column(String(3), default="USD")
     payment_terms_days: Mapped[int] = mapped_column(Integer, default=30)
-    notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     # JSON array of line items: [{description, quantity, unit_price, unit_type}]
-    line_items: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    line_items: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Tax settings (inherit from client/global if not set)
-    tax_enabled: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
-    tax_rate: Mapped[Optional[Decimal]] = mapped_column(DECIMAL(5, 2), nullable=True)
-    tax_name: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    tax_enabled: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    tax_rate: Mapped[Decimal | None] = mapped_column(DECIMAL(5, 2), nullable=True)
+    tax_name: Mapped[str | None] = mapped_column(String(50), nullable=True)
     # Schedule status
     is_active: Mapped[int] = mapped_column(Integer, default=1)
     next_invoice_date: Mapped[date] = mapped_column(Date, nullable=False)
-    last_invoice_id: Mapped[Optional[int]] = mapped_column(
+    last_invoice_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("invoices.id"), nullable=True
     )
     # Timestamps

@@ -1,12 +1,10 @@
-from datetime import date
-from decimal import Decimal
-from unittest.mock import AsyncMock, patch
 
 import pytest
 from httpx import ASGITransport, AsyncClient
 
 from invoice_machine.main import app
-from invoice_machine.services import InvoiceService
+
+
 class TestHealthEndpoint:
     """Tests for health check."""
 

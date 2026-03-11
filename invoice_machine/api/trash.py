@@ -1,14 +1,15 @@
 """Trash/Restore API endpoints."""
 
 from datetime import datetime
-from typing import List, Literal
+from typing import Literal
+
 from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from invoice_machine.database import Client, Invoice, get_session
-from invoice_machine.services import ClientService, InvoiceService, purge_trashed_records
 from invoice_machine.rate_limit import limiter
+from invoice_machine.services import ClientService, InvoiceService, purge_trashed_records
 from invoice_machine.utils import ensure_utc, utc_now
 
 router = APIRouter(prefix="/api/trash", tags=["trash"])
@@ -24,12 +25,12 @@ class TrashedItemSchema(BaseModel):
     days_until_purge: int
 
 
-@router.get("", response_model=List[TrashedItemSchema])
+@router.get("", response_model=list[TrashedItemSchema])
 @limiter.limit("60/minute")
 async def list_trash(
     request: Request,
     session: AsyncSession = Depends(get_session),
-) -> List[TrashedItemSchema]:
+) -> list[TrashedItemSchema]:
     """List all trashed items."""
     from invoice_machine.config import get_settings
 

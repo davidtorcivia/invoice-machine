@@ -1,19 +1,18 @@
 """Backup API endpoints."""
 
+import asyncio
 import json
 import logging
-import asyncio
-from typing import Optional, List
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
-from invoice_machine.rate_limit import limiter
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from invoice_machine.database import BusinessProfile, get_session, close_db, init_db
+from invoice_machine.crypto import decrypt_credential, encrypt_credential
+from invoice_machine.database import BusinessProfile, close_db, get_session, init_db
+from invoice_machine.rate_limit import limiter
 from invoice_machine.services import BackupService
-from invoice_machine.crypto import encrypt_credential, decrypt_credential
 from invoice_machine.utils import utc_now
 
 logger = logging.getLogger(__name__)
@@ -38,13 +37,13 @@ class BackupResult(BaseModel):
     timestamp: str
     compressed: bool
     uploaded_to_s3: bool
-    s3_error: Optional[str] = None
+    s3_error: str | None = None
 
 
 class RestoreResult(BaseModel):
     """Result of a restore operation."""
     restored_from: str
-    pre_restore_backup: Optional[str]
+    pre_restore_backup: str | None
     timestamp: str
     message: str
 
@@ -54,24 +53,24 @@ class BackupSettingsSchema(BaseModel):
     backup_enabled: bool
     backup_retention_days: int
     backup_s3_enabled: bool
-    backup_s3_endpoint_url: Optional[str] = None
-    backup_s3_bucket: Optional[str] = None
-    backup_s3_region: Optional[str] = None
-    backup_s3_prefix: Optional[str] = None
+    backup_s3_endpoint_url: str | None = None
+    backup_s3_bucket: str | None = None
+    backup_s3_region: str | None = None
+    backup_s3_prefix: str | None = None
     # Note: access keys are write-only, not returned in GET
 
 
 class BackupSettingsUpdate(BaseModel):
     """Backup settings update."""
-    backup_enabled: Optional[bool] = None
-    backup_retention_days: Optional[int] = Field(None, ge=1, le=365)
-    backup_s3_enabled: Optional[bool] = None
-    backup_s3_endpoint_url: Optional[str] = Field(None, max_length=500)
-    backup_s3_access_key_id: Optional[str] = Field(None, max_length=200)
-    backup_s3_secret_access_key: Optional[str] = Field(None, max_length=200)
-    backup_s3_bucket: Optional[str] = Field(None, max_length=200)
-    backup_s3_region: Optional[str] = Field(None, max_length=50)
-    backup_s3_prefix: Optional[str] = Field(None, max_length=200)
+    backup_enabled: bool | None = None
+    backup_retention_days: int | None = Field(None, ge=1, le=365)
+    backup_s3_enabled: bool | None = None
+    backup_s3_endpoint_url: str | None = Field(None, max_length=500)
+    backup_s3_access_key_id: str | None = Field(None, max_length=200)
+    backup_s3_secret_access_key: str | None = Field(None, max_length=200)
+    backup_s3_bucket: str | None = Field(None, max_length=200)
+    backup_s3_region: str | None = Field(None, max_length=50)
+    backup_s3_prefix: str | None = Field(None, max_length=200)
 
 
 def _decrypt_s3_config(s3_config: dict) -> dict:
@@ -211,13 +210,13 @@ async def update_backup_settings(
     )
 
 
-@router.get("", response_model=List[BackupSchema])
+@router.get("", response_model=list[BackupSchema])
 @limiter.limit("60/minute")
 async def list_backups(
     request: Request,
     include_s3: bool = Query(True, description="Include S3 backups"),
     session: AsyncSession = Depends(get_session),
-) -> List[BackupSchema]:
+) -> list[BackupSchema]:
     """List all available backups."""
     backup_service = await get_backup_service(session)
 

@@ -1,14 +1,13 @@
 """Email templates API endpoints."""
 
-from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from invoice_machine.database import get_session, BusinessProfile
+from invoice_machine.database import BusinessProfile, get_session
+from invoice_machine.email import DEFAULT_BODY_TEMPLATE, DEFAULT_SUBJECT_TEMPLATE, expand_template
 from invoice_machine.services import InvoiceService
-from invoice_machine.email import expand_template, DEFAULT_SUBJECT_TEMPLATE, DEFAULT_BODY_TEMPLATE
 
 router = APIRouter(tags=["email-templates"])
 
@@ -36,8 +35,8 @@ AVAILABLE_PLACEHOLDERS = [
 class EmailTemplatesSchema(BaseModel):
     """Email templates response."""
 
-    email_subject_template: Optional[str] = None
-    email_body_template: Optional[str] = None
+    email_subject_template: str | None = None
+    email_body_template: str | None = None
     available_placeholders: list[str] = AVAILABLE_PLACEHOLDERS
     default_subject: str = DEFAULT_SUBJECT_TEMPLATE
     default_body: str = DEFAULT_BODY_TEMPLATE
@@ -46,15 +45,15 @@ class EmailTemplatesSchema(BaseModel):
 class EmailTemplatesUpdate(BaseModel):
     """Update email templates request."""
 
-    email_subject_template: Optional[str] = Field(None, max_length=500)
-    email_body_template: Optional[str] = Field(None, max_length=10000)
+    email_subject_template: str | None = Field(None, max_length=500)
+    email_body_template: str | None = Field(None, max_length=10000)
 
 
 class EmailPreviewRequest(BaseModel):
     """Request to preview email for an invoice."""
 
-    subject_template: Optional[str] = Field(None, max_length=500)
-    body_template: Optional[str] = Field(None, max_length=10000)
+    subject_template: str | None = Field(None, max_length=500)
+    body_template: str | None = Field(None, max_length=10000)
 
 
 class EmailPreviewResponse(BaseModel):
@@ -62,7 +61,7 @@ class EmailPreviewResponse(BaseModel):
 
     invoice_id: int
     invoice_number: str
-    recipient_email: Optional[str]
+    recipient_email: str | None
     subject: str
     body: str
     subject_template_used: str

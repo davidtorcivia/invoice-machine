@@ -1,12 +1,8 @@
-from datetime import date
-from decimal import Decimal
 from unittest.mock import AsyncMock, patch
 
 import pytest
-from httpx import ASGITransport, AsyncClient
 
-from invoice_machine.main import app
-from invoice_machine.services import InvoiceService
+
 class TestTrashEndpoints:
     """Tests for trash endpoints."""
 
@@ -74,9 +70,10 @@ class TestBackupEndpoints:
     @pytest.mark.asyncio
     async def test_download_backup_rejects_invalid_filename(self, test_client):
         """Backup download rejects traversal attempts before serving files."""
-        from invoice_machine.services import BackupService
         import tempfile
         from pathlib import Path
+
+        from invoice_machine.services import BackupService
 
         with tempfile.TemporaryDirectory() as tmpdir:
             service = BackupService(backup_dir=Path(tmpdir))

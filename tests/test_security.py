@@ -1,21 +1,16 @@
 """Security tests for path traversal, input validation, and IDOR protection."""
 
-from datetime import date
 from decimal import Decimal
 from pathlib import Path
-import tempfile
 
 import pytest
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from invoice_machine.database import Invoice, InvoiceItem, BusinessProfile
+from invoice_machine.api.profile import validate_image_content
+from invoice_machine.email import _sanitize_email, _sanitize_header
 from invoice_machine.services import (
     BackupService,
     InvoiceService,
-    ClientService,
 )
-from invoice_machine.email import _sanitize_email, _sanitize_header
-from invoice_machine.api.profile import validate_image_content
 
 
 class TestPathTraversalProtection:

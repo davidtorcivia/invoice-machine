@@ -27,5 +27,8 @@ jobs:
       - name: Verify MCP dependency
         run: python -c "import mcp; print(getattr(mcp, '__version__', 'unknown'))"
 
+      - name: Lint
+        run: ruff check invoice_machine/ tests/
+
       - name: Run tests
-        run: pytest -q
+        run: pytest -q --cov --cov-report=term-missing

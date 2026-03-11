@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 from decimal import Decimal
-from typing import Optional
 
 from invoice_machine.database import BusinessProfile
 from invoice_machine.presenters import dump_json_list, serialize_business_profile
 from invoice_machine.utils import utc_now
 
 from .context import get_session, mcp
+
 
 @mcp.tool()
 async def get_business_profile() -> dict:
@@ -31,35 +31,35 @@ async def get_business_profile() -> dict:
 
 @mcp.tool()
 async def update_business_profile(
-    name: Optional[str] = None,
-    business_name: Optional[str] = None,
-    address_line1: Optional[str] = None,
-    address_line2: Optional[str] = None,
-    city: Optional[str] = None,
-    state: Optional[str] = None,
-    postal_code: Optional[str] = None,
-    country: Optional[str] = None,
-    email: Optional[str] = None,
-    phone: Optional[str] = None,
-    ein: Optional[str] = None,
-    accent_color: Optional[str] = None,
-    default_payment_terms_days: Optional[int] = None,
-    default_notes: Optional[str] = None,
-    default_payment_instructions: Optional[str] = None,
-    theme_preference: Optional[str] = None,
-    default_tax_enabled: Optional[bool] = None,
-    default_tax_rate: Optional[float] = None,
-    default_tax_name: Optional[str] = None,
-    smtp_enabled: Optional[bool] = None,
-    smtp_host: Optional[str] = None,
-    smtp_port: Optional[int] = None,
-    smtp_username: Optional[str] = None,
-    smtp_password: Optional[str] = None,
-    smtp_from_email: Optional[str] = None,
-    smtp_from_name: Optional[str] = None,
-    smtp_use_tls: Optional[bool] = None,
-    email_subject_template: Optional[str] = None,
-    email_body_template: Optional[str] = None,
+    name: str | None = None,
+    business_name: str | None = None,
+    address_line1: str | None = None,
+    address_line2: str | None = None,
+    city: str | None = None,
+    state: str | None = None,
+    postal_code: str | None = None,
+    country: str | None = None,
+    email: str | None = None,
+    phone: str | None = None,
+    ein: str | None = None,
+    accent_color: str | None = None,
+    default_payment_terms_days: int | None = None,
+    default_notes: str | None = None,
+    default_payment_instructions: str | None = None,
+    theme_preference: str | None = None,
+    default_tax_enabled: bool | None = None,
+    default_tax_rate: float | None = None,
+    default_tax_name: str | None = None,
+    smtp_enabled: bool | None = None,
+    smtp_host: str | None = None,
+    smtp_port: int | None = None,
+    smtp_username: str | None = None,
+    smtp_password: str | None = None,
+    smtp_from_email: str | None = None,
+    smtp_from_name: str | None = None,
+    smtp_use_tls: bool | None = None,
+    email_subject_template: str | None = None,
+    email_body_template: str | None = None,
 ) -> dict:
     """
     Update business profile fields.
@@ -100,7 +100,6 @@ async def update_business_profile(
     Returns:
         Updated business profile
     """
-    from decimal import Decimal
 
     async with get_session() as session:
         profile = await BusinessProfile.get_or_create(session)

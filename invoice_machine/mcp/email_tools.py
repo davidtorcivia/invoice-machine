@@ -2,20 +2,19 @@
 
 from __future__ import annotations
 
-from typing import Optional
-
-from invoice_machine.database import BusinessProfile, Invoice
+from invoice_machine.database import BusinessProfile
 from invoice_machine.services import InvoiceService
 from invoice_machine.utils import utc_now
 
 from .context import get_session, mcp
 
+
 @mcp.tool()
 async def send_invoice_email(
     invoice_id: int,
-    recipient_email: Optional[str] = None,
-    subject: Optional[str] = None,
-    body: Optional[str] = None,
+    recipient_email: str | None = None,
+    subject: str | None = None,
+    body: str | None = None,
 ) -> dict:
     """
     Send an invoice PDF via email.
@@ -105,7 +104,7 @@ async def get_email_templates() -> dict:
     Returns:
         Current email subject and body templates, plus available placeholders.
     """
-    from invoice_machine.email import DEFAULT_SUBJECT_TEMPLATE, DEFAULT_BODY_TEMPLATE
+    from invoice_machine.email import DEFAULT_BODY_TEMPLATE, DEFAULT_SUBJECT_TEMPLATE
 
     async with get_session() as session:
         profile = await BusinessProfile.get_or_create(session)
@@ -136,8 +135,8 @@ async def get_email_templates() -> dict:
 
 @mcp.tool()
 async def update_email_templates(
-    email_subject_template: Optional[str] = None,
-    email_body_template: Optional[str] = None,
+    email_subject_template: str | None = None,
+    email_body_template: str | None = None,
 ) -> dict:
     """
     Update email templates for invoice/quote emails.
@@ -173,8 +172,8 @@ async def update_email_templates(
 @mcp.tool()
 async def preview_invoice_email(
     invoice_id: int,
-    subject_template: Optional[str] = None,
-    body_template: Optional[str] = None,
+    subject_template: str | None = None,
+    body_template: str | None = None,
 ) -> dict:
     """
     Preview what an invoice email will look like with template expansion.
@@ -187,7 +186,11 @@ async def preview_invoice_email(
     Returns:
         Expanded subject, body, recipient email, and available placeholders
     """
-    from invoice_machine.email import expand_template, DEFAULT_SUBJECT_TEMPLATE, DEFAULT_BODY_TEMPLATE
+    from invoice_machine.email import (
+        DEFAULT_BODY_TEMPLATE,
+        DEFAULT_SUBJECT_TEMPLATE,
+        expand_template,
+    )
 
     async with get_session() as session:
         invoice = await InvoiceService.get_invoice(session, invoice_id)

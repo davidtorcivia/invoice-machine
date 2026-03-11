@@ -17,13 +17,13 @@ from decimal import Decimal
 
 import pytest
 import pytest_asyncio
-from httpx import AsyncClient, ASGITransport
+from httpx import ASGITransport, AsyncClient
 
 from invoice_machine.database import Base, BusinessProfile, Client, Invoice
 from invoice_machine.email import (
-    expand_template,
-    DEFAULT_SUBJECT_TEMPLATE,
     DEFAULT_BODY_TEMPLATE,
+    DEFAULT_SUBJECT_TEMPLATE,
+    expand_template,
 )
 
 # Skip marker for tests requiring Python 3.10+ (due to codebase using union type syntax)
@@ -305,9 +305,10 @@ class TestTemplateExpansion:
 async def api_client():
     """Test client for HTTP requests with authentication."""
     # Import app lazily to avoid Python version issues at module level
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+    from invoice_machine.api.auth import SESSION_COOKIE_NAME, create_session
     from invoice_machine.main import app
-    from invoice_machine.api.auth import create_session, SESSION_COOKIE_NAME
-    from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
 
     engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
     async with engine.begin() as conn:
@@ -667,7 +668,7 @@ class TestEmailTemplateMCPTools:
     @pytest.mark.asyncio
     async def test_mcp_update_subject_template(self, db_session, business_profile):
         """update_email_templates updates subject."""
-        from invoice_machine.mcp.server import update_email_templates, get_email_templates
+        from invoice_machine.mcp.server import get_email_templates, update_email_templates
 
         result = await update_email_templates(
             email_subject_template="MCP Subject: {invoice_number}"

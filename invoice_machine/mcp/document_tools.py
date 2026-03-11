@@ -2,11 +2,8 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from invoice_machine.config import get_settings
 from invoice_machine.database import Client, Invoice
-from invoice_machine.presenters import serialize_client, serialize_invoice
 from invoice_machine.services import InvoiceService
 from invoice_machine.utils import ensure_utc, utc_now
 

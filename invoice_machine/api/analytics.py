@@ -6,16 +6,15 @@ This is critical for scaling to thousands of invoices.
 
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Optional
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import select, func, case, and_, Integer
+from sqlalchemy import Integer, and_, case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-
-from invoice_machine.database import get_session, Invoice
-from invoice_machine.services import ClientService, format_currency
-from invoice_machine.rate_limit import limiter
 from starlette.requests import Request
+
+from invoice_machine.database import Invoice, get_session
+from invoice_machine.rate_limit import limiter
+from invoice_machine.services import ClientService, format_currency
 
 router = APIRouter(prefix="/api/analytics", tags=["analytics"])
 
@@ -90,10 +89,10 @@ async def get_dashboard_summary(
 @limiter.limit("30/minute")
 async def get_revenue_summary(
     request: Request,
-    from_date: Optional[str] = Query(
+    from_date: str | None = Query(
         None, description="Start date (ISO format, defaults to start of current year)"
     ),
-    to_date: Optional[str] = Query(
+    to_date: str | None = Query(
         None, description="End date (ISO format, defaults to today)"
     ),
     group_by: str = Query(
@@ -218,7 +217,7 @@ async def get_revenue_summary(
 @limiter.limit("30/minute")
 async def get_client_lifetime_values(
     request: Request,
-    client_id: Optional[int] = Query(None, description="Specific client ID"),
+    client_id: int | None = Query(None, description="Specific client ID"),
     limit: int = Query(20, ge=1, le=100, description="Max clients to return"),
     session: AsyncSession = Depends(get_session),
 ) -> list:

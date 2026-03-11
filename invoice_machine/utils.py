@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
 import re
+from datetime import UTC, datetime
 
 INVOICE_NUMBER_REGEX = r"^[A-Za-z0-9][A-Za-z0-9._-]{0,49}$"
 INVOICE_NUMBER_PATTERN = re.compile(INVOICE_NUMBER_REGEX)

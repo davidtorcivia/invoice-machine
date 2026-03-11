@@ -1,7 +1,6 @@
 """Client-related service operations."""
 
 from decimal import Decimal
-from typing import Optional
 
 from sqlalchemy import and_, desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,7 +15,7 @@ class ClientService:
     @staticmethod
     async def get_client_invoice_stats(
         session: AsyncSession,
-        client_id: Optional[int] = None,
+        client_id: int | None = None,
         limit: int = 100,
     ) -> list[dict]:
         """Get aggregated invoice statistics for clients in a single query."""
@@ -80,7 +79,7 @@ class ClientService:
     @staticmethod
     async def list_clients(
         session: AsyncSession,
-        search: Optional[str] = None,
+        search: str | None = None,
         include_deleted: bool = False,
     ) -> list[Client]:
         """List clients with optional soft-deleted records and search filtering."""
@@ -99,7 +98,7 @@ class ClientService:
         return list(result.scalars().all())
 
     @staticmethod
-    async def get_client(session: AsyncSession, client_id: int) -> Optional[Client]:
+    async def get_client(session: AsyncSession, client_id: int) -> Client | None:
         """Get a client by ID."""
         return await session.get(Client, client_id)
 
@@ -115,7 +114,7 @@ class ClientService:
     @staticmethod
     async def update_client(
         session: AsyncSession, client_id: int, **kwargs
-    ) -> Optional[Client]:
+    ) -> Client | None:
         """Update a client in place."""
         client = await ClientService.get_client(session, client_id)
         if not client:

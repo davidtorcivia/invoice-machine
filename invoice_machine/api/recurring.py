@@ -2,24 +2,24 @@
 
 from datetime import date
 from decimal import Decimal
-from typing import Optional, List
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.requests import Request
 
-from invoice_machine.database import get_session, RecurringSchedule
+from invoice_machine.api.schemas import LineItemCreate
+from invoice_machine.database import RecurringSchedule, get_session
 from invoice_machine.presenters import serialize_recurring_schedule
-from invoice_machine.services import RecurringService
 from invoice_machine.rate_limit import limiter
+from invoice_machine.services import RecurringService
 
 router = APIRouter(prefix="/api/recurring", tags=["recurring"])
 
 
 def _validate_schedule_day_for_frequency(
-    frequency: Optional[str],
-    schedule_day: Optional[int],
+    frequency: str | None,
+    schedule_day: int | None,
 ) -> None:
     """Validate schedule_day against the selected frequency when possible."""
     if frequency is None or schedule_day is None:
@@ -32,35 +32,26 @@ def _validate_schedule_day_for_frequency(
         raise ValueError("For monthly/quarterly/yearly frequency, schedule_day must be 1-31")
 
 
-class LineItemSchema(BaseModel):
-    """Line item for recurring schedule."""
-
-    description: str = Field(..., min_length=1, max_length=2000)
-    quantity: int = Field(1, ge=1, le=10000)
-    unit_type: str = Field("qty", pattern="^(qty|hours)$")
-    unit_price: str
-
-
 class RecurringScheduleSchema(BaseModel):
     """Recurring schedule response schema."""
 
     id: int
     client_id: int
-    client_name: Optional[str] = None
-    client_business: Optional[str] = None
+    client_name: str | None = None
+    client_business: str | None = None
     name: str
     frequency: str
     schedule_day: int
     currency_code: str
     payment_terms_days: int
-    notes: Optional[str] = None
-    line_items: Optional[List[dict]] = None
-    tax_enabled: Optional[bool] = None
-    tax_rate: Optional[str] = None
-    tax_name: Optional[str] = None
+    notes: str | None = None
+    line_items: list[dict] | None = None
+    tax_enabled: bool | None = None
+    tax_rate: str | None = None
+    tax_name: str | None = None
     is_active: bool
     next_invoice_date: date
-    last_invoice_id: Optional[int] = None
+    last_invoice_id: int | None = None
     created_at: str
     updated_at: str
 
@@ -76,12 +67,12 @@ class RecurringScheduleCreate(BaseModel):
     schedule_day: int = Field(1, ge=0, le=31)
     currency_code: str = Field("USD", max_length=3)
     payment_terms_days: int = Field(30, ge=0, le=365)
-    notes: Optional[str] = Field(None, max_length=10000)
-    line_items: Optional[List[LineItemSchema]] = None
-    tax_enabled: Optional[bool] = None
-    tax_rate: Optional[Decimal] = Field(None, ge=0, le=100)
-    tax_name: Optional[str] = Field(None, max_length=50)
-    next_invoice_date: Optional[date] = None
+    notes: str | None = Field(None, max_length=10000)
+    line_items: list[LineItemCreate] | None = None
+    tax_enabled: bool | None = None
+    tax_rate: Decimal | None = Field(None, ge=0, le=100)
+    tax_name: str | None = Field(None, max_length=50)
+    next_invoice_date: date | None = None
 
     @model_validator(mode="after")
     def validate_schedule_day(self) -> "RecurringScheduleCreate":
@@ -92,18 +83,18 @@ class RecurringScheduleCreate(BaseModel):
 class RecurringScheduleUpdate(BaseModel):
     """Update recurring schedule request."""
 
-    name: Optional[str] = Field(None, min_length=1, max_length=255)
-    frequency: Optional[str] = Field(None, pattern="^(daily|weekly|monthly|quarterly|yearly)$")
-    schedule_day: Optional[int] = Field(None, ge=0, le=31)
-    currency_code: Optional[str] = Field(None, max_length=3)
-    payment_terms_days: Optional[int] = Field(None, ge=0, le=365)
-    notes: Optional[str] = Field(None, max_length=10000)
-    line_items: Optional[List[LineItemSchema]] = None
-    tax_enabled: Optional[bool] = None
-    tax_rate: Optional[Decimal] = Field(None, ge=0, le=100)
-    tax_name: Optional[str] = Field(None, max_length=50)
-    is_active: Optional[bool] = None
-    next_invoice_date: Optional[date] = None
+    name: str | None = Field(None, min_length=1, max_length=255)
+    frequency: str | None = Field(None, pattern="^(daily|weekly|monthly|quarterly|yearly)$")
+    schedule_day: int | None = Field(None, ge=0, le=31)
+    currency_code: str | None = Field(None, max_length=3)
+    payment_terms_days: int | None = Field(None, ge=0, le=365)
+    notes: str | None = Field(None, max_length=10000)
+    line_items: list[LineItemCreate] | None = None
+    tax_enabled: bool | None = None
+    tax_rate: Decimal | None = Field(None, ge=0, le=100)
+    tax_name: str | None = Field(None, max_length=50)
+    is_active: bool | None = None
+    next_invoice_date: date | None = None
 
     @model_validator(mode="after")
     def validate_schedule_day(self) -> "RecurringScheduleUpdate":
@@ -120,10 +111,10 @@ def _schedule_to_dict(schedule: RecurringSchedule) -> dict:
 @limiter.limit("60/minute")
 async def list_schedules(
     request: Request,
-    client_id: Optional[int] = None,
+    client_id: int | None = None,
     active_only: bool = True,
     session: AsyncSession = Depends(get_session),
-) -> List[dict]:
+) -> list[dict]:
     """List recurring schedules."""
     schedules = await RecurringService.list_schedules(
         session, client_id=client_id, active_only=active_only

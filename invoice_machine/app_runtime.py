@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from contextlib import asynccontextmanager
-from datetime import date, timedelta
+from datetime import timedelta
 
 from fastapi import FastAPI
 

@@ -12,11 +12,8 @@ Or standalone: python tests/test_migrations.py
 
 import sqlite3
 import sys
-import tempfile
 from pathlib import Path
-from unittest.mock import patch, MagicMock
-
-import pytest
+from unittest.mock import MagicMock
 
 # Add parent to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))

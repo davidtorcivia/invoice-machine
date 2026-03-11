@@ -1,19 +1,18 @@
 """Business profile API endpoints."""
 
-from datetime import datetime
-from typing import Optional
 import os
 import uuid
+from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Request
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field, field_validator
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 from sqlalchemy.ext.asyncio import AsyncSession
-from fastapi.responses import FileResponse
 
-from invoice_machine.database import BusinessProfile, get_session
 from invoice_machine.config import get_settings
+from invoice_machine.database import BusinessProfile, get_session
 from invoice_machine.utils import utc_now
 
 router = APIRouter(prefix="/api/profile", tags=["profile"])
@@ -26,30 +25,30 @@ class BusinessProfileSchema(BaseModel):
 
     id: int
     name: str
-    business_name: Optional[str] = None
-    address_line1: Optional[str] = None
-    address_line2: Optional[str] = None
-    city: Optional[str] = None
-    state: Optional[str] = None
-    postal_code: Optional[str] = None
+    business_name: str | None = None
+    address_line1: str | None = None
+    address_line2: str | None = None
+    city: str | None = None
+    state: str | None = None
+    postal_code: str | None = None
     country: str = "United States"
-    email: Optional[str] = None
-    phone: Optional[str] = None
-    ein: Optional[str] = None
-    logo_path: Optional[str] = None
+    email: str | None = None
+    phone: str | None = None
+    ein: str | None = None
+    logo_path: str | None = None
     accent_color: str = "#16a34a"
     default_payment_terms_days: int = 30
     default_currency_code: str = "USD"
-    default_notes: Optional[str] = None
-    default_payment_instructions: Optional[str] = None
-    payment_methods: Optional[str] = None  # JSON string: [{id, name, instructions}]
+    default_notes: str | None = None
+    default_payment_instructions: str | None = None
+    payment_methods: str | None = None  # JSON string: [{id, name, instructions}]
     theme_preference: str = "system"
     mcp_api_key_configured: bool = False
     bot_api_key_configured: bool = False
-    app_base_url: Optional[str] = None  # App base URL for links
+    app_base_url: str | None = None  # App base URL for links
     # Tax settings
     default_tax_enabled: bool = False
-    default_tax_rate: Optional[str] = None
+    default_tax_rate: str | None = None
     default_tax_name: str = "Tax"
     created_at: datetime
     updated_at: datetime
@@ -68,29 +67,29 @@ class BusinessProfileSchema(BaseModel):
 class BusinessProfileUpdate(BaseModel):
     """Business profile update schema."""
 
-    name: Optional[str] = Field(None, max_length=255)
-    business_name: Optional[str] = Field(None, max_length=255)
-    address_line1: Optional[str] = Field(None, max_length=500)
-    address_line2: Optional[str] = Field(None, max_length=500)
-    city: Optional[str] = Field(None, max_length=100)
-    state: Optional[str] = Field(None, max_length=100)
-    postal_code: Optional[str] = Field(None, max_length=20)
-    country: Optional[str] = Field(None, max_length=100)
-    email: Optional[str] = Field(None, max_length=255)
-    phone: Optional[str] = Field(None, max_length=50)
-    ein: Optional[str] = Field(None, max_length=50)
-    accent_color: Optional[str] = Field(None, pattern="^#[0-9a-fA-F]{6}$")
-    default_payment_terms_days: Optional[int] = Field(None, ge=0, le=365)
-    default_currency_code: Optional[str] = Field(None, pattern="^[A-Z]{3}$")
-    default_notes: Optional[str] = Field(None, max_length=10000)
-    default_payment_instructions: Optional[str] = Field(None, max_length=10000)
-    payment_methods: Optional[str] = Field(None, max_length=10000)  # JSON string
-    theme_preference: Optional[str] = Field(None, pattern="^(system|light|dark)$")
-    app_base_url: Optional[str] = Field(None, max_length=500)
+    name: str | None = Field(None, max_length=255)
+    business_name: str | None = Field(None, max_length=255)
+    address_line1: str | None = Field(None, max_length=500)
+    address_line2: str | None = Field(None, max_length=500)
+    city: str | None = Field(None, max_length=100)
+    state: str | None = Field(None, max_length=100)
+    postal_code: str | None = Field(None, max_length=20)
+    country: str | None = Field(None, max_length=100)
+    email: str | None = Field(None, max_length=255)
+    phone: str | None = Field(None, max_length=50)
+    ein: str | None = Field(None, max_length=50)
+    accent_color: str | None = Field(None, pattern="^#[0-9a-fA-F]{6}$")
+    default_payment_terms_days: int | None = Field(None, ge=0, le=365)
+    default_currency_code: str | None = Field(None, pattern="^[A-Z]{3}$")
+    default_notes: str | None = Field(None, max_length=10000)
+    default_payment_instructions: str | None = Field(None, max_length=10000)
+    payment_methods: str | None = Field(None, max_length=10000)  # JSON string
+    theme_preference: str | None = Field(None, pattern="^(system|light|dark)$")
+    app_base_url: str | None = Field(None, max_length=500)
     # Tax settings
-    default_tax_enabled: Optional[bool] = None
-    default_tax_rate: Optional[str] = Field(None, max_length=10)
-    default_tax_name: Optional[str] = Field(None, max_length=50)
+    default_tax_enabled: bool | None = None
+    default_tax_rate: str | None = Field(None, max_length=10)
+    default_tax_name: str | None = Field(None, max_length=50)
 
 
 def sanitize_filename(filename: str) -> str:

@@ -2,7 +2,6 @@
 
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Optional, List, Union
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, ConfigDict, Field
@@ -10,7 +9,8 @@ from slowapi import Limiter
 from slowapi.util import get_remote_address
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from invoice_machine.database import Invoice, InvoiceItem, get_session
+from invoice_machine.api.schemas import LineItemCreate
+from invoice_machine.database import Invoice, get_session
 from invoice_machine.presenters import serialize_invoice, serialize_invoice_item
 from invoice_machine.services import InvoiceService
 from invoice_machine.utils import (
@@ -43,18 +43,18 @@ class InvoiceSchema(BaseModel):
 
     id: int
     invoice_number: str
-    client_id: Optional[int] = None
-    client_name: Optional[str] = None
-    client_business: Optional[str] = None
-    client_address: Optional[str] = None
-    client_email: Optional[str] = None
+    client_id: int | None = None
+    client_name: str | None = None
+    client_business: str | None = None
+    client_address: str | None = None
+    client_email: str | None = None
     status: str
     document_type: str = "invoice"
-    client_reference: Optional[str] = None
+    client_reference: str | None = None
     show_payment_instructions: bool = True
-    selected_payment_methods: Optional[str] = None  # JSON array of method IDs
+    selected_payment_methods: str | None = None  # JSON array of method IDs
     issue_date: date
-    due_date: Optional[date] = None
+    due_date: date | None = None
     payment_terms_days: int
     currency_code: str
     subtotal: str
@@ -63,76 +63,67 @@ class InvoiceSchema(BaseModel):
     tax_rate: str = "0"
     tax_name: str = "Tax"
     tax_amount: str = "0"
-    notes: Optional[str] = None
-    pdf_path: Optional[str] = None
-    pdf_generated_at: Optional[datetime] = None
+    notes: str | None = None
+    pdf_path: str | None = None
+    pdf_generated_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
-    deleted_at: Optional[datetime] = None
+    deleted_at: datetime | None = None
     line_items_count: int = 0
     line_items_preview: str = ""
-    items: List[InvoiceItemSchema] = []
+    items: list[InvoiceItemSchema] = []
 
     model_config = ConfigDict(from_attributes=True)
-
-
-class InvoiceItemCreate(BaseModel):
-    """Invoice item creation schema."""
-
-    description: str = Field(..., min_length=1, max_length=2000)
-    quantity: int = Field(1, ge=1, le=10000)
-    unit_type: str = Field("qty", pattern="^(qty|hours)$")
-    unit_price: Union[Decimal, str]
 
 
 class InvoiceCreate(BaseModel):
     """Invoice creation schema."""
 
-    client_id: Optional[int] = None
-    issue_date: Optional[date] = None
-    due_date: Optional[date] = None
-    payment_terms_days: Optional[int] = Field(None, ge=0, le=365)
+    client_id: int | None = None
+    issue_date: date | None = None
+    due_date: date | None = None
+    payment_terms_days: int | None = Field(None, ge=0, le=365)
     currency_code: str = Field("USD", max_length=3)
-    notes: Optional[str] = Field(None, max_length=10000)
+    notes: str | None = Field(None, max_length=10000)
     document_type: str = Field("invoice", pattern="^(invoice|quote)$")
-    client_reference: Optional[str] = Field(None, max_length=100)
+    client_reference: str | None = Field(None, max_length=100)
     show_payment_instructions: bool = True
-    selected_payment_methods: Optional[str] = Field(None, max_length=1000)
-    invoice_number_override: Optional[str] = Field(
+    selected_payment_methods: str | None = Field(None, max_length=1000)
+    invoice_number_override: str | None = Field(
         None, max_length=50, pattern=INVOICE_NUMBER_REGEX
     )
     # Tax settings
-    tax_enabled: Optional[int] = Field(0, ge=0, le=1)
-    tax_rate: Optional[Decimal] = Field(None, ge=0, le=100)
-    tax_name: Optional[str] = Field(None, max_length=50)
-    items: Optional[List[InvoiceItemCreate]] = Field(None, max_length=100)
+    tax_enabled: int | None = Field(0, ge=0, le=1)
+    tax_rate: Decimal | None = Field(None, ge=0, le=100)
+    tax_name: str | None = Field(None, max_length=50)
+    items: list[LineItemCreate] | None = Field(None, max_length=100)
 
 
 class InvoiceUpdate(BaseModel):
     """Invoice update schema."""
 
-    issue_date: Optional[date] = None
-    due_date: Optional[date] = None
-    status: Optional[str] = Field(None, pattern="^(draft|sent|paid|overdue|cancelled)$")
-    notes: Optional[str] = Field(None, max_length=10000)
-    document_type: Optional[str] = Field(None, pattern="^(invoice|quote)$")
-    client_reference: Optional[str] = Field(None, max_length=100)
-    show_payment_instructions: Optional[bool] = None
-    selected_payment_methods: Optional[str] = Field(None, max_length=1000)
+    issue_date: date | None = None
+    due_date: date | None = None
+    status: str | None = Field(None, pattern="^(draft|sent|paid|overdue|cancelled)$")
+    notes: str | None = Field(None, max_length=10000)
+    document_type: str | None = Field(None, pattern="^(invoice|quote)$")
+    client_reference: str | None = Field(None, max_length=100)
+    show_payment_instructions: bool | None = None
+    selected_payment_methods: str | None = Field(None, max_length=1000)
     # Tax settings
-    tax_enabled: Optional[int] = Field(None, ge=0, le=1)
-    tax_rate: Optional[Decimal] = Field(None, ge=0, le=100)
-    tax_name: Optional[str] = Field(None, max_length=50)
+    tax_enabled: int | None = Field(None, ge=0, le=1)
+    tax_rate: Decimal | None = Field(None, ge=0, le=100)
+    tax_name: str | None = Field(None, max_length=50)
 
 
 class InvoiceItemUpdate(BaseModel):
     """Invoice item update schema."""
 
-    description: Optional[str] = Field(None, max_length=2000)
-    quantity: Optional[int] = Field(None, ge=1, le=10000)
-    unit_type: Optional[str] = Field(None, pattern="^(qty|hours)$")
-    unit_price: Optional[Union[Decimal, str]] = None
-    sort_order: Optional[int] = Field(None, ge=0)
+    description: str | None = Field(None, max_length=2000)
+    quantity: int | None = Field(None, ge=1, le=10000)
+    unit_type: str | None = Field(None, pattern="^(qty|hours)$")
+    unit_price: Decimal | str | None = None
+    sort_order: int | None = Field(None, ge=0)
 
 
 class BulkActionError(BaseModel):
@@ -146,7 +137,7 @@ class BulkActionRequest(BaseModel):
     """Bulk action request schema."""
 
     action: str = Field(..., pattern="^(mark_sent|mark_paid|delete)$")
-    invoice_ids: List[int] = Field(..., min_length=1, max_length=100)
+    invoice_ids: list[int] = Field(..., min_length=1, max_length=100)
 
 
 class BulkActionResponse(BaseModel):
@@ -156,7 +147,7 @@ class BulkActionResponse(BaseModel):
     total_requested: int
     successful: int
     failed: int
-    errors: List[BulkActionError] = []
+    errors: list[BulkActionError] = []
 
 
 class InvoicePagination(BaseModel):
@@ -173,21 +164,21 @@ class InvoicePagination(BaseModel):
 class PaginatedInvoiceResponse(BaseModel):
     """Paginated invoice list response."""
 
-    items: List[InvoiceSchema]
+    items: list[InvoiceSchema]
     pagination: InvoicePagination
 
 
-@router.get("", response_model=List[InvoiceSchema])
+@router.get("", response_model=list[InvoiceSchema])
 @limiter.limit("120/minute")
 async def list_invoices(
     request: Request,
-    status: Optional[str] = Query(None, description="Filter by status"),
-    document_type: Optional[str] = Query(
+    status: str | None = Query(None, description="Filter by status"),
+    document_type: str | None = Query(
         None, pattern="^(invoice|quote)$", description="Filter by document type"
     ),
-    client_id: Optional[int] = Query(None, description="Filter by client ID"),
-    from_date: Optional[date] = Query(None, description="Filter from this date"),
-    to_date: Optional[date] = Query(None, description="Filter to this date"),
+    client_id: int | None = Query(None, description="Filter by client ID"),
+    from_date: date | None = Query(None, description="Filter from this date"),
+    to_date: date | None = Query(None, description="Filter to this date"),
     include_deleted: bool = Query(False, description="Include soft-deleted invoices"),
     sort_by: str = Query(
         "created_at",
@@ -196,7 +187,7 @@ async def list_invoices(
     sort_dir: str = Query("desc", pattern="^(asc|desc)$"),
     limit: int = Query(50, ge=1, le=100),
     session: AsyncSession = Depends(get_session),
-) -> List[dict]:
+) -> list[dict]:
     """List invoices with optional filters."""
     invoices = await InvoiceService.list_invoices(
         session,
@@ -217,13 +208,13 @@ async def list_invoices(
 @limiter.limit("120/minute")
 async def list_invoices_paginated(
     request: Request,
-    status: Optional[str] = Query(None, description="Filter by status"),
-    document_type: Optional[str] = Query(
+    status: str | None = Query(None, description="Filter by status"),
+    document_type: str | None = Query(
         None, pattern="^(invoice|quote)$", description="Filter by document type"
     ),
-    client_id: Optional[int] = Query(None, description="Filter by client ID"),
-    from_date: Optional[date] = Query(None, description="Filter from this date"),
-    to_date: Optional[date] = Query(None, description="Filter to this date"),
+    client_id: int | None = Query(None, description="Filter by client ID"),
+    from_date: date | None = Query(None, description="Filter from this date"),
+    to_date: date | None = Query(None, description="Filter to this date"),
     include_deleted: bool = Query(False, description="Include soft-deleted invoices"),
     sort_by: str = Query(
         "created_at",
@@ -386,7 +377,7 @@ async def add_invoice_item(
     description: str = Query(..., description="Item description"),
     quantity: int = Query(1, ge=1, description="Quantity"),
     unit_type: str = Query("qty", pattern="^(qty|hours)$", description="Unit type"),
-    unit_price: Union[Decimal, str] = Query(..., description="Unit price"),
+    unit_price: Decimal | str = Query(..., description="Unit price"),
     sort_order: int = Query(0, description="Sort order"),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
@@ -452,8 +443,8 @@ async def generate_invoice_pdf(
     session: AsyncSession = Depends(get_session),
 ):
     """Generate PDF for invoice."""
-    from invoice_machine.pdf.generator import generate_pdf
     from invoice_machine.config import get_settings
+    from invoice_machine.pdf.generator import generate_pdf
 
     settings = get_settings()
     invoice = await InvoiceService.get_invoice(session, invoice_id)
@@ -483,6 +474,7 @@ async def get_invoice_pdf(
 ):
     """Get generated PDF for invoice, generating if needed."""
     from fastapi.responses import FileResponse
+
     from invoice_machine.config import get_settings
     from invoice_machine.pdf.generator import generate_pdf
 

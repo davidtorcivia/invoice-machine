@@ -7,18 +7,18 @@ Implements secure session management with:
 - Rate limiting on auth endpoints
 """
 
+import hashlib
 import re
 import secrets
-import hashlib
 from datetime import timedelta
-from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Response, Cookie, Request, Header
+from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from invoice_machine.database import User, Session as DbSession, get_session, async_session_maker
 from invoice_machine.config import get_settings
+from invoice_machine.database import Session as DbSession
+from invoice_machine.database import User, async_session_maker, get_session
 from invoice_machine.rate_limit import limiter
 from invoice_machine.utils import utc_now
 
@@ -38,7 +38,7 @@ PASSWORD_REQUIREMENTS = [
 ]
 
 
-def validate_password_complexity(password: str) -> Optional[str]:
+def validate_password_complexity(password: str) -> str | None:
     """
     Validate password meets complexity requirements.
 
@@ -106,7 +106,7 @@ def verify_password(password: str, password_hash: str) -> bool:
 async def create_session(
     db_session: AsyncSession,
     user_id: int,
-    request: Optional[Request] = None,
+    request: Request | None = None,
 ) -> DbSession:
     """Create a new database-backed session with CSRF token.
 
@@ -138,7 +138,7 @@ async def create_session(
     )
 
 
-async def get_session_data(db_session: AsyncSession, token: str) -> Optional[DbSession]:
+async def get_session_data(db_session: AsyncSession, token: str) -> DbSession | None:
     """Get session data from database if valid and not expired."""
     return await DbSession.get_by_token(db_session, token)
 
@@ -153,7 +153,7 @@ async def cleanup_expired_sessions(db_session: AsyncSession) -> int:
     return await DbSession.delete_expired(db_session)
 
 
-async def get_session_user_id(token: str) -> Optional[int]:
+async def get_session_user_id(token: str) -> int | None:
     """
     Validate a session token and return the user_id if valid.
 
@@ -193,8 +193,8 @@ class AuthStatus(BaseModel):
 
     authenticated: bool
     needs_setup: bool
-    username: Optional[str] = None
-    csrf_token: Optional[str] = None  # Included for authenticated users
+    username: str | None = None
+    csrf_token: str | None = None  # Included for authenticated users
 
 
 class SetupRequest(BaseModel):
@@ -235,7 +235,7 @@ def _set_session_cookies(response: Response, session: DbSession) -> None:
 async def verify_csrf_token(
     db_session: AsyncSession,
     session_token: str,
-    csrf_header: Optional[str],
+    csrf_header: str | None,
 ) -> bool:
     """
     Verify CSRF token matches the session's token.
@@ -256,7 +256,7 @@ async def verify_csrf_token(
 @router.get("/status", response_model=AuthStatus)
 async def auth_status(
     db_session: AsyncSession = Depends(get_session),
-    session_token: Optional[str] = Cookie(None, alias=SESSION_COOKIE_NAME),
+    session_token: str | None = Cookie(None, alias=SESSION_COOKIE_NAME),
 ):
     """Check authentication status and if setup is needed."""
     user_count = await User.count(db_session)
@@ -351,7 +351,7 @@ async def login(
 async def logout(
     response: Response,
     db_session: AsyncSession = Depends(get_session),
-    session_token: Optional[str] = Cookie(None, alias=SESSION_COOKIE_NAME),
+    session_token: str | None = Cookie(None, alias=SESSION_COOKIE_NAME),
 ):
     """Log out and clear session from database."""
     if session_token:

@@ -4,17 +4,16 @@ from __future__ import annotations
 
 from datetime import date
 from decimal import Decimal
-from typing import Optional, Union
 
 from invoice_machine.presenters import serialize_recurring_schedule
 from invoice_machine.services import RecurringService
-from invoice_machine.utils import ensure_utc
 
 from .context import get_session, mcp
 
+
 @mcp.tool()
 async def list_recurring_schedules(
-    client_id: Optional[int] = None,
+    client_id: int | None = None,
     include_paused: bool = False,
 ) -> list:
     """
@@ -37,7 +36,7 @@ async def list_recurring_schedules(
 
 
 @mcp.tool()
-async def get_recurring_schedule(schedule_id: int) -> Optional[dict]:
+async def get_recurring_schedule(schedule_id: int) -> dict | None:
     """
     Get a recurring schedule by ID.
 
@@ -63,11 +62,11 @@ async def create_recurring_schedule(
     schedule_day: int = 1,
     currency_code: str = "USD",
     payment_terms_days: int = 30,
-    notes: Optional[str] = None,
-    next_invoice_date: Optional[str] = None,
-    tax_enabled: Optional[int] = None,
-    tax_rate: Optional[float] = None,
-    tax_name: Optional[str] = None,
+    notes: str | None = None,
+    next_invoice_date: str | None = None,
+    tax_enabled: int | None = None,
+    tax_rate: float | None = None,
+    tax_name: str | None = None,
 ) -> dict:
     """
     Create a recurring invoice schedule.
@@ -90,7 +89,6 @@ async def create_recurring_schedule(
     Returns:
         Created schedule details
     """
-    from decimal import Decimal
 
     async with get_session() as session:
         # Parse next_invoice_date if provided
@@ -123,18 +121,18 @@ async def create_recurring_schedule(
 @mcp.tool()
 async def update_recurring_schedule(
     schedule_id: int,
-    name: Optional[str] = None,
-    frequency: Optional[str] = None,
-    schedule_day: Optional[int] = None,
-    currency_code: Optional[str] = None,
-    payment_terms_days: Optional[int] = None,
-    notes: Optional[str] = None,
-    items: Optional[list] = None,
-    next_invoice_date: Optional[str] = None,
-    tax_enabled: Optional[int] = None,
-    tax_rate: Optional[float] = None,
-    tax_name: Optional[str] = None,
-) -> Optional[dict]:
+    name: str | None = None,
+    frequency: str | None = None,
+    schedule_day: int | None = None,
+    currency_code: str | None = None,
+    payment_terms_days: int | None = None,
+    notes: str | None = None,
+    items: list | None = None,
+    next_invoice_date: str | None = None,
+    tax_enabled: int | None = None,
+    tax_rate: float | None = None,
+    tax_name: str | None = None,
+) -> dict | None:
     """
     Update a recurring schedule.
 
@@ -157,7 +155,6 @@ async def update_recurring_schedule(
     Returns:
         Updated schedule or null if not found
     """
-    from decimal import Decimal
 
     async with get_session() as session:
         updates = {}
@@ -256,6 +253,5 @@ async def trigger_recurring_schedule(schedule_id: int) -> dict:
 
 
 # Import for type references
-import invoice_machine.database
 
 

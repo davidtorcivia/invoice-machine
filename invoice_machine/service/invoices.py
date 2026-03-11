@@ -2,7 +2,6 @@
 
 from datetime import date
 from decimal import Decimal
-from typing import List, Optional, Union
 
 from sqlalchemy import and_, asc, desc, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -23,11 +22,11 @@ class InvoiceService:
     @staticmethod
     async def list_invoices(
         session: AsyncSession,
-        status: Optional[str] = None,
-        document_type: Optional[str] = None,
-        client_id: Optional[int] = None,
-        from_date: Optional[date] = None,
-        to_date: Optional[date] = None,
+        status: str | None = None,
+        document_type: str | None = None,
+        client_id: int | None = None,
+        from_date: date | None = None,
+        to_date: date | None = None,
         include_deleted: bool = False,
         sort_by: str = "created_at",
         sort_dir: str = "desc",
@@ -73,11 +72,11 @@ class InvoiceService:
     @staticmethod
     async def list_invoices_paginated(
         session: AsyncSession,
-        status: Optional[str] = None,
-        document_type: Optional[str] = None,
-        client_id: Optional[int] = None,
-        from_date: Optional[date] = None,
-        to_date: Optional[date] = None,
+        status: str | None = None,
+        document_type: str | None = None,
+        client_id: int | None = None,
+        from_date: date | None = None,
+        to_date: date | None = None,
         include_deleted: bool = False,
         sort_by: str = "created_at",
         sort_dir: str = "desc",
@@ -124,28 +123,28 @@ class InvoiceService:
         return invoices, total
 
     @staticmethod
-    async def get_invoice(session: AsyncSession, invoice_id: int) -> Optional[Invoice]:
+    async def get_invoice(session: AsyncSession, invoice_id: int) -> Invoice | None:
         """Get an invoice by ID."""
         return await session.get(Invoice, invoice_id)
 
     @staticmethod
     async def create_invoice(
         session: AsyncSession,
-        client_id: Optional[int] = None,
-        issue_date: Optional[date] = None,
-        due_date: Optional[date] = None,
-        payment_terms_days: Optional[int] = None,
+        client_id: int | None = None,
+        issue_date: date | None = None,
+        due_date: date | None = None,
+        payment_terms_days: int | None = None,
         currency_code: str = "USD",
-        notes: Optional[str] = None,
-        items: Optional[list[dict]] = None,
+        notes: str | None = None,
+        items: list[dict] | None = None,
         document_type: str = "invoice",
-        client_reference: Optional[str] = None,
+        client_reference: str | None = None,
         show_payment_instructions: bool = True,
-        selected_payment_methods: Optional[str] = None,
-        invoice_number_override: Optional[str] = None,
-        tax_enabled: Optional[bool] = None,
-        tax_rate: Optional[Decimal] = None,
-        tax_name: Optional[str] = None,
+        selected_payment_methods: str | None = None,
+        invoice_number_override: str | None = None,
+        tax_enabled: bool | None = None,
+        tax_rate: Decimal | None = None,
+        tax_name: str | None = None,
     ) -> Invoice:
         """Create a new invoice or quote, including optional line items."""
         business = await BusinessProfile.get_or_create(session)
@@ -254,12 +253,12 @@ class InvoiceService:
     async def update_invoice(
         session: AsyncSession,
         invoice_id: int,
-        issue_date: Optional[date] = None,
-        due_date: Optional[date] = None,
-        status: Optional[str] = None,
-        notes: Optional[str] = None,
+        issue_date: date | None = None,
+        due_date: date | None = None,
+        status: str | None = None,
+        notes: str | None = None,
         **kwargs,
-    ) -> Optional[Invoice]:
+    ) -> Invoice | None:
         """Update an invoice."""
         invoice = await InvoiceService.get_invoice(session, invoice_id)
         if not invoice:
@@ -335,7 +334,7 @@ class InvoiceService:
         invoice_id: int,
         description: str,
         quantity: int = 1,
-        unit_price: Union[Decimal, float, str] = 0,
+        unit_price: Decimal | float | str = 0,
         sort_order: int = 0,
         unit_type: str = "qty",
     ) -> InvoiceItem:
@@ -375,13 +374,13 @@ class InvoiceService:
     async def update_item(
         session: AsyncSession,
         item_id: int,
-        description: Optional[str] = None,
-        quantity: Optional[int] = None,
-        unit_price: Optional[Union[Decimal, float, str]] = None,
-        sort_order: Optional[int] = None,
-        unit_type: Optional[str] = None,
-        invoice_id: Optional[int] = None,
-    ) -> Optional[InvoiceItem]:
+        description: str | None = None,
+        quantity: int | None = None,
+        unit_price: Decimal | float | str | None = None,
+        sort_order: int | None = None,
+        unit_type: str | None = None,
+        invoice_id: int | None = None,
+    ) -> InvoiceItem | None:
         """Update a line item and keep parent invoice totals in sync."""
         item = await session.get(InvoiceItem, item_id)
         if not item:
@@ -420,7 +419,7 @@ class InvoiceService:
     async def remove_item(
         session: AsyncSession,
         item_id: int,
-        invoice_id: Optional[int] = None,
+        invoice_id: int | None = None,
     ) -> bool:
         """Remove a line item and keep parent invoice totals in sync."""
         item = await session.get(InvoiceItem, item_id)
@@ -461,7 +460,7 @@ class InvoiceService:
     async def bulk_action(
         session: AsyncSession,
         action: str,
-        invoice_ids: List[int],
+        invoice_ids: list[int],
     ) -> dict:
         """Execute a bulk action on multiple invoices with validation."""
         valid_transitions = {

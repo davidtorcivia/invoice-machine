@@ -1,17 +1,16 @@
 """Email/SMTP API endpoints."""
 
-from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.requests import Request
 
-from invoice_machine.database import get_session, BusinessProfile
-from invoice_machine.services import InvoiceService
-from invoice_machine.email import EmailService
 from invoice_machine.crypto import encrypt_credential
+from invoice_machine.database import BusinessProfile, get_session
+from invoice_machine.email import EmailService
 from invoice_machine.rate_limit import limiter
+from invoice_machine.services import InvoiceService
 
 router = APIRouter(tags=["email"])
 
@@ -20,34 +19,34 @@ class SMTPSettingsSchema(BaseModel):
     """SMTP settings response (password masked)."""
 
     smtp_enabled: bool
-    smtp_host: Optional[str] = None
+    smtp_host: str | None = None
     smtp_port: int = 587
-    smtp_username: Optional[str] = None
+    smtp_username: str | None = None
     smtp_password_set: bool = False  # Never expose actual password
-    smtp_from_email: Optional[str] = None
-    smtp_from_name: Optional[str] = None
+    smtp_from_email: str | None = None
+    smtp_from_name: str | None = None
     smtp_use_tls: bool = True
 
 
 class SMTPSettingsUpdate(BaseModel):
     """SMTP settings update request."""
 
-    smtp_enabled: Optional[bool] = None
-    smtp_host: Optional[str] = Field(None, max_length=255)
-    smtp_port: Optional[int] = Field(None, ge=1, le=65535)
-    smtp_username: Optional[str] = Field(None, max_length=255)
-    smtp_password: Optional[str] = Field(None, max_length=255)
-    smtp_from_email: Optional[str] = Field(None, max_length=255)
-    smtp_from_name: Optional[str] = Field(None, max_length=255)
-    smtp_use_tls: Optional[bool] = None
+    smtp_enabled: bool | None = None
+    smtp_host: str | None = Field(None, max_length=255)
+    smtp_port: int | None = Field(None, ge=1, le=65535)
+    smtp_username: str | None = Field(None, max_length=255)
+    smtp_password: str | None = Field(None, max_length=255)
+    smtp_from_email: str | None = Field(None, max_length=255)
+    smtp_from_name: str | None = Field(None, max_length=255)
+    smtp_use_tls: bool | None = None
 
 
 class SendEmailRequest(BaseModel):
     """Send invoice email request."""
 
-    recipient_email: Optional[str] = Field(None, max_length=255)
-    subject: Optional[str] = Field(None, max_length=500)
-    body: Optional[str] = Field(None, max_length=10000)
+    recipient_email: str | None = Field(None, max_length=255)
+    subject: str | None = Field(None, max_length=500)
+    body: str | None = Field(None, max_length=10000)
 
 
 def _profile_to_smtp_settings(profile: BusinessProfile) -> dict:

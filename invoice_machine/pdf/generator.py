@@ -3,15 +3,14 @@
 import base64
 from decimal import Decimal
 from pathlib import Path
-from typing import Optional, Union
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.concurrency import run_in_threadpool
-from weasyprint import HTML, CSS
+from weasyprint import HTML
 
-from invoice_machine.database import Invoice, InvoiceItem, BusinessProfile
 from invoice_machine.config import get_settings
+from invoice_machine.database import BusinessProfile, Invoice, InvoiceItem
 from invoice_machine.utils import sanitize_filename_component
 
 settings = get_settings()
@@ -40,7 +39,7 @@ env.filters["strftime"] = strftime_filter
 env.filters["zfill"] = zfill_filter
 
 
-def format_money(amount: Union[Decimal, str, float], currency_code: str = "USD") -> str:
+def format_money(amount: Decimal | str | float, currency_code: str = "USD") -> str:
     """Format amount as currency string."""
     amount = Decimal(str(amount))
     if currency_code == "USD":
@@ -57,7 +56,7 @@ def _generate_pdf_sync(html: str, pdf_path: Path) -> None:
     HTML(string=html).write_pdf(pdf_path)
 
 
-def get_logo_base64(business: BusinessProfile) -> Optional[str]:
+def get_logo_base64(business: BusinessProfile) -> str | None:
     """Get logo as base64 data URL."""
     if not business.logo_path:
         return None
