@@ -2,7 +2,56 @@
 
 from __future__ import annotations
 
+from .analytics_tools import (  # noqa: F401
+    get_client_invoice_context,
+    get_client_lifetime_value,
+    get_revenue_summary,
+)
+from .client_tools import (  # noqa: F401
+    create_client,
+    delete_client,
+    get_client,
+    list_clients,
+    restore_client,
+    update_client,
+)
 from .context import mcp
+from .document_tools import generate_pdf, list_trash  # noqa: F401
+from .email_tools import (  # noqa: F401
+    get_email_templates,
+    preview_invoice_email,
+    send_invoice_email,
+    test_smtp_connection,
+    update_email_templates,
+)
+from .invoice_tools import (  # noqa: F401
+    add_invoice_item,
+    create_invoice,
+    delete_invoice,
+    get_invoice,
+    list_invoices,
+    remove_invoice_item,
+    restore_invoice,
+    update_invoice,
+    update_invoice_item,
+)
+from .profile_tools import (  # noqa: F401
+    add_payment_method,
+    get_business_profile,
+    remove_payment_method,
+    update_business_profile,
+)
+from .recurring_tools import (  # noqa: F401
+    create_recurring_schedule,
+    delete_recurring_schedule,
+    get_recurring_schedule,
+    list_recurring_schedules,
+    pause_recurring_schedule,
+    resume_recurring_schedule,
+    trigger_recurring_schedule,
+    update_recurring_schedule,
+)
+from .search_tools import search  # noqa: F401
 
 
 def main():
