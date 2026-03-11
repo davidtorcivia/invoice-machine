@@ -10,9 +10,15 @@
   import ConfirmModal from '$lib/components/ConfirmModal.svelte';
   import CollapsibleSection from '$lib/components/CollapsibleSection.svelte';
   import SettingsApiAccessSection from '$lib/components/settings/SettingsApiAccessSection.svelte';
+  import SettingsAddressSection from '$lib/components/settings/SettingsAddressSection.svelte';
   import SettingsBackupSection from '$lib/components/settings/SettingsBackupSection.svelte';
+  import SettingsBusinessInfoSection from '$lib/components/settings/SettingsBusinessInfoSection.svelte';
+  import SettingsInvoiceDefaultsSection from '$lib/components/settings/SettingsInvoiceDefaultsSection.svelte';
+  import SettingsLogoSection from '$lib/components/settings/SettingsLogoSection.svelte';
+  import SettingsPaymentMethodModal from '$lib/components/settings/SettingsPaymentMethodModal.svelte';
   import SettingsPaymentMethodsSection from '$lib/components/settings/SettingsPaymentMethodsSection.svelte';
   import SettingsSmtpSection from '$lib/components/settings/SettingsSmtpSection.svelte';
+  import SettingsTaxSection from '$lib/components/settings/SettingsTaxSection.svelte';
 
   let profile = null;
   let loading = true;
@@ -327,12 +333,6 @@
 
   function openDeleteLogoModal() {
     showDeleteLogoModal = true;
-  }
-
-  function handleModalKeydown(event, closeModal) {
-    if (event.key === 'Escape') {
-      closeModal();
-    }
   }
 
   function closeDeleteLogoModal() {
@@ -657,264 +657,44 @@
     </div>
   {:else}
     <div class="settings-layout">
-      <!-- Logo Section -->
-      <CollapsibleSection title="Logo" subtitle="Company logo for invoices" icon="image" bind:open={openSections.logo}>
-        <div class="logo-section">
-          <div class="logo-preview" class:has-logo={logoPreview} class:uploading={logoUploading}>
-            {#if logoUploading}
-              <div class="upload-progress">
-                <div class="progress-bar">
-                  <div class="progress-fill" style="width: {Math.min(uploadProgress, 100)}%"></div>
-                </div>
-                <span class="progress-text">Uploading...</span>
-              </div>
-            {:else if logoPreview}
-              <img src={logoPreview} alt="Logo" />
-            {:else}
-              <div class="logo-placeholder">
-                <Icon name="image" size="lg" />
-                <span>Your Logo</span>
-              </div>
-            {/if}
-          </div>
+      <SettingsLogoSection
+        bind:open={openSections.logo}
+        {logoPreview}
+        {logoUploading}
+        {uploadProgress}
+        {handleLogoSelect}
+        {openDeleteLogoModal}
+      />
 
-          <div class="logo-controls">
-            <p class="logo-hint">Upload your company logo. It will appear on invoices and PDFs.</p>
-            <div class="logo-buttons">
-              <label class="btn btn-secondary" class:disabled={logoUploading}>
-                <Icon name="upload" size="sm" />
-                {logoPreview ? 'Change Logo' : 'Upload Logo'}
-                <input
-                  type="file"
-                  accept="image/*"
-                  on:change={handleLogoSelect}
-                  disabled={logoUploading}
-                  style="display: none"
-                />
-              </label>
+      <SettingsBusinessInfoSection
+        bind:open={openSections.business}
+        bind:name
+        bind:businessName
+        bind:email
+        bind:phone
+        bind:ein
+      />
 
-              {#if logoPreview && !logoUploading}
-                <button
-                  class="btn btn-ghost btn-danger-text"
-                  on:click={openDeleteLogoModal}
-                >
-                  <Icon name="trash" size="sm" />
-                  Delete
-                </button>
-              {/if}
-            </div>
-          </div>
-        </div>
-      </CollapsibleSection>
+      <SettingsAddressSection
+        bind:open={openSections.address}
+        bind:addressLine1
+        bind:addressLine2
+        bind:city
+        bind:state
+        bind:postalCode
+        bind:country
+        {countries}
+      />
 
-      <!-- Business Info Form -->
-      <CollapsibleSection title="Business Information" subtitle="Your company details" icon="users" bind:open={openSections.business}>
-        <div class="form-row">
-          <div class="form-group">
-            <label for="name" class="label">Your Name *</label>
-            <input
-              id="name"
-              type="text"
-              class="input"
-              placeholder="Your name"
-              bind:value={name}
-            />
-          </div>
-
-          <div class="form-group">
-            <label for="business-name" class="label">Business Name</label>
-            <input
-              id="business-name"
-              type="text"
-              class="input"
-              placeholder="Business name or LLC"
-              bind:value={businessName}
-            />
-          </div>
-        </div>
-
-        <div class="form-row">
-          <div class="form-group">
-            <label for="email" class="label">Email</label>
-            <input
-              id="email"
-              type="email"
-              class="input"
-              placeholder="you@example.com"
-              bind:value={email}
-            />
-          </div>
-
-          <div class="form-group">
-            <label for="phone" class="label">Phone</label>
-            <input
-              id="phone"
-              type="tel"
-              class="input"
-              placeholder="(555) 123-4567"
-              bind:value={phone}
-            />
-          </div>
-        </div>
-
-        <div class="form-group">
-          <label for="ein" class="label">Tax ID / EIN</label>
-          <input
-            id="ein"
-            type="text"
-            class="input"
-            placeholder="XX-XXXXXXX"
-            bind:value={ein}
-          />
-          <p class="form-hint">Optional. Will appear on invoices if provided.</p>
-        </div>
-      </CollapsibleSection>
-
-      <!-- Address -->
-      <CollapsibleSection title="Business Address" subtitle="Your mailing address" icon="home" bind:open={openSections.address}>
-        <div class="form-group">
-          <label for="address1" class="label">Street Address</label>
-          <input
-            id="address1"
-            type="text"
-            class="input"
-            placeholder="123 Main St"
-            bind:value={addressLine1}
-          />
-        </div>
-
-        <div class="form-group">
-          <label for="address2" class="label">Apartment, suite, etc.</label>
-          <input
-            id="address2"
-            type="text"
-            class="input"
-            placeholder="Apt 4"
-            bind:value={addressLine2}
-          />
-        </div>
-
-        <div class="form-row">
-          <div class="form-group">
-            <label for="city" class="label">City</label>
-            <input
-              id="city"
-              type="text"
-              class="input"
-              placeholder="City"
-              bind:value={city}
-            />
-          </div>
-
-          <div class="form-group">
-            <label for="state" class="label">State</label>
-            <input
-              id="state"
-              type="text"
-              class="input"
-              placeholder="State"
-              bind:value={state}
-            />
-          </div>
-
-          <div class="form-group">
-            <label for="postal" class="label">ZIP Code</label>
-            <input
-              id="postal"
-              type="text"
-              class="input"
-              placeholder="12345"
-              bind:value={postalCode}
-            />
-          </div>
-        </div>
-
-        <div class="form-group">
-          <label for="country" class="label">Country</label>
-          <select id="country" class="select" bind:value={country}>
-            <option value="">Select a country...</option>
-            {#each countries as c}
-              <option value={c}>{c}</option>
-            {/each}
-          </select>
-        </div>
-      </CollapsibleSection>
-
-      <!-- Invoice Defaults -->
-      <CollapsibleSection title="Invoice Defaults" subtitle="Default settings for new invoices" icon="invoice" bind:open={openSections.invoiceDefaults}>
-        <div class="form-row">
-          <div class="form-group">
-            <label for="default-terms" class="label">Default Payment Terms (days)</label>
-            <input
-              id="default-terms"
-              type="number"
-              class="input"
-              min="0"
-              bind:value={defaultPaymentTermsDays}
-            />
-            <p class="form-hint">Default due date for new invoices.</p>
-          </div>
-
-          <div class="form-group">
-            <label for="default-currency" class="label">Default Currency</label>
-            <select id="default-currency" class="select" bind:value={defaultCurrencyCode}>
-              {#each currencies as currency}
-                {#if currency.disabled}
-                  <option value="" disabled>{currency.name}</option>
-                {:else}
-                  <option value={currency.code}>{currency.code} - {currency.name}</option>
-                {/if}
-              {/each}
-            </select>
-            <p class="form-hint">Default currency for new invoices.</p>
-          </div>
-        </div>
-
-        <div class="form-row">
-          <div class="form-group">
-            <label for="accent-color" class="label">Accent Color</label>
-            <div class="color-input">
-              <input
-                id="accent-color"
-                type="color"
-                class="color-picker"
-                bind:value={accentColor}
-              />
-              <input
-                type="text"
-                class="input"
-                bind:value={accentColor}
-                placeholder="#16a34a"
-              />
-            </div>
-            <p class="form-hint">Used for headings and accents on PDFs.</p>
-          </div>
-        </div>
-
-        <div class="form-group">
-          <label for="default-notes" class="label">Default Invoice Notes</label>
-          <textarea
-            id="default-notes"
-            class="textarea"
-            rows="3"
-            placeholder="Thank you for your business. Payment is due within the terms specified."
-            bind:value={defaultNotes}
-          ></textarea>
-          <p class="form-hint">This text will appear at the bottom of all new invoices.</p>
-        </div>
-
-        <div class="form-group">
-          <label for="payment-instructions" class="label">Default Payment Instructions (Legacy)</label>
-          <textarea
-            id="payment-instructions"
-            class="textarea"
-            rows="4"
-            placeholder="Bank: Example Bank&#10;Account: 123456789&#10;Routing: 987654321&#10;&#10;Or pay via PayPal: payments@example.com"
-            bind:value={defaultPaymentInstructions}
-          ></textarea>
-          <p class="form-hint">Fallback text when no payment methods are selected below.</p>
-        </div>
-      </CollapsibleSection>
+      <SettingsInvoiceDefaultsSection
+        bind:open={openSections.invoiceDefaults}
+        bind:defaultPaymentTermsDays
+        bind:defaultCurrencyCode
+        {currencies}
+        bind:accentColor
+        bind:defaultNotes
+        bind:defaultPaymentInstructions
+      />
 
       <SettingsPaymentMethodsSection
         bind:open={openSections.paymentMethods}
@@ -924,50 +704,12 @@
         {deletePaymentMethod}
       />
 
-      <!-- Tax Settings -->
-      <CollapsibleSection title="Tax Settings" subtitle="Default tax configuration" icon="invoice" bind:open={openSections.taxSettings}>
-        <p class="form-hint mb-4">
-          Configure default tax settings for new invoices. These can be overridden on individual invoices.
-        </p>
-
-        <div class="form-group">
-          <label class="toggle-container">
-            <input type="checkbox" bind:checked={defaultTaxEnabled} />
-            <span class="toggle-label">Enable tax by default on new invoices</span>
-          </label>
-        </div>
-
-        {#if defaultTaxEnabled}
-          <div class="form-row">
-            <div class="form-group">
-              <label for="tax-name" class="label">Tax Name</label>
-              <input
-                id="tax-name"
-                type="text"
-                class="input"
-                placeholder="Tax"
-                bind:value={defaultTaxName}
-              />
-              <p class="form-hint">e.g., "Sales Tax", "VAT", "GST"</p>
-            </div>
-
-            <div class="form-group">
-              <label for="tax-rate" class="label">Tax Rate (%)</label>
-              <input
-                id="tax-rate"
-                type="number"
-                class="input"
-                placeholder="0.00"
-                step="0.01"
-                min="0"
-                max="100"
-                bind:value={defaultTaxRate}
-              />
-              <p class="form-hint">Default tax percentage</p>
-            </div>
-          </div>
-        {/if}
-      </CollapsibleSection>
+      <SettingsTaxSection
+        bind:open={openSections.taxSettings}
+        bind:defaultTaxEnabled
+        bind:defaultTaxName
+        bind:defaultTaxRate
+      />
 
       <SettingsSmtpSection
         bind:open={openSections.smtpSettings}
@@ -1047,97 +789,42 @@
   {/if}
 </div>
 
-<!-- Delete Logo Confirmation Modal -->
-{#if showDeleteLogoModal}
-  <div class="modal-overlay" role="presentation" tabindex="-1" on:keydown={(event) => handleModalKeydown(event, closeDeleteLogoModal)}>
-    <button type="button" class="modal-backdrop" aria-label="Close delete logo dialog" on:click={closeDeleteLogoModal}></button>
-    <div class="modal modal-sm" role="dialog" aria-modal="true" tabindex="-1">
-      <div class="modal-icon modal-icon-danger">
-        <Icon name="trash" size="lg" />
-      </div>
-      <h2 class="modal-title">Delete Logo?</h2>
-      <p class="modal-message">This will remove your logo from all invoices. This action cannot be undone.</p>
-      <div class="modal-actions">
-        <button class="btn btn-secondary" on:click={closeDeleteLogoModal} disabled={deletingLogo}>
-          Cancel
-        </button>
-        <button class="btn btn-danger" on:click={deleteLogo} disabled={deletingLogo}>
-          {deletingLogo ? 'Deleting...' : 'Delete Logo'}
-        </button>
-      </div>
-    </div>
-  </div>
-{/if}
+<ConfirmModal
+  show={showDeleteLogoModal}
+  title="Delete Logo"
+  message="This will remove your logo from all invoices. This action cannot be undone."
+  confirmText={deletingLogo ? 'Deleting...' : 'Delete Logo'}
+  cancelText="Cancel"
+  variant="danger"
+  icon="trash"
+  loading={deletingLogo}
+  onConfirm={deleteLogo}
+  onCancel={closeDeleteLogoModal}
+/>
 
-<!-- Restore Backup Confirmation Modal -->
-{#if showRestoreModal && restoreTarget}
-  <div class="modal-overlay" role="presentation" tabindex="-1" on:keydown={(event) => handleModalKeydown(event, closeRestoreModal)}>
-    <button type="button" class="modal-backdrop" aria-label="Close restore backup dialog" on:click={closeRestoreModal}></button>
-    <div class="modal modal-sm" role="dialog" aria-modal="true" tabindex="-1">
-      <div class="modal-icon modal-icon-warning">
-        <Icon name="refresh" size="lg" />
-      </div>
-      <h2 class="modal-title">Restore Backup?</h2>
-      <p class="modal-message">
-        This will overwrite your current database with <strong>{restoreTarget.filename}</strong>.
-        A pre-restore backup will be created automatically.
-        <br /><br />
-        <strong>The application will need to be restarted after restore.</strong>
-      </p>
-      <div class="modal-actions">
-        <button class="btn btn-secondary" on:click={closeRestoreModal} disabled={restoringBackup}>
-          Cancel
-        </button>
-        <button class="btn btn-primary" on:click={restoreBackup} disabled={restoringBackup}>
-          {restoringBackup ? 'Restoring...' : 'Restore Backup'}
-        </button>
-      </div>
-    </div>
-  </div>
-{/if}
+<ConfirmModal
+  show={showRestoreModal && !!restoreTarget}
+  title="Restore Backup"
+  message={restoreTarget
+    ? `This will overwrite your current database with ${restoreTarget.filename}. A pre-restore backup will be created automatically. The application will need to be restarted after restore.`
+    : 'Restore this backup?'}
+  confirmText={restoringBackup ? 'Restoring...' : 'Restore Backup'}
+  cancelText="Cancel"
+  variant="warning"
+  icon="refresh"
+  loading={!!restoringBackup}
+  onConfirm={restoreBackup}
+  onCancel={closeRestoreModal}
+/>
 
-<!-- Payment Method Modal -->
-{#if showPaymentMethodModal}
-  <div class="modal-overlay" role="presentation" tabindex="-1" on:keydown={(event) => handleModalKeydown(event, closePaymentMethodModal)}>
-    <button type="button" class="modal-backdrop" aria-label="Close payment method dialog" on:click={closePaymentMethodModal}></button>
-    <div class="modal" role="dialog" aria-modal="true" tabindex="-1">
-      <div class="modal-header">
-        <h2 class="modal-title">{editingMethod ? 'Edit Payment Method' : 'Add Payment Method'}</h2>
-        <button class="btn btn-ghost btn-icon btn-sm" on:click={closePaymentMethodModal}>
-          <Icon name="x" size="md" />
-        </button>
-      </div>
-      <div class="modal-body">
-        <div class="form-group">
-          <label for="method-name" class="label">Method Name *</label>
-          <input
-            id="method-name"
-            type="text"
-            class="input"
-            placeholder="e.g., Bank Transfer (ACH), Venmo, Zelle"
-            bind:value={newMethodName}
-          />
-        </div>
-        <div class="form-group">
-          <label for="method-instructions" class="label">Payment Details</label>
-          <textarea
-            id="method-instructions"
-            class="textarea"
-            rows="5"
-            placeholder="Enter the payment details your clients will need, e.g.:&#10;Bank: Example Bank&#10;Account: 123456789&#10;Routing: 987654321"
-            bind:value={newMethodInstructions}
-          ></textarea>
-        </div>
-      </div>
-      <div class="modal-footer">
-        <button class="btn btn-secondary" on:click={closePaymentMethodModal}>Cancel</button>
-        <button class="btn btn-primary" on:click={savePaymentMethod}>
-          {editingMethod ? 'Save Changes' : 'Add Method'}
-        </button>
-      </div>
-    </div>
-  </div>
-{/if}
+<SettingsPaymentMethodModal
+  show={showPaymentMethodModal}
+  {editingMethod}
+  bind:newMethodName
+  bind:newMethodInstructions
+  {closePaymentMethodModal}
+  {savePaymentMethod}
+/>
 
 <!-- Delete MCP Key Modal -->
 <ConfirmModal
@@ -1199,204 +886,9 @@
     gap: var(--space-6);
   }
 
-  /* Logo Section */
-  .logo-section {
-    display: flex;
-    gap: var(--space-6);
-    align-items: flex-start;
-  }
-
-  .logo-preview {
-    width: 160px;
-    height: 100px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: var(--color-bg-sunken);
-    border: 2px dashed var(--color-border);
-    border-radius: var(--radius-lg);
-    overflow: hidden;
-    flex-shrink: 0;
-    position: relative;
-  }
-
-  .logo-preview.has-logo {
-    border-style: solid;
-    background: var(--color-bg);
-  }
-
-  .logo-preview.uploading {
-    border-color: var(--color-primary);
-    background: var(--color-primary-light);
-  }
-
-  .logo-preview img {
-    max-width: 100%;
-    max-height: 100%;
-    object-fit: contain;
-  }
-
-  .logo-placeholder {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: var(--space-2);
-    color: var(--color-text-tertiary);
-    font-size: 0.8125rem;
-  }
-
-  .upload-progress {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: var(--space-2);
-    width: 80%;
-  }
-
-  .progress-bar {
-    width: 100%;
-    height: 4px;
-    background: var(--color-bg);
-    border-radius: var(--radius-full);
-    overflow: hidden;
-  }
-
-  .progress-fill {
-    height: 100%;
-    background: var(--color-primary);
-    transition: width 0.1s ease;
-  }
-
-  .progress-text {
-    font-size: 0.75rem;
-    color: var(--color-primary);
-    font-weight: 500;
-  }
-
-  .logo-controls {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-3);
-  }
-
-  .logo-hint {
-    font-size: 0.875rem;
-    color: var(--color-text-secondary);
-    line-height: 1.5;
-  }
-
-  .logo-buttons {
-    display: flex;
-    gap: var(--space-2);
-  }
-
-  .btn.disabled {
-    opacity: 0.5;
-    pointer-events: none;
-  }
-
-  .btn-danger-text {
-    color: var(--color-danger);
-  }
-
-  .btn-danger-text:hover:not(:disabled) {
-    background: var(--color-danger-light);
-    color: var(--color-danger);
-  }
-
-  /* Color Input */
-  .color-input {
-    display: flex;
-    gap: var(--space-2);
-  }
-
-  .color-picker {
-    width: 48px;
-    height: 42px;
-    padding: var(--space-1);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-md);
-    cursor: pointer;
-    background: var(--color-bg);
-  }
-
-  .color-picker::-webkit-color-swatch-wrapper {
-    padding: 0;
-  }
-
-  .color-picker::-webkit-color-swatch {
-    border: none;
-    border-radius: var(--radius-sm);
-  }
-
-  .color-input .input {
-    flex: 1;
-  }
-
-  .form-hint {
-    font-size: 0.8125rem;
-    color: var(--color-text-tertiary);
-    margin-top: var(--space-1);
-  }
-
   .form-actions {
     display: flex;
     justify-content: flex-end;
-  }
-
-  /* Delete Modal */
-  .modal-backdrop {
-    position: absolute;
-    inset: 0;
-    border: 0;
-    padding: 0;
-    background: transparent;
-    cursor: pointer;
-  }
-
-  .modal-sm {
-    position: relative;
-    max-width: 360px;
-    text-align: center;
-    padding: var(--space-8);
-  }
-
-  .modal-icon {
-    width: 56px;
-    height: 56px;
-    border-radius: var(--radius-full);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    margin: 0 auto var(--space-4);
-  }
-
-  .modal-icon-danger {
-    background: var(--color-danger-light);
-    color: var(--color-danger);
-  }
-
-  .modal-sm .modal-title {
-    font-size: 1.125rem;
-    margin-bottom: var(--space-2);
-  }
-
-  .modal-message {
-    font-size: 0.875rem;
-    color: var(--color-text-secondary);
-    margin-bottom: var(--space-6);
-    line-height: 1.5;
-  }
-
-  .modal-actions {
-    display: flex;
-    gap: var(--space-3);
-    justify-content: center;
-  }
-
-  .mb-4 {
-    margin-bottom: var(--space-4);
   }
 
   /* Large screens */
@@ -1410,28 +902,6 @@
     .page-content {
       padding: var(--space-4);
     }
-
-    .logo-section {
-      flex-direction: column;
-    }
-
-    .logo-preview {
-      width: 100%;
-      max-width: 200px;
-    }
-
-    .logo-buttons {
-      flex-direction: column;
-    }
-
-    .color-input {
-      flex-direction: column;
-    }
-
-    .color-picker {
-      width: 100%;
-      height: 48px;
-    }
   }
 
   /* Small screens */
@@ -1440,50 +910,8 @@
       padding: var(--space-3);
     }
 
-    .modal-sm {
-      padding: var(--space-6);
-    }
-
-    .modal-actions {
-      flex-direction: column-reverse;
-    }
-
-    .modal-actions .btn {
-      width: 100%;
-    }
-
     .form-actions .btn {
       width: 100%;
     }
-  }
-
-  .modal-icon-warning {
-    background: var(--color-warning-light);
-    color: var(--color-warning);
-  }
-
-  /* Toggle container for checkbox toggles */
-  .toggle-container {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-    cursor: pointer;
-    user-select: none;
-  }
-
-  .toggle-container input[type="checkbox"] {
-    width: 18px;
-    height: 18px;
-    accent-color: var(--color-primary);
-    cursor: pointer;
-  }
-
-  .toggle-label {
-    font-size: 0.9375rem;
-    color: var(--color-text);
-  }
-
-  @keyframes spin {
-    to { transform: rotate(360deg); }
   }
 </style>
