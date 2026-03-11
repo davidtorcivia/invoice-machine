@@ -153,6 +153,19 @@ class BusinessProfile(Base):
         """Whether a bot REST API key is configured."""
         return bool(self.bot_api_key)
 
+    @property
+    def payment_methods_list(self) -> list[dict]:
+        """Parse configured payment methods from stored JSON."""
+        import json
+
+        if not self.payment_methods:
+            return []
+        try:
+            methods = json.loads(self.payment_methods)
+            return methods if isinstance(methods, list) else []
+        except (json.JSONDecodeError, TypeError):
+            return []
+
 
 class Client(Base):
     """Client (customer/company)."""
@@ -295,6 +308,19 @@ class Invoice(Base):
         updated_at = ensure_utc(self.updated_at)
         pdf_generated_at = ensure_utc(self.pdf_generated_at)
         return bool(updated_at and pdf_generated_at and updated_at > pdf_generated_at)
+
+    @property
+    def selected_payment_methods_list(self) -> list[str]:
+        """Parse selected payment method IDs from stored JSON."""
+        import json
+
+        if not self.selected_payment_methods:
+            return []
+        try:
+            methods = json.loads(self.selected_payment_methods)
+            return methods if isinstance(methods, list) else []
+        except (json.JSONDecodeError, TypeError):
+            return []
 
 
 class InvoiceItem(Base):
@@ -466,6 +492,19 @@ class RecurringSchedule(Base):
         # Composite index for processing due schedules
         Index("idx_recurring_active_next_date", "is_active", "next_invoice_date"),
     )
+
+    @property
+    def line_items_list(self) -> list[dict]:
+        """Parse recurring schedule line items from stored JSON."""
+        import json
+
+        if not self.line_items:
+            return []
+        try:
+            items = json.loads(self.line_items)
+            return items if isinstance(items, list) else []
+        except (json.JSONDecodeError, TypeError):
+            return []
 
 
 # Engine and session management

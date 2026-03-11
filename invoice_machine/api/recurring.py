@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.requests import Request
 
 from invoice_machine.database import get_session, RecurringSchedule
+from invoice_machine.presenters import serialize_recurring_schedule
 from invoice_machine.services import RecurringService
 from invoice_machine.rate_limit import limiter
 
@@ -112,36 +113,7 @@ class RecurringScheduleUpdate(BaseModel):
 
 def _schedule_to_dict(schedule: RecurringSchedule) -> dict:
     """Convert schedule to response dict."""
-    import json
-
-    line_items = None
-    if schedule.line_items:
-        try:
-            line_items = json.loads(schedule.line_items)
-        except (json.JSONDecodeError, TypeError):
-            line_items = None
-
-    return {
-        "id": schedule.id,
-        "client_id": schedule.client_id,
-        "client_name": schedule.client.name if schedule.client else None,
-        "client_business": schedule.client.business_name if schedule.client else None,
-        "name": schedule.name,
-        "frequency": schedule.frequency,
-        "schedule_day": schedule.schedule_day,
-        "currency_code": schedule.currency_code,
-        "payment_terms_days": schedule.payment_terms_days,
-        "notes": schedule.notes,
-        "line_items": line_items,
-        "tax_enabled": bool(schedule.tax_enabled) if schedule.tax_enabled is not None else None,
-        "tax_rate": str(schedule.tax_rate) if schedule.tax_rate is not None else None,
-        "tax_name": schedule.tax_name,
-        "is_active": bool(schedule.is_active),
-        "next_invoice_date": schedule.next_invoice_date.isoformat(),
-        "last_invoice_id": schedule.last_invoice_id,
-        "created_at": schedule.created_at.isoformat(),
-        "updated_at": schedule.updated_at.isoformat(),
-    }
+    return serialize_recurring_schedule(schedule, json_ready=True)
 
 
 @router.get("")

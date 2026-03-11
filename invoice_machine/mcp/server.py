@@ -15,6 +15,14 @@ from invoice_machine.database import (
     Client,
     Invoice,
 )
+from invoice_machine.presenters import (
+    dump_json_list,
+    serialize_business_profile,
+    serialize_client,
+    serialize_invoice,
+    serialize_invoice_item,
+    serialize_recurring_schedule,
+)
 from invoice_machine.services import (
     ClientService,
     InvoiceService,
@@ -81,56 +89,13 @@ async def get_business_profile() -> dict:
         Business profile information including name, address, contact details,
         invoice defaults, and payment methods configuration.
     """
-    import json
-
     async with get_session() as session:
         profile = await BusinessProfile.get_or_create(session)
-
-        # Parse payment methods from JSON
-        payment_methods = []
-        if profile.payment_methods:
-            try:
-                payment_methods = json.loads(profile.payment_methods)
-            except (json.JSONDecodeError, TypeError):
-                pass
-
-        return {
-            "id": profile.id,
-            "name": profile.name,
-            "business_name": profile.business_name,
-            "address_line1": profile.address_line1,
-            "address_line2": profile.address_line2,
-            "city": profile.city,
-            "state": profile.state,
-            "postal_code": profile.postal_code,
-            "country": profile.country,
-            "email": profile.email,
-            "phone": profile.phone,
-            "ein": profile.ein,
-            "logo_path": profile.logo_path,
-            "accent_color": profile.accent_color,
-            "default_payment_terms_days": profile.default_payment_terms_days,
-            "default_notes": profile.default_notes,
-            "default_payment_instructions": profile.default_payment_instructions,
-            "payment_methods": payment_methods,
-            "theme_preference": profile.theme_preference,
-            # Tax settings
-            "default_tax_enabled": bool(getattr(profile, "default_tax_enabled", 0)),
-            "default_tax_rate": str(getattr(profile, "default_tax_rate", 0)),
-            "default_tax_name": getattr(profile, "default_tax_name", "Tax"),
-            # SMTP settings (password hidden)
-            "smtp_enabled": bool(getattr(profile, "smtp_enabled", 0)),
-            "smtp_host": getattr(profile, "smtp_host", None),
-            "smtp_port": getattr(profile, "smtp_port", 587),
-            "smtp_username": getattr(profile, "smtp_username", None),
-            "smtp_password_set": bool(getattr(profile, "smtp_password", None)),
-            "smtp_from_email": getattr(profile, "smtp_from_email", None),
-            "smtp_from_name": getattr(profile, "smtp_from_name", None),
-            "smtp_use_tls": bool(getattr(profile, "smtp_use_tls", 1)),
-            # Email template settings
-            "email_subject_template": getattr(profile, "email_subject_template", None),
-            "email_body_template": getattr(profile, "email_body_template", None),
-        }
+        return serialize_business_profile(
+            profile,
+            json_ready=True,
+            payment_methods_as_list=True,
+        )
 
 
 @mcp.tool()
@@ -204,7 +169,6 @@ async def update_business_profile(
     Returns:
         Updated business profile
     """
-    import json
     from decimal import Decimal
 
     async with get_session() as session:
@@ -243,51 +207,11 @@ async def update_business_profile(
         await session.commit()
         await session.refresh(profile)
 
-        # Parse payment methods from JSON
-        payment_methods = []
-        if profile.payment_methods:
-            try:
-                payment_methods = json.loads(profile.payment_methods)
-            except (json.JSONDecodeError, TypeError):
-                pass
-
-        return {
-            "id": profile.id,
-            "name": profile.name,
-            "business_name": profile.business_name,
-            "address_line1": profile.address_line1,
-            "address_line2": profile.address_line2,
-            "city": profile.city,
-            "state": profile.state,
-            "postal_code": profile.postal_code,
-            "country": profile.country,
-            "email": profile.email,
-            "phone": profile.phone,
-            "ein": profile.ein,
-            "logo_path": profile.logo_path,
-            "accent_color": profile.accent_color,
-            "default_payment_terms_days": profile.default_payment_terms_days,
-            "default_notes": profile.default_notes,
-            "default_payment_instructions": profile.default_payment_instructions,
-            "payment_methods": payment_methods,
-            "theme_preference": profile.theme_preference,
-            # Tax settings
-            "default_tax_enabled": bool(getattr(profile, "default_tax_enabled", 0)),
-            "default_tax_rate": str(getattr(profile, "default_tax_rate", 0)),
-            "default_tax_name": getattr(profile, "default_tax_name", "Tax"),
-            # SMTP settings (password hidden)
-            "smtp_enabled": bool(getattr(profile, "smtp_enabled", 0)),
-            "smtp_host": getattr(profile, "smtp_host", None),
-            "smtp_port": getattr(profile, "smtp_port", 587),
-            "smtp_username": getattr(profile, "smtp_username", None),
-            "smtp_password_set": bool(getattr(profile, "smtp_password", None)),
-            "smtp_from_email": getattr(profile, "smtp_from_email", None),
-            "smtp_from_name": getattr(profile, "smtp_from_name", None),
-            "smtp_use_tls": bool(getattr(profile, "smtp_use_tls", 1)),
-            # Email template settings
-            "email_subject_template": getattr(profile, "email_subject_template", None),
-            "email_body_template": getattr(profile, "email_body_template", None),
-        }
+        return serialize_business_profile(
+            profile,
+            json_ready=True,
+            payment_methods_as_list=True,
+        )
 
 
 @mcp.tool()
@@ -308,18 +232,8 @@ async def add_payment_method(
     Returns:
         The created payment method with its ID
     """
-    import json
-
     async with get_session() as session:
         profile = await BusinessProfile.get_or_create(session)
-
-        # Parse existing methods
-        payment_methods = []
-        if profile.payment_methods:
-            try:
-                payment_methods = json.loads(profile.payment_methods)
-            except (json.JSONDecodeError, TypeError):
-                pass
 
         # Create new method with unique ID
         new_method = {
@@ -327,10 +241,11 @@ async def add_payment_method(
             "name": name,
             "instructions": instructions,
         }
+        payment_methods = profile.payment_methods_list
         payment_methods.append(new_method)
 
         # Save back to profile
-        profile.payment_methods = json.dumps(payment_methods)
+        profile.payment_methods = dump_json_list(payment_methods)
         profile.updated_at = utc_now()
         await session.commit()
 
@@ -348,20 +263,11 @@ async def remove_payment_method(method_id: str) -> bool:
     Returns:
         True if removed, False if not found
     """
-    import json
-
     async with get_session() as session:
         profile = await BusinessProfile.get_or_create(session)
 
-        # Parse existing methods
-        payment_methods = []
-        if profile.payment_methods:
-            try:
-                payment_methods = json.loads(profile.payment_methods)
-            except (json.JSONDecodeError, TypeError):
-                pass
-
         # Find and remove the method
+        payment_methods = profile.payment_methods_list
         original_count = len(payment_methods)
         payment_methods = [m for m in payment_methods if m.get("id") != method_id]
 
@@ -369,7 +275,7 @@ async def remove_payment_method(method_id: str) -> bool:
             return False
 
         # Save back to profile
-        profile.payment_methods = json.dumps(payment_methods)
+        profile.payment_methods = dump_json_list(payment_methods)
         profile.updated_at = utc_now()
         await session.commit()
 
@@ -398,23 +304,7 @@ async def list_clients(
     """
     async with get_session() as session:
         clients = await ClientService.list_clients(session, search=search, include_deleted=include_deleted)
-        return [
-            {
-                "id": c.id,
-                "name": c.name,
-                "business_name": c.business_name,
-                "display_name": c.display_name,
-                "email": c.email,
-                "phone": c.phone,
-                "payment_terms_days": c.payment_terms_days,
-                "notes": c.notes,
-                "is_active": c.is_active,
-                "tax_enabled": c.tax_enabled,
-                "tax_rate": float(c.tax_rate) if c.tax_rate is not None else None,
-                "tax_name": c.tax_name,
-            }
-            for c in clients
-        ]
+        return [serialize_client(client, json_ready=True) for client in clients]
 
 
 @mcp.tool()
@@ -432,26 +322,7 @@ async def get_client(client_id: int) -> Optional[dict]:
         client = await ClientService.get_client(session, client_id)
         if not client:
             return None
-
-        return {
-            "id": client.id,
-            "name": client.name,
-            "business_name": client.business_name,
-            "display_name": client.display_name,
-            "address_line1": client.address_line1,
-            "address_line2": client.address_line2,
-            "city": client.city,
-            "state": client.state,
-            "postal_code": client.postal_code,
-            "country": client.country,
-            "email": client.email,
-            "phone": client.phone,
-            "payment_terms_days": client.payment_terms_days,
-            "notes": client.notes,
-            "tax_enabled": client.tax_enabled,
-            "tax_rate": float(client.tax_rate) if client.tax_rate is not None else None,
-            "tax_name": client.tax_name,
-        }
+        return serialize_client(client, json_ready=True)
 
 
 @mcp.tool()
@@ -521,19 +392,7 @@ async def create_client(
 
         client = await ClientService.create_client(session, **kwargs)
 
-        return {
-            "id": client.id,
-            "name": client.name,
-            "business_name": client.business_name,
-            "display_name": client.display_name,
-            "email": client.email,
-            "phone": client.phone,
-            "payment_terms_days": client.payment_terms_days,
-            "notes": client.notes,
-            "tax_enabled": client.tax_enabled,
-            "tax_rate": float(client.tax_rate) if client.tax_rate is not None else None,
-            "tax_name": client.tax_name,
-        }
+        return serialize_client(client, json_ready=True)
 
 
 @mcp.tool()
@@ -603,20 +462,7 @@ async def update_client(
 
         if not client:
             return None
-
-        return {
-            "id": client.id,
-            "name": client.name,
-            "business_name": client.business_name,
-            "display_name": client.display_name,
-            "email": client.email,
-            "phone": client.phone,
-            "payment_terms_days": client.payment_terms_days,
-            "notes": client.notes,
-            "tax_enabled": client.tax_enabled,
-            "tax_rate": float(client.tax_rate) if client.tax_rate is not None else None,
-            "tax_name": client.tax_name,
-        }
+        return serialize_client(client, json_ready=True)
 
 
 @mcp.tool()
@@ -692,21 +538,14 @@ async def list_invoices(
         )
 
         return [
-            {
-                "id": inv.id,
-                "invoice_number": inv.invoice_number,
-                "document_type": getattr(inv, "document_type", "invoice"),
-                "client_id": inv.client_id,
-                "client_name": inv.client_business or inv.client_name or "Unknown",
-                "status": inv.status,
-                "issue_date": inv.issue_date.isoformat(),
-                "due_date": inv.due_date.isoformat() if inv.due_date else None,
-                "currency_code": inv.currency_code,
-                "total": str(inv.total),
-                "total_formatted": format_currency(inv.total, inv.currency_code),
-                "created_at": inv.created_at.isoformat(),
-            }
-            for inv in invoices
+            serialize_invoice(
+                invoice,
+                include_items=False,
+                include_formatted_total=True,
+                json_ready=True,
+                selected_payment_methods_as_list=True,
+            )
+            for invoice in invoices
         ]
 
 
@@ -721,55 +560,17 @@ async def get_invoice(invoice_id: int) -> Optional[dict]:
     Returns:
         Full invoice/quote details with line items, or null if not found
     """
-    import json
-
     async with get_session() as session:
         invoice = await InvoiceService.get_invoice(session, invoice_id)
         if not invoice:
             return None
-
-        # Parse selected payment methods
-        selected_payment_methods = []
-        if getattr(invoice, "selected_payment_methods", None):
-            try:
-                selected_payment_methods = json.loads(invoice.selected_payment_methods)
-            except (json.JSONDecodeError, TypeError):
-                pass
-
-        return {
-            "id": invoice.id,
-            "invoice_number": invoice.invoice_number,
-            "document_type": getattr(invoice, "document_type", "invoice"),
-            "client_id": invoice.client_id,
-            "client_name": invoice.client_name,
-            "client_business": invoice.client_business,
-            "client_address": invoice.client_address,
-            "client_email": invoice.client_email,
-            "client_reference": getattr(invoice, "client_reference", None),
-            "status": invoice.status,
-            "issue_date": invoice.issue_date.isoformat(),
-            "due_date": invoice.due_date.isoformat() if invoice.due_date else None,
-            "payment_terms_days": invoice.payment_terms_days,
-            "currency_code": invoice.currency_code,
-            "subtotal": str(invoice.subtotal),
-            "total": str(invoice.total),
-            "total_formatted": format_currency(invoice.total, invoice.currency_code),
-            "notes": invoice.notes,
-            "show_payment_instructions": bool(getattr(invoice, "show_payment_instructions", True)),
-            "selected_payment_methods": selected_payment_methods,
-            "pdf_generated_at": invoice.pdf_generated_at.isoformat() if invoice.pdf_generated_at else None,
-            "items": [
-                {
-                    "id": item.id,
-                    "description": item.description,
-                    "quantity": item.quantity,
-                    "unit_type": getattr(item, "unit_type", "qty"),
-                    "unit_price": str(item.unit_price),
-                    "total": str(item.total),
-                }
-                for item in invoice.items
-            ],
-        }
+        return serialize_invoice(
+            invoice,
+            include_items=True,
+            include_formatted_total=True,
+            json_ready=True,
+            selected_payment_methods_as_list=True,
+        )
 
 
 @mcp.tool()
@@ -814,16 +615,9 @@ async def create_invoice(
     Returns:
         Created invoice/quote with generated number
     """
-    import json
-
     async with get_session() as session:
         issue_date_parsed = date.fromisoformat(issue_date) if issue_date else date.today()
         due_date_parsed = date.fromisoformat(due_date) if due_date else None
-
-        # Convert selected_payment_methods to JSON string
-        selected_methods_json = None
-        if selected_payment_methods:
-            selected_methods_json = json.dumps(selected_payment_methods)
 
         # Convert tax_rate to Decimal if provided
         from decimal import Decimal
@@ -840,39 +634,20 @@ async def create_invoice(
             document_type=document_type,
             client_reference=client_reference,
             show_payment_instructions=show_payment_instructions,
-            selected_payment_methods=selected_methods_json,
+            selected_payment_methods=dump_json_list(selected_payment_methods),
             invoice_number_override=invoice_number_override,
             items=items,
             tax_enabled=tax_enabled,
             tax_rate=tax_rate_decimal,
             tax_name=tax_name,
         )
-
-        return {
-            "id": invoice.id,
-            "invoice_number": invoice.invoice_number,
-            "document_type": getattr(invoice, "document_type", "invoice"),
-            "client_id": invoice.client_id,
-            "client_name": invoice.client_business or invoice.client_name or "Unknown",
-            "client_reference": getattr(invoice, "client_reference", None),
-            "status": invoice.status,
-            "issue_date": invoice.issue_date.isoformat(),
-            "due_date": invoice.due_date.isoformat() if invoice.due_date else None,
-            "currency_code": invoice.currency_code,
-            "subtotal": str(invoice.subtotal),
-            "tax_enabled": bool(getattr(invoice, "tax_enabled", 0)),
-            "tax_rate": str(getattr(invoice, "tax_rate", 0)),
-            "tax_name": getattr(invoice, "tax_name", "Tax"),
-            "tax_amount": str(getattr(invoice, "tax_amount", 0)),
-            "total": str(invoice.total),
-            "total_formatted": format_currency(invoice.total, invoice.currency_code),
-            "items": [
-                {"id": item.id, "description": item.description, "quantity": item.quantity,
-                 "unit_type": getattr(item, "unit_type", "qty"),
-                 "unit_price": str(item.unit_price), "total": str(item.total)}
-                for item in invoice.items
-            ],
-        }
+        return serialize_invoice(
+            invoice,
+            include_items=True,
+            include_formatted_total=True,
+            json_ready=True,
+            selected_payment_methods_as_list=True,
+        )
 
 
 @mcp.tool()
@@ -906,8 +681,6 @@ async def update_invoice(
     Returns:
         Updated invoice/quote or null if not found
     """
-    import json
-
     async with get_session() as session:
         issue_date_parsed = date.fromisoformat(issue_date) if issue_date else None
         due_date_parsed = date.fromisoformat(due_date) if due_date else None
@@ -929,7 +702,7 @@ async def update_invoice(
         if show_payment_instructions is not None:
             update_kwargs["show_payment_instructions"] = show_payment_instructions
         if selected_payment_methods is not None:
-            update_kwargs["selected_payment_methods"] = json.dumps(selected_payment_methods)
+            update_kwargs["selected_payment_methods"] = dump_json_list(selected_payment_methods)
 
         invoice = await InvoiceService.update_invoice(
             session,
@@ -939,19 +712,13 @@ async def update_invoice(
 
         if not invoice:
             return None
-
-        return {
-            "id": invoice.id,
-            "invoice_number": invoice.invoice_number,
-            "document_type": getattr(invoice, "document_type", "invoice"),
-            "client_id": invoice.client_id,
-            "client_reference": getattr(invoice, "client_reference", None),
-            "status": invoice.status,
-            "issue_date": invoice.issue_date.isoformat(),
-            "due_date": invoice.due_date.isoformat() if invoice.due_date else None,
-            "total": str(invoice.total),
-            "total_formatted": format_currency(invoice.total, invoice.currency_code),
-        }
+        return serialize_invoice(
+            invoice,
+            include_items=False,
+            include_formatted_total=True,
+            json_ready=True,
+            selected_payment_methods_as_list=True,
+        )
 
 
 @mcp.tool()
@@ -1020,14 +787,7 @@ async def add_invoice_item(
             unit_type=unit_type,
         )
 
-        return {
-            "id": item.id,
-            "description": item.description,
-            "quantity": item.quantity,
-            "unit_type": getattr(item, "unit_type", "qty"),
-            "unit_price": str(item.unit_price),
-            "total": str(item.total),
-        }
+        return serialize_invoice_item(item)
 
 
 @mcp.tool()
@@ -1060,14 +820,7 @@ async def update_invoice_item(
         if not item:
             return None
 
-        return {
-            "id": item.id,
-            "description": item.description,
-            "quantity": item.quantity,
-            "unit_type": getattr(item, "unit_type", "qty"),
-            "unit_price": str(item.unit_price),
-            "total": str(item.total),
-        }
+        return serialize_invoice_item(item)
 
 
 @mcp.tool()
@@ -1702,34 +1455,13 @@ async def list_recurring_schedules(
     Returns:
         List of recurring schedules with their details
     """
-    import json
-
     async with get_session() as session:
         schedules = await RecurringService.list_schedules(
             session,
             client_id=client_id,
             active_only=not include_paused,
         )
-        return [
-            {
-                "id": s.id,
-                "client_id": s.client_id,
-                "client_name": s.client.display_name if s.client else None,
-                "name": s.name,
-                "frequency": s.frequency,
-                "schedule_day": s.schedule_day,
-                "currency_code": s.currency_code,
-                "payment_terms_days": s.payment_terms_days,
-                "is_active": bool(s.is_active),
-                "next_invoice_date": s.next_invoice_date.isoformat(),
-                "last_invoice_id": s.last_invoice_id,
-                "line_items": json.loads(s.line_items) if s.line_items else [],
-                "tax_enabled": s.tax_enabled,
-                "tax_rate": float(s.tax_rate) if s.tax_rate else None,
-                "tax_name": s.tax_name,
-            }
-            for s in schedules
-        ]
+        return [serialize_recurring_schedule(schedule, json_ready=True) for schedule in schedules]
 
 
 @mcp.tool()
@@ -1743,33 +1475,11 @@ async def get_recurring_schedule(schedule_id: int) -> Optional[dict]:
     Returns:
         Schedule details or null if not found
     """
-    import json
-
     async with get_session() as session:
         schedule = await RecurringService.get_schedule(session, schedule_id)
         if not schedule:
             return None
-
-        return {
-            "id": schedule.id,
-            "client_id": schedule.client_id,
-            "client_name": schedule.client.display_name if schedule.client else None,
-            "name": schedule.name,
-            "frequency": schedule.frequency,
-            "schedule_day": schedule.schedule_day,
-            "currency_code": schedule.currency_code,
-            "payment_terms_days": schedule.payment_terms_days,
-            "notes": schedule.notes,
-            "is_active": bool(schedule.is_active),
-            "next_invoice_date": schedule.next_invoice_date.isoformat(),
-            "last_invoice_id": schedule.last_invoice_id,
-            "line_items": json.loads(schedule.line_items) if schedule.line_items else [],
-            "tax_enabled": schedule.tax_enabled,
-            "tax_rate": float(schedule.tax_rate) if schedule.tax_rate else None,
-            "tax_name": schedule.tax_name,
-            "created_at": schedule.created_at.isoformat() if schedule.created_at else None,
-            "updated_at": schedule.updated_at.isoformat() if schedule.updated_at else None,
-        }
+        return serialize_recurring_schedule(schedule, json_ready=True)
 
 
 @mcp.tool()
@@ -1835,14 +1545,7 @@ async def create_recurring_schedule(
             tax_name=tax_name,
         )
 
-        return {
-            "id": schedule.id,
-            "client_id": schedule.client_id,
-            "name": schedule.name,
-            "frequency": schedule.frequency,
-            "next_invoice_date": schedule.next_invoice_date.isoformat(),
-            "is_active": bool(schedule.is_active),
-        }
+        return serialize_recurring_schedule(schedule, json_ready=True)
 
 
 @mcp.tool()
@@ -1913,13 +1616,7 @@ async def update_recurring_schedule(
         if not schedule:
             return None
 
-        return {
-            "id": schedule.id,
-            "name": schedule.name,
-            "frequency": schedule.frequency,
-            "next_invoice_date": schedule.next_invoice_date.isoformat(),
-            "is_active": bool(schedule.is_active),
-        }
+        return serialize_recurring_schedule(schedule, json_ready=True)
 
 
 @mcp.tool()

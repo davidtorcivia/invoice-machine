@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import { clientsApi, invoicesApi, profileApi } from '$lib/api';
+  import { parseJsonArray, stringifyJsonArray } from '$lib/json';
   import { formatCurrency, toast } from '$lib/stores';
   import { currencies } from '$lib/data/currencies';
   import Header from '$lib/components/Header.svelte';
@@ -122,13 +123,7 @@
   }
 
   // Parse payment methods from profile
-  $: availablePaymentMethods = (() => {
-    try {
-      return profile?.payment_methods ? JSON.parse(profile.payment_methods) : [];
-    } catch {
-      return [];
-    }
-  })();
+  $: availablePaymentMethods = parseJsonArray(profile?.payment_methods);
 
   function removeDefaultNotes() {
     useDefaultNotes = false;
@@ -176,7 +171,7 @@
         document_type: isQuote ? 'quote' : 'invoice',
         client_reference: clientReference || undefined,
         show_payment_instructions: showPaymentInstructions,
-        selected_payment_methods: selectedPaymentMethods.length > 0 ? JSON.stringify(selectedPaymentMethods) : null,
+        selected_payment_methods: stringifyJsonArray(selectedPaymentMethods),
         // Tax settings
         tax_enabled: taxEnabled ? 1 : 0,
         tax_rate: taxEnabled && taxRate ? parseFloat(taxRate) : 0,

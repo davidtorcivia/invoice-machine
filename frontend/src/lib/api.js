@@ -4,16 +4,26 @@
 
 const API_BASE = '/api';
 
-function getCsrfToken() {
+export function getCsrfToken() {
   if (typeof document === 'undefined') return null;
   const match = document.cookie.match(/(?:^|; )csrf_token=([^;]+)/);
   return match ? decodeURIComponent(match[1]) : null;
 }
 
+export function buildQuery(params = {}) {
+  const search = new URLSearchParams();
+  Object.entries(params).forEach(([key, value]) => {
+    if (value === undefined || value === null || value === '') return;
+    search.append(key, `${value}`);
+  });
+  const query = search.toString();
+  return query ? `?${query}` : '';
+}
+
 /**
  * Make an API request
  */
-async function request(endpoint, options = {}) {
+export async function request(endpoint, options = {}) {
   const url = `${API_BASE}${endpoint}`;
 
   const defaultOptions = {
@@ -46,10 +56,11 @@ async function request(endpoint, options = {}) {
     return null;
   }
 
-  const data = await response.json();
+  const contentType = response.headers.get('content-type') || '';
+  const data = contentType.includes('application/json') ? await response.json() : null;
 
   if (!response.ok) {
-    throw new Error(data.detail || data.message || `Request failed: ${response.status}`);
+    throw new Error(data?.detail || data?.message || `Request failed: ${response.status}`);
   }
 
   return data;
@@ -124,13 +135,14 @@ export const profileApi = {
 
 export const clientsApi = {
   list: (params = {}) => {
-    const search = new URLSearchParams();
-    if (params.search) search.append('search', params.search);
-    if (params.include_deleted) search.append('include_deleted', 'true');
-    if (params.sort_by) search.append('sort_by', params.sort_by);
-    if (params.sort_dir) search.append('sort_dir', params.sort_dir);
-    const query = search.toString() ? `?${search}` : '';
-    return get(`/clients${query}`);
+    return get(
+      `/clients${buildQuery({
+        search: params.search,
+        include_deleted: params.include_deleted ? 'true' : undefined,
+        sort_by: params.sort_by,
+        sort_dir: params.sort_dir,
+      })}`
+    );
   },
 
   get: (id) => get(`/clients/${id}`),
@@ -148,34 +160,36 @@ export const clientsApi = {
 
 export const invoicesApi = {
   list: (params = {}) => {
-    const search = new URLSearchParams();
-    if (params.status) search.append('status', params.status);
-    if (params.document_type) search.append('document_type', params.document_type);
-    if (params.client_id) search.append('client_id', params.client_id);
-    if (params.from_date) search.append('from_date', params.from_date);
-    if (params.to_date) search.append('to_date', params.to_date);
-    if (params.include_deleted) search.append('include_deleted', 'true');
-    if (params.sort_by) search.append('sort_by', params.sort_by);
-    if (params.sort_dir) search.append('sort_dir', params.sort_dir);
-    search.append('limit', params.limit || '100');
-    const query = search.toString() ? `?${search}` : '';
-    return get(`/invoices${query}`);
+    return get(
+      `/invoices${buildQuery({
+        status: params.status,
+        document_type: params.document_type,
+        client_id: params.client_id,
+        from_date: params.from_date,
+        to_date: params.to_date,
+        include_deleted: params.include_deleted ? 'true' : undefined,
+        sort_by: params.sort_by,
+        sort_dir: params.sort_dir,
+        limit: params.limit || 100,
+      })}`
+    );
   },
 
   listPaginated: (params = {}) => {
-    const search = new URLSearchParams();
-    if (params.status) search.append('status', params.status);
-    if (params.document_type) search.append('document_type', params.document_type);
-    if (params.client_id) search.append('client_id', params.client_id);
-    if (params.from_date) search.append('from_date', params.from_date);
-    if (params.to_date) search.append('to_date', params.to_date);
-    if (params.include_deleted) search.append('include_deleted', 'true');
-    if (params.sort_by) search.append('sort_by', params.sort_by);
-    if (params.sort_dir) search.append('sort_dir', params.sort_dir);
-    search.append('page', `${params.page || 1}`);
-    search.append('per_page', `${params.per_page || 25}`);
-    const query = search.toString() ? `?${search}` : '';
-    return get(`/invoices/paginated${query}`);
+    return get(
+      `/invoices/paginated${buildQuery({
+        status: params.status,
+        document_type: params.document_type,
+        client_id: params.client_id,
+        from_date: params.from_date,
+        to_date: params.to_date,
+        include_deleted: params.include_deleted ? 'true' : undefined,
+        sort_by: params.sort_by,
+        sort_dir: params.sort_dir,
+        page: params.page || 1,
+        per_page: params.per_page || 25,
+      })}`
+    );
   },
 
   get: (id) => get(`/invoices/${id}`),
@@ -189,13 +203,15 @@ export const invoicesApi = {
   restore: (id) => post(`/invoices/${id}/restore`),
 
   addItem: (id, item) => {
-    const params = new URLSearchParams();
-    params.append('description', item.description);
-    params.append('quantity', item.quantity);
-    params.append('unit_type', item.unit_type || 'qty');
-    params.append('unit_price', item.unit_price);
-    params.append('sort_order', item.sort_order || 0);
-    return post(`/invoices/${id}/items?${params}`);
+    return post(
+      `/invoices/${id}/items${buildQuery({
+        description: item.description,
+        quantity: item.quantity,
+        unit_type: item.unit_type || 'qty',
+        unit_price: item.unit_price,
+        sort_order: item.sort_order || 0,
+      })}`
+    );
   },
 
   updateItem: (id, itemId, data) => put(`/invoices/${id}/items/${itemId}`, data),
@@ -249,11 +265,12 @@ export const backupsApi = {
 
 export const recurringApi = {
   list: (params = {}) => {
-    const search = new URLSearchParams();
-    if (params.client_id) search.append('client_id', params.client_id);
-    if (params.active_only !== undefined) search.append('active_only', params.active_only);
-    const query = search.toString() ? `?${search}` : '';
-    return get(`/recurring${query}`);
+    return get(
+      `/recurring${buildQuery({
+        client_id: params.client_id,
+        active_only: params.active_only,
+      })}`
+    );
   },
 
   get: (id) => get(`/recurring/${id}`),
@@ -290,12 +307,14 @@ export const emailApi = {
 
 export const searchApi = {
   search: (query, params = {}) => {
-    const search = new URLSearchParams();
-    search.append('q', query);
-    if (params.invoices !== undefined) search.append('invoices', params.invoices);
-    if (params.clients !== undefined) search.append('clients', params.clients);
-    if (params.limit) search.append('limit', params.limit);
-    return get(`/search?${search}`);
+    return get(
+      `/search${buildQuery({
+        q: query,
+        invoices: params.invoices,
+        clients: params.clients,
+        limit: params.limit,
+      })}`
+    );
   },
 };
 
@@ -305,19 +324,21 @@ export const analyticsApi = {
   getDashboardSummary: () => get('/analytics/dashboard'),
 
   getRevenue: (params = {}) => {
-    const search = new URLSearchParams();
-    if (params.from_date) search.append('from_date', params.from_date);
-    if (params.to_date) search.append('to_date', params.to_date);
-    if (params.group_by) search.append('group_by', params.group_by);
-    const query = search.toString() ? `?${search}` : '';
-    return get(`/analytics/revenue${query}`);
+    return get(
+      `/analytics/revenue${buildQuery({
+        from_date: params.from_date,
+        to_date: params.to_date,
+        group_by: params.group_by,
+      })}`
+    );
   },
 
   getClientLifetimeValues: (params = {}) => {
-    const search = new URLSearchParams();
-    if (params.client_id) search.append('client_id', params.client_id);
-    if (params.limit) search.append('limit', params.limit);
-    const query = search.toString() ? `?${search}` : '';
-    return get(`/analytics/clients${query}`);
+    return get(
+      `/analytics/clients${buildQuery({
+        client_id: params.client_id,
+        limit: params.limit,
+      })}`
+    );
   },
 };

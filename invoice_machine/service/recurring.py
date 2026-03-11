@@ -1,0 +1,312 @@
+"""Recurring schedule service operations."""
+
+import json
+from datetime import date, timedelta
+from decimal import Decimal
+from typing import Optional
+
+from dateutil.relativedelta import relativedelta
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from invoice_machine.database import RecurringSchedule
+from invoice_machine.service.common import (
+    _replace_with_valid_day,
+    validate_recurring_schedule,
+)
+from invoice_machine.utils import utc_now
+
+
+def _today() -> date:
+    """Read today's date through the compatibility module to keep legacy patches working."""
+    from invoice_machine import services as compat
+
+    return compat.date.today()
+
+
+class RecurringService:
+    """Service for managing recurring invoice schedules."""
+
+    @staticmethod
+    async def create_schedule(
+        session: AsyncSession,
+        client_id: int,
+        name: str,
+        frequency: str,
+        schedule_day: int = 1,
+        currency_code: str = "USD",
+        payment_terms_days: int = 30,
+        notes: Optional[str] = None,
+        line_items: Optional[list] = None,
+        tax_enabled: Optional[int] = None,
+        tax_rate: Optional[Decimal] = None,
+        tax_name: Optional[str] = None,
+        next_invoice_date: Optional[date] = None,
+    ) -> RecurringSchedule:
+        """Create a new recurring schedule."""
+        validate_recurring_schedule(
+            frequency,
+            schedule_day,
+            payment_terms_days=payment_terms_days,
+            tax_rate=tax_rate,
+        )
+
+        if next_invoice_date is None:
+            today = _today()
+            if frequency == "daily":
+                next_invoice_date = today + timedelta(days=1)
+            elif frequency == "weekly":
+                days_ahead = schedule_day - today.weekday()
+                if days_ahead <= 0:
+                    days_ahead += 7
+                next_invoice_date = today + timedelta(days=days_ahead)
+            elif frequency == "monthly":
+                next_invoice_date = _replace_with_valid_day(
+                    today.replace(day=1) + relativedelta(months=1),
+                    schedule_day,
+                )
+            elif frequency == "quarterly":
+                next_invoice_date = _replace_with_valid_day(
+                    today.replace(day=1) + relativedelta(months=3),
+                    schedule_day,
+                )
+            else:
+                next_invoice_date = _replace_with_valid_day(
+                    today.replace(day=1) + relativedelta(years=1),
+                    schedule_day,
+                )
+
+        schedule = RecurringSchedule(
+            client_id=client_id,
+            name=name,
+            frequency=frequency,
+            schedule_day=schedule_day,
+            currency_code=currency_code,
+            payment_terms_days=payment_terms_days,
+            notes=notes,
+            line_items=json.dumps(line_items) if line_items else None,
+            tax_enabled=tax_enabled,
+            tax_rate=tax_rate,
+            tax_name=tax_name,
+            next_invoice_date=next_invoice_date,
+        )
+        session.add(schedule)
+        await session.commit()
+        await session.refresh(schedule)
+        return schedule
+
+    @staticmethod
+    async def get_schedule(
+        session: AsyncSession, schedule_id: int
+    ) -> Optional[RecurringSchedule]:
+        """Get a recurring schedule by ID."""
+        result = await session.execute(
+            select(RecurringSchedule).where(RecurringSchedule.id == schedule_id)
+        )
+        return result.scalar_one_or_none()
+
+    @staticmethod
+    async def list_schedules(
+        session: AsyncSession,
+        client_id: Optional[int] = None,
+        active_only: bool = True,
+    ) -> list[RecurringSchedule]:
+        """List recurring schedules."""
+        query = select(RecurringSchedule)
+        if client_id:
+            query = query.where(RecurringSchedule.client_id == client_id)
+        if active_only:
+            query = query.where(RecurringSchedule.is_active == 1)
+
+        result = await session.execute(query.order_by(RecurringSchedule.next_invoice_date))
+        return list(result.scalars().all())
+
+    @staticmethod
+    async def update_schedule(
+        session: AsyncSession, schedule_id: int, **kwargs
+    ) -> Optional[RecurringSchedule]:
+        """Update a recurring schedule."""
+        schedule = await RecurringService.get_schedule(session, schedule_id)
+        if not schedule:
+            return None
+
+        if "line_items" in kwargs and kwargs["line_items"] is not None:
+            kwargs["line_items"] = json.dumps(kwargs["line_items"])
+
+        new_frequency = kwargs.get("frequency", schedule.frequency)
+        new_schedule_day = kwargs.get("schedule_day", schedule.schedule_day)
+        new_payment_terms_days = kwargs.get("payment_terms_days", schedule.payment_terms_days)
+        new_tax_rate = kwargs.get("tax_rate", schedule.tax_rate)
+
+        validate_recurring_schedule(
+            new_frequency,
+            new_schedule_day,
+            payment_terms_days=new_payment_terms_days,
+            tax_rate=new_tax_rate,
+        )
+
+        if (
+            ("frequency" in kwargs or "schedule_day" in kwargs)
+            and "next_invoice_date" not in kwargs
+        ):
+            kwargs["next_invoice_date"] = RecurringService.calculate_next_date(
+                _today(), new_frequency, new_schedule_day
+            )
+
+        for key, value in kwargs.items():
+            if hasattr(schedule, key) and value is not None:
+                setattr(schedule, key, value)
+
+        schedule.updated_at = utc_now()
+        await session.commit()
+        await session.refresh(schedule)
+        return schedule
+
+    @staticmethod
+    async def delete_schedule(session: AsyncSession, schedule_id: int) -> bool:
+        """Delete a recurring schedule."""
+        schedule = await RecurringService.get_schedule(session, schedule_id)
+        if not schedule:
+            return False
+
+        await session.delete(schedule)
+        await session.commit()
+        return True
+
+    @staticmethod
+    async def pause_schedule(session: AsyncSession, schedule_id: int) -> bool:
+        """Pause a recurring schedule."""
+        schedule = await RecurringService.get_schedule(session, schedule_id)
+        if not schedule:
+            return False
+
+        schedule.is_active = 0
+        schedule.updated_at = utc_now()
+        await session.commit()
+        return True
+
+    @staticmethod
+    async def resume_schedule(session: AsyncSession, schedule_id: int) -> bool:
+        """Resume a paused recurring schedule."""
+        schedule = await RecurringService.get_schedule(session, schedule_id)
+        if not schedule:
+            return False
+
+        schedule.is_active = 1
+        schedule.updated_at = utc_now()
+        await session.commit()
+        return True
+
+    @staticmethod
+    def calculate_next_date(current_date: date, frequency: str, schedule_day: int) -> date:
+        """Calculate the next invoice date based on frequency."""
+        if frequency == "daily":
+            return current_date + timedelta(days=1)
+        if frequency == "weekly":
+            days_ahead = schedule_day - current_date.weekday()
+            if days_ahead <= 0:
+                days_ahead += 7
+            return current_date + timedelta(days=days_ahead)
+        if frequency == "monthly":
+            return _replace_with_valid_day(current_date + relativedelta(months=1), schedule_day)
+        if frequency == "quarterly":
+            return _replace_with_valid_day(current_date + relativedelta(months=3), schedule_day)
+        if frequency == "yearly":
+            return _replace_with_valid_day(current_date + relativedelta(years=1), schedule_day)
+        raise ValueError(f"Unknown frequency: {frequency}")
+
+    @staticmethod
+    async def process_due_schedules(session: AsyncSession) -> list[dict]:
+        """Process all schedules due today or earlier and create invoices."""
+        from invoice_machine.service.invoices import InvoiceService
+
+        today = _today()
+        result = await session.execute(
+            select(RecurringSchedule).where(
+                RecurringSchedule.is_active == 1,
+                RecurringSchedule.next_invoice_date <= today,
+            )
+        )
+        due_schedules = list(result.scalars().all())
+
+        results = []
+        for schedule in due_schedules:
+            try:
+                line_items = json.loads(schedule.line_items) if schedule.line_items else []
+                invoice = await InvoiceService.create_invoice(
+                    session,
+                    client_id=schedule.client_id,
+                    issue_date=today,
+                    currency_code=schedule.currency_code,
+                    payment_terms_days=schedule.payment_terms_days,
+                    notes=schedule.notes,
+                    items=line_items,
+                    tax_enabled=schedule.tax_enabled,
+                    tax_rate=schedule.tax_rate,
+                    tax_name=schedule.tax_name,
+                )
+
+                schedule.last_invoice_id = invoice.id
+                schedule.next_invoice_date = RecurringService.calculate_next_date(
+                    today, schedule.frequency, schedule.schedule_day
+                )
+                schedule.updated_at = utc_now()
+
+                results.append({
+                    "schedule_id": schedule.id,
+                    "schedule_name": schedule.name,
+                    "invoice_id": invoice.id,
+                    "invoice_number": invoice.invoice_number,
+                    "success": True,
+                })
+            except Exception as exc:
+                results.append({
+                    "schedule_id": schedule.id,
+                    "schedule_name": schedule.name,
+                    "success": False,
+                    "error": str(exc),
+                })
+
+        await session.commit()
+        return results
+
+    @staticmethod
+    async def trigger_schedule(session: AsyncSession, schedule_id: int) -> dict:
+        """Manually trigger a schedule to create an invoice now."""
+        from invoice_machine.service.invoices import InvoiceService
+
+        schedule = await RecurringService.get_schedule(session, schedule_id)
+        if not schedule:
+            return {"success": False, "error": "Schedule not found"}
+
+        today = _today()
+        try:
+            line_items = json.loads(schedule.line_items) if schedule.line_items else []
+            invoice = await InvoiceService.create_invoice(
+                session,
+                client_id=schedule.client_id,
+                issue_date=today,
+                currency_code=schedule.currency_code,
+                payment_terms_days=schedule.payment_terms_days,
+                notes=schedule.notes,
+                items=line_items,
+                tax_enabled=schedule.tax_enabled,
+                tax_rate=schedule.tax_rate,
+                tax_name=schedule.tax_name,
+            )
+
+            schedule.last_invoice_id = invoice.id
+            schedule.next_invoice_date = RecurringService.calculate_next_date(
+                today, schedule.frequency, schedule.schedule_day
+            )
+            schedule.updated_at = utc_now()
+            await session.commit()
+
+            return {
+                "success": True,
+                "invoice_id": invoice.id,
+                "invoice_number": invoice.invoice_number,
+                "next_invoice_date": schedule.next_invoice_date.isoformat(),
+            }
+        except Exception as exc:
+            return {"success": False, "error": str(exc)}

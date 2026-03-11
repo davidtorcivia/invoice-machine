@@ -3,12 +3,7 @@
  */
 import { writable, derived, get } from 'svelte/store';
 import { browser } from '$app/environment';
-
-const getCsrfToken = () => {
-  if (!browser) return null;
-  const match = document.cookie.match(/(?:^|; )csrf_token=([^;]+)/);
-  return match ? decodeURIComponent(match[1]) : null;
-};
+import { request } from '$lib/api';
 
 // ===== Auth Store =====
 
@@ -24,8 +19,7 @@ function createAuthStore() {
     subscribe,
     check: async () => {
       try {
-        const res = await fetch('/api/auth/status');
-        const data = await res.json();
+        const data = await request('/auth/status');
         set({
           loading: false,
           authenticated: data.authenticated,
@@ -39,37 +33,23 @@ function createAuthStore() {
       }
     },
     login: async (username, password) => {
-      const res = await fetch('/api/auth/login', {
+      const data = await request('/auth/login', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, password }),
+        body: { username, password },
       });
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.detail || 'Login failed');
-      }
-      const data = await res.json();
       set({ loading: false, authenticated: true, needsSetup: false, username: data.username });
       return data;
     },
     setup: async (username, password) => {
-      const res = await fetch('/api/auth/setup', {
+      const data = await request('/auth/setup', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, password }),
+        body: { username, password },
       });
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.detail || 'Setup failed');
-      }
-      const data = await res.json();
       set({ loading: false, authenticated: true, needsSetup: false, username: data.username });
       return data;
     },
     logout: async () => {
-      const csrfToken = getCsrfToken();
-      const headers = csrfToken ? { 'X-CSRF-Token': csrfToken } : {};
-      await fetch('/api/auth/logout', { method: 'POST', headers });
+      await request('/auth/logout', { method: 'POST' });
       set({ loading: false, authenticated: false, needsSetup: false, username: null });
     },
   };
@@ -301,7 +281,7 @@ export function createDataStore(fetchFn, initialValue = null, options = {}) {
 // Profile is often needed early, so we don't use lazy loading for it
 
 export const profile = createDataStore(
-  (signal) => fetch('/api/profile', { signal }).then((r) => r.json()),
+  (signal) => request('/profile', { signal }),
   null,
   { lazy: false } // Profile is needed for many pages
 );
@@ -310,7 +290,7 @@ export const profile = createDataStore(
 // Clients are lazily loaded when first accessed
 
 export const clients = createDataStore(
-  (signal) => fetch('/api/clients', { signal }).then((r) => r.json()),
+  (signal) => request('/clients', { signal }),
   [],
   { lazy: true }
 );
@@ -319,7 +299,7 @@ export const clients = createDataStore(
 // Invoices are lazily loaded when first accessed
 
 export const invoices = createDataStore(
-  (signal) => fetch('/api/invoices', { signal }).then((r) => r.json()),
+  (signal) => request('/invoices', { signal }),
   [],
   { lazy: true }
 );

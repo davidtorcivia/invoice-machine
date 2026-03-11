@@ -1,6 +1,7 @@
 <script>
   import { onMount } from 'svelte';
   import { profileApi, backupsApi, emailApi } from '$lib/api';
+  import { parseJsonArray, stringifyJsonArray } from '$lib/json';
   import { toast } from '$lib/stores';
   import { countries } from '$lib/data/countries';
   import { currencies } from '$lib/data/currencies';
@@ -147,12 +148,7 @@
       defaultNotes = profile.default_notes || '';
       defaultPaymentInstructions = profile.default_payment_instructions || '';
 
-      // Parse payment methods from JSON
-      try {
-        paymentMethods = profile.payment_methods ? JSON.parse(profile.payment_methods) : [];
-      } catch {
-        paymentMethods = [];
-      }
+      paymentMethods = parseJsonArray(profile.payment_methods);
 
       if (profile.logo_path) {
         logoPreview = `/api/profile/logo/${profile.logo_path}`;
@@ -261,7 +257,7 @@
         default_currency_code: defaultCurrencyCode || undefined,
         default_notes: defaultNotes || undefined,
         default_payment_instructions: defaultPaymentInstructions || undefined,
-        payment_methods: JSON.stringify(paymentMethods),
+        payment_methods: stringifyJsonArray(paymentMethods),
         app_base_url: appBaseUrl || undefined,
         // Tax settings
         default_tax_enabled: defaultTaxEnabled,

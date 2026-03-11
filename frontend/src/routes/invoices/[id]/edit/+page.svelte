@@ -3,6 +3,7 @@
   import { page } from '$app/stores';
   import { goto } from '$app/navigation';
   import { invoicesApi, profileApi } from '$lib/api';
+  import { parseJsonArray, stringifyJsonArray } from '$lib/json';
   import { formatCurrency, toast } from '$lib/stores';
   import Header from '$lib/components/Header.svelte';
   import Icon from '$lib/components/Icons.svelte';
@@ -58,13 +59,7 @@
   }
 
   // Parse payment methods from profile
-  $: availablePaymentMethods = (() => {
-    try {
-      return profile?.payment_methods ? JSON.parse(profile.payment_methods) : [];
-    } catch {
-      return [];
-    }
-  })();
+  $: availablePaymentMethods = parseJsonArray(profile?.payment_methods);
 
   async function loadInvoice() {
     loading = true;
@@ -81,12 +76,7 @@
       documentType = data.document_type || 'invoice';
       clientReference = data.client_reference || '';
       showPaymentInstructions = data.show_payment_instructions !== false;
-      // Parse selected payment methods from invoice
-      try {
-        selectedPaymentMethods = data.selected_payment_methods ? JSON.parse(data.selected_payment_methods) : [];
-      } catch {
-        selectedPaymentMethods = [];
-      }
+      selectedPaymentMethods = parseJsonArray(data.selected_payment_methods);
       items = (data.items || []).map(item => ({
         id: item.id,
         description: item.description,
@@ -159,7 +149,7 @@
         document_type: documentType,
         client_reference: clientReference || undefined,
         show_payment_instructions: showPaymentInstructions,
-        selected_payment_methods: selectedPaymentMethods.length > 0 ? JSON.stringify(selectedPaymentMethods) : null,
+        selected_payment_methods: stringifyJsonArray(selectedPaymentMethods),
         tax_enabled: taxEnabled ? 1 : 0,
         tax_rate: taxEnabled && taxRate ? parseFloat(taxRate) : 0,
         tax_name: taxName || 'Tax',

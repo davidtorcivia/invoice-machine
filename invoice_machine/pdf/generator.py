@@ -1,9 +1,8 @@
 """PDF generator using WeasyPrint."""
 
 import base64
-import json
-from pathlib import Path
 from decimal import Decimal
+from pathlib import Path
 from typing import Optional, Union
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
@@ -113,26 +112,12 @@ async def generate_pdf(session: AsyncSession, invoice: Invoice) -> str:
     # Get payment instructions from selected payment methods
     show_payment_instructions = bool(getattr(invoice, "show_payment_instructions", True))
     payment_instructions = None
-    selected_payment_methods = []
-
-    # Try to get selected payment methods from invoice
-    selected_methods_json = getattr(invoice, "selected_payment_methods", None)
-    if selected_methods_json:
-        try:
-            selected_payment_methods = json.loads(selected_methods_json)
-        except (json.JSONDecodeError, TypeError):
-            pass
+    selected_payment_methods = getattr(invoice, "selected_payment_methods_list", [])
 
     # Build payment instructions from selected methods
     if selected_payment_methods:
         # Parse available payment methods from business profile
-        available_methods = []
-        methods_json = getattr(business, "payment_methods", None)
-        if methods_json:
-            try:
-                available_methods = json.loads(methods_json)
-            except (json.JSONDecodeError, TypeError):
-                pass
+        available_methods = getattr(business, "payment_methods_list", [])
 
         # Filter to selected methods and build instructions
         if available_methods:

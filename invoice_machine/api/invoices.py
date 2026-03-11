@@ -11,6 +11,7 @@ from slowapi.util import get_remote_address
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from invoice_machine.database import Invoice, InvoiceItem, get_session
+from invoice_machine.presenters import serialize_invoice, serialize_invoice_item
 from invoice_machine.services import InvoiceService
 from invoice_machine.utils import (
     INVOICE_NUMBER_REGEX,
@@ -176,78 +177,6 @@ class PaginatedInvoiceResponse(BaseModel):
     pagination: InvoicePagination
 
 
-def _build_line_items_preview(invoice: Invoice, max_items: int = 2, max_len: int = 120) -> str:
-    """Build compact preview text from invoice line item descriptions."""
-    descriptions = [
-        (item.description or "").strip()
-        for item in invoice.items
-        if (item.description or "").strip()
-    ]
-    if not descriptions:
-        return ""
-
-    preview = ", ".join(descriptions[:max_items])
-    if len(descriptions) > max_items:
-        preview = f"{preview} +{len(descriptions) - max_items} more"
-
-    if len(preview) > max_len:
-        return preview[: max_len - 3].rstrip() + "..."
-    return preview
-
-
-def _serialize_invoice(invoice: Invoice, include_items: bool = True) -> dict:
-    """Convert invoice to dict with proper decimal serialization."""
-    line_items_count = len(invoice.items)
-    return {
-        "id": invoice.id,
-        "invoice_number": invoice.invoice_number,
-        "client_id": invoice.client_id,
-        "client_name": invoice.client_name,
-        "client_business": invoice.client_business,
-        "client_address": invoice.client_address,
-        "client_email": invoice.client_email,
-        "status": invoice.status,
-        "document_type": invoice.document_type,
-        "client_reference": invoice.client_reference,
-        "show_payment_instructions": bool(invoice.show_payment_instructions),
-        "selected_payment_methods": invoice.selected_payment_methods,
-        "issue_date": invoice.issue_date,
-        "due_date": invoice.due_date,
-        "payment_terms_days": invoice.payment_terms_days,
-        "currency_code": invoice.currency_code,
-        "subtotal": str(invoice.subtotal),
-        "total": str(invoice.total),
-        "tax_enabled": bool(invoice.tax_enabled),
-        "tax_rate": str(invoice.tax_rate) if invoice.tax_rate else "0",
-        "tax_name": invoice.tax_name or "Tax",
-        "tax_amount": str(invoice.tax_amount) if invoice.tax_amount else "0",
-        "notes": invoice.notes,
-        "pdf_path": invoice.pdf_path,
-        "pdf_generated_at": invoice.pdf_generated_at,
-        "created_at": invoice.created_at,
-        "updated_at": invoice.updated_at,
-        "deleted_at": invoice.deleted_at,
-        "line_items_count": line_items_count,
-        "line_items_preview": _build_line_items_preview(invoice),
-        "items": (
-            [
-                {
-                    "id": item.id,
-                    "description": item.description,
-                    "quantity": item.quantity,
-                    "unit_type": item.unit_type,
-                    "unit_price": str(item.unit_price),
-                    "total": str(item.total),
-                    "sort_order": item.sort_order,
-                }
-                for item in invoice.items
-            ]
-            if include_items
-            else []
-        ),
-    }
-
-
 @router.get("", response_model=List[InvoiceSchema])
 @limiter.limit("120/minute")
 async def list_invoices(
@@ -281,7 +210,7 @@ async def list_invoices(
         sort_dir=sort_dir,
         limit=limit,
     )
-    return [_serialize_invoice(inv, include_items=False) for inv in invoices]
+    return [serialize_invoice(inv, include_items=False) for inv in invoices]
 
 
 @router.get("/paginated", response_model=PaginatedInvoiceResponse)
@@ -323,7 +252,7 @@ async def list_invoices_paginated(
     total_pages = (total + per_page - 1) // per_page if total > 0 else 0
 
     return {
-        "items": [_serialize_invoice(inv, include_items=False) for inv in items],
+        "items": [serialize_invoice(inv, include_items=False) for inv in items],
         "pagination": {
             "page": page,
             "per_page": per_page,
@@ -394,7 +323,7 @@ async def create_invoice(
         await session.rollback()
         raise HTTPException(status_code=400, detail=str(e))
 
-    return _serialize_invoice(invoice)
+    return serialize_invoice(invoice)
 
 
 @router.get("/{invoice_id}", response_model=InvoiceSchema)
@@ -406,7 +335,7 @@ async def get_invoice(
     invoice = await InvoiceService.get_invoice(session, invoice_id)
     if not invoice:
         raise HTTPException(status_code=404, detail="Invoice not found")
-    return _serialize_invoice(invoice)
+    return serialize_invoice(invoice)
 
 
 @router.put("/{invoice_id}", response_model=InvoiceSchema)
@@ -423,7 +352,7 @@ async def update_invoice(
     )
     if not invoice:
         raise HTTPException(status_code=404, detail="Invoice not found")
-    return _serialize_invoice(invoice)
+    return serialize_invoice(invoice)
 
 
 @router.delete("/{invoice_id}", status_code=204)
@@ -448,7 +377,7 @@ async def restore_invoice(
         raise HTTPException(status_code=404, detail="Invoice not found or not deleted")
 
     invoice = await InvoiceService.get_invoice(session, invoice_id)
-    return _serialize_invoice(invoice)
+    return serialize_invoice(invoice)
 
 
 @router.post("/{invoice_id}/items", response_model=InvoiceItemSchema, status_code=201)
@@ -475,13 +404,7 @@ async def add_invoice_item(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     return {
-        "id": item.id,
-        "description": item.description,
-        "quantity": item.quantity,
-        "unit_type": item.unit_type,
-        "unit_price": str(item.unit_price),
-        "total": str(item.total),
-        "sort_order": item.sort_order,
+        **serialize_invoice_item(item),
     }
 
 
@@ -502,13 +425,7 @@ async def update_invoice_item(
     if not item:
         raise HTTPException(status_code=404, detail="Item not found")
     return {
-        "id": item.id,
-        "description": item.description,
-        "quantity": item.quantity,
-        "unit_type": item.unit_type,
-        "unit_price": str(item.unit_price),
-        "total": str(item.total),
-        "sort_order": item.sort_order,
+        **serialize_invoice_item(item),
     }
 
 

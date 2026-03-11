@@ -1,6 +1,7 @@
 <script>
   import { onMount } from 'svelte';
   import { recurringApi, clientsApi, profileApi } from '$lib/api';
+  import { parseJsonArray } from '$lib/json';
   import { toast } from '$lib/stores';
   import { currencies } from '$lib/data/currencies';
   import Header from '$lib/components/Header.svelte';
@@ -54,14 +55,7 @@
   let triggering = null;
 
   // Computed: Available payment methods from profile
-  $: availablePaymentMethods = (() => {
-    if (!profile?.payment_methods) return [];
-    try {
-      return JSON.parse(profile.payment_methods);
-    } catch {
-      return [];
-    }
-  })();
+  $: availablePaymentMethods = parseJsonArray(profile?.payment_methods);
 
   // Computed: Default notes from profile
   $: defaultNotesText = profile?.default_notes || '';
