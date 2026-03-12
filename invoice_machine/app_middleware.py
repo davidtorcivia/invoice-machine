@@ -167,17 +167,19 @@ def configure_http_middleware(app: FastAPI) -> None:
 
     @app.middleware("http")
     async def restore_guard_middleware(request: Request, call_next):
-        if request.app.state.restore_in_progress and request.url.path != "/health":
+        app_state = app.state
+
+        if getattr(app_state, "restore_in_progress", False) and request.url.path != "/health":
             return JSONResponse(
                 {"detail": "Service temporarily unavailable during backup restore"},
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             )
 
-        request.app.state.active_requests += 1
+        app_state.active_requests = getattr(app_state, "active_requests", 0) + 1
         try:
             return await call_next(request)
         finally:
-            request.app.state.active_requests = max(0, request.app.state.active_requests - 1)
+            app_state.active_requests = max(0, getattr(app_state, "active_requests", 0) - 1)
 
     @app.middleware("http")
     async def auth_middleware(request: Request, call_next):

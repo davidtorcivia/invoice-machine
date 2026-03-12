@@ -40,6 +40,23 @@ class TestHealthEndpoint:
         allow_headers = response.headers.get("access-control-allow-headers", "").lower()
         assert "x-csrf-token" in allow_headers
 
+    @pytest.mark.asyncio
+    async def test_mcp_sse_post_returns_405_instead_of_crashing(self, test_client):
+        """Mounted MCP routes should not crash in top-level middleware."""
+        key_response = await test_client.post("/api/profile/mcp-key")
+        mcp_key = key_response.json()["mcp_api_key"]
+
+        mcp_client = AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
+        try:
+            response = await mcp_client.post(
+                "/mcp/sse",
+                headers={"Authorization": f"Bearer {mcp_key}"},
+            )
+        finally:
+            await mcp_client.aclose()
+
+        assert response.status_code == 405
+
 
 class TestProfileEndpoints:
     """Tests for business profile endpoints."""
