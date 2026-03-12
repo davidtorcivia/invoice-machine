@@ -8,23 +8,11 @@ import tempfile
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+import boto3
 from botocore.config import Config
 
+from invoice_machine.config import get_settings
 from invoice_machine.utils import utc_now
-
-
-def _compat_get_settings():
-    """Read settings through the compatibility module to keep legacy patches working."""
-    from invoice_machine import services as compat
-
-    return compat.get_settings()
-
-
-def _compat_boto3_client(*args, **kwargs):
-    """Create a boto3 client through the compatibility module for legacy patches."""
-    from invoice_machine import services as compat
-
-    return compat.boto3.client(*args, **kwargs)
 
 
 class BackupService:
@@ -36,15 +24,16 @@ class BackupService:
         retention_days: int = 30,
         s3_config: dict | None = None,
     ):
-        settings = _compat_get_settings()
-        self.backup_dir = backup_dir or settings.data_dir / "backups"
+        if backup_dir is None:
+            backup_dir = get_settings().data_dir / "backups"
+        self.backup_dir = backup_dir
         self.retention_days = retention_days
         self.s3_config = s3_config
         self.backup_dir.mkdir(parents=True, exist_ok=True)
 
     def create_backup(self, compress: bool = True) -> dict:
         """Create a backup of the database and optionally upload it to S3."""
-        settings = _compat_get_settings()
+        settings = get_settings()
         timestamp = utc_now()
         timestamp_str = timestamp.strftime("%Y%m%d_%H%M%S")
 
@@ -88,7 +77,7 @@ class BackupService:
         if not self.s3_config:
             raise ValueError("S3 configuration not provided")
 
-        s3_client = _compat_boto3_client(
+        s3_client = boto3.client(
             "s3",
             endpoint_url=self.s3_config.get("endpoint_url"),
             aws_access_key_id=self.s3_config.get("access_key_id"),
@@ -143,7 +132,7 @@ class BackupService:
         if not self.s3_config:
             return 0
 
-        s3_client = _compat_boto3_client(
+        s3_client = boto3.client(
             "s3",
             endpoint_url=self.s3_config.get("endpoint_url"),
             aws_access_key_id=self.s3_config.get("access_key_id"),
@@ -222,7 +211,7 @@ class BackupService:
 
     def restore_backup(self, backup_filename: str, validate: bool = True) -> dict:
         """Restore the database from a backup using atomic replacement."""
-        settings = _compat_get_settings()
+        settings = get_settings()
         backup_path = self.get_backup_path(backup_filename)
         if validate:
             self.validate_backup(backup_path)
@@ -259,7 +248,7 @@ class BackupService:
             raise ValueError("S3 is not configured")
 
         local_path = self._validate_backup_filename(filename)
-        s3_client = _compat_boto3_client(
+        s3_client = boto3.client(
             "s3",
             endpoint_url=self.s3_config.get("endpoint_url"),
             aws_access_key_id=self.s3_config.get("access_key_id"),
@@ -279,7 +268,7 @@ class BackupService:
             return []
 
         try:
-            s3_client = _compat_boto3_client(
+            s3_client = boto3.client(
                 "s3",
                 endpoint_url=self.s3_config.get("endpoint_url"),
                 aws_access_key_id=self.s3_config.get("access_key_id"),

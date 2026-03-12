@@ -16,13 +16,6 @@ from invoice_machine.service.common import (
 from invoice_machine.utils import utc_now
 
 
-def _today() -> date:
-    """Read today's date through the compatibility module to keep legacy patches working."""
-    from invoice_machine import services as compat
-
-    return compat.date.today()
-
-
 class RecurringService:
     """Service for managing recurring invoice schedules."""
 
@@ -51,7 +44,7 @@ class RecurringService:
         )
 
         if next_invoice_date is None:
-            today = _today()
+            today = date.today()
             if frequency == "daily":
                 next_invoice_date = today + timedelta(days=1)
             elif frequency == "weekly":
@@ -149,7 +142,7 @@ class RecurringService:
             and "next_invoice_date" not in kwargs
         ):
             kwargs["next_invoice_date"] = RecurringService.calculate_next_date(
-                _today(), new_frequency, new_schedule_day
+                date.today(), new_frequency, new_schedule_day
             )
 
         for key, value in kwargs.items():
@@ -219,7 +212,7 @@ class RecurringService:
         """Process all schedules due today or earlier and create invoices."""
         from invoice_machine.service.invoices import InvoiceService
 
-        today = _today()
+        today = date.today()
         result = await session.execute(
             select(RecurringSchedule).where(
                 RecurringSchedule.is_active == 1,
@@ -278,7 +271,7 @@ class RecurringService:
         if not schedule:
             return {"success": False, "error": "Schedule not found"}
 
-        today = _today()
+        today = date.today()
         try:
             line_items = json.loads(schedule.line_items) if schedule.line_items else []
             invoice = await InvoiceService.create_invoice(

@@ -1,10 +1,5 @@
 """Compatibility exports for the service layer."""
 
-from datetime import date  # noqa: F401 — accessed via compat.date by service modules
-
-import boto3  # noqa: F401 — accessed via compat.boto3 by BackupService
-
-from invoice_machine.config import get_settings  # noqa: F401 — accessed via compat.get_settings
 from invoice_machine.service.backups import BackupService, get_backup_service
 from invoice_machine.service.clients import ClientService
 from invoice_machine.service.common import (

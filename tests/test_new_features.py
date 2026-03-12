@@ -150,7 +150,7 @@ class TestRecurringInvoices:
             def today(cls):
                 return cls(2025, 6, 10)
 
-        monkeypatch.setattr("invoice_machine.services.date", FixedDate)
+        monkeypatch.setattr("invoice_machine.service.recurring.date", FixedDate)
 
         schedule = await RecurringService.create_schedule(
             db_session,
@@ -237,7 +237,7 @@ class TestRecurringInvoices:
             def today(cls):
                 return cls(2025, 1, 10)
 
-        monkeypatch.setattr("invoice_machine.services.date", FixedDate)
+        monkeypatch.setattr("invoice_machine.service.recurring.date", FixedDate)
 
         schedule = await RecurringService.create_schedule(
             db_session,

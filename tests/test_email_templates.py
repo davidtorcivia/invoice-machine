@@ -644,7 +644,7 @@ class TestEmailTemplateMCPTools:
     @pytest.mark.asyncio
     async def test_mcp_get_templates_structure(self, db_session, business_profile):
         """get_email_templates returns correct structure."""
-        from invoice_machine.mcp.server import get_email_templates
+        from invoice_machine.mcp.email_tools import get_email_templates
 
         result = await get_email_templates()
 
@@ -657,7 +657,7 @@ class TestEmailTemplateMCPTools:
     @pytest.mark.asyncio
     async def test_mcp_get_templates_returns_defaults(self, db_session, business_profile):
         """get_email_templates returns None when no templates set."""
-        from invoice_machine.mcp.server import get_email_templates
+        from invoice_machine.mcp.email_tools import get_email_templates
 
         result = await get_email_templates()
 
@@ -668,7 +668,7 @@ class TestEmailTemplateMCPTools:
     @pytest.mark.asyncio
     async def test_mcp_update_subject_template(self, db_session, business_profile):
         """update_email_templates updates subject."""
-        from invoice_machine.mcp.server import get_email_templates, update_email_templates
+        from invoice_machine.mcp.email_tools import get_email_templates, update_email_templates
 
         result = await update_email_templates(
             email_subject_template="MCP Subject: {invoice_number}"
@@ -683,7 +683,7 @@ class TestEmailTemplateMCPTools:
     @pytest.mark.asyncio
     async def test_mcp_update_body_template(self, db_session, business_profile):
         """update_email_templates updates body."""
-        from invoice_machine.mcp.server import update_email_templates
+        from invoice_machine.mcp.email_tools import update_email_templates
 
         result = await update_email_templates(
             email_body_template="MCP Body for {client_name}"
@@ -694,7 +694,7 @@ class TestEmailTemplateMCPTools:
     @pytest.mark.asyncio
     async def test_mcp_clear_templates(self, db_session, business_profile):
         """update_email_templates clears templates with empty string."""
-        from invoice_machine.mcp.server import update_email_templates
+        from invoice_machine.mcp.email_tools import update_email_templates
 
         # Set a template
         await update_email_templates(email_subject_template="Temporary")
@@ -709,7 +709,7 @@ class TestEmailTemplateMCPTools:
         self, db_session, business_profile, invoice_with_client
     ):
         """preview_invoice_email uses default templates."""
-        from invoice_machine.mcp.server import preview_invoice_email
+        from invoice_machine.mcp.email_tools import preview_invoice_email
 
         result = await preview_invoice_email(invoice_id=invoice_with_client.id)
 
@@ -723,7 +723,7 @@ class TestEmailTemplateMCPTools:
         self, db_session, business_profile, invoice_with_client
     ):
         """preview_invoice_email uses provided templates."""
-        from invoice_machine.mcp.server import preview_invoice_email
+        from invoice_machine.mcp.email_tools import preview_invoice_email
 
         result = await preview_invoice_email(
             invoice_id=invoice_with_client.id,
@@ -737,7 +737,7 @@ class TestEmailTemplateMCPTools:
     @pytest.mark.asyncio
     async def test_mcp_preview_invalid_invoice(self, db_session, business_profile):
         """preview_invoice_email returns error for invalid invoice."""
-        from invoice_machine.mcp.server import preview_invoice_email
+        from invoice_machine.mcp.email_tools import preview_invoice_email
 
         result = await preview_invoice_email(invoice_id=99999)
 

@@ -73,7 +73,7 @@ class TestCreateBackup:
             backup_dir = Path(tmpdir) / "backups"
             service = BackupService(backup_dir=backup_dir)
 
-            with patch("invoice_machine.services.get_settings") as mock_settings:
+            with patch("invoice_machine.service.backups.get_settings") as mock_settings:
                 mock_settings.return_value.data_dir = mock_db_file.parent
 
                 result = service.create_backup(compress=True)
@@ -95,7 +95,7 @@ class TestCreateBackup:
             backup_dir = Path(tmpdir) / "backups"
             service = BackupService(backup_dir=backup_dir)
 
-            with patch("invoice_machine.services.get_settings") as mock_settings:
+            with patch("invoice_machine.service.backups.get_settings") as mock_settings:
                 mock_settings.return_value.data_dir = mock_db_file.parent
 
                 result = service.create_backup(compress=False)
@@ -115,7 +115,7 @@ class TestCreateBackup:
             backup_dir = Path(tmpdir) / "backups"
             service = BackupService(backup_dir=backup_dir)
 
-            with patch("invoice_machine.services.get_settings") as mock_settings:
+            with patch("invoice_machine.service.backups.get_settings") as mock_settings:
                 mock_settings.return_value.data_dir = Path("/nonexistent")
 
                 with pytest.raises(FileNotFoundError, match="Database not found"):
@@ -134,7 +134,7 @@ class TestCreateBackup:
             }
             service = BackupService(backup_dir=backup_dir, s3_config=s3_config)
 
-            with patch("invoice_machine.services.get_settings") as mock_settings:
+            with patch("invoice_machine.service.backups.get_settings") as mock_settings:
                 mock_settings.return_value.data_dir = mock_db_file.parent
 
                 with patch.object(service, "_upload_to_s3") as mock_upload:
@@ -150,7 +150,7 @@ class TestCreateBackup:
             s3_config = {"enabled": True, "bucket": "test-bucket"}
             service = BackupService(backup_dir=backup_dir, s3_config=s3_config)
 
-            with patch("invoice_machine.services.get_settings") as mock_settings:
+            with patch("invoice_machine.service.backups.get_settings") as mock_settings:
                 mock_settings.return_value.data_dir = mock_db_file.parent
 
                 with patch.object(
@@ -169,7 +169,7 @@ class TestCreateBackup:
             backup_dir = Path(tmpdir) / "backups"
             service = BackupService(backup_dir=backup_dir)
 
-            with patch("invoice_machine.services.get_settings") as mock_settings:
+            with patch("invoice_machine.service.backups.get_settings") as mock_settings:
                 mock_settings.return_value.data_dir = mock_db_file.parent
 
                 result = service.create_backup()
@@ -293,7 +293,7 @@ class TestS3Upload:
             }
             service = BackupService(backup_dir=backup_dir, s3_config=s3_config)
 
-            with patch("invoice_machine.services.boto3.client") as mock_boto:
+            with patch("invoice_machine.service.backups.boto3.client") as mock_boto:
                 mock_client = MagicMock()
                 mock_boto.return_value = mock_client
 
@@ -321,7 +321,7 @@ class TestS3Upload:
             }
             service = BackupService(backup_dir=backup_dir, s3_config=s3_config)
 
-            with patch("invoice_machine.services.boto3.client") as mock_boto:
+            with patch("invoice_machine.service.backups.boto3.client") as mock_boto:
                 mock_client = MagicMock()
                 mock_boto.return_value = mock_client
 
@@ -406,7 +406,7 @@ class TestRestoreBackup:
 
             service = BackupService(backup_dir=backup_dir)
 
-            with patch("invoice_machine.services.get_settings") as mock_settings:
+            with patch("invoice_machine.service.backups.get_settings") as mock_settings:
                 mock_settings.return_value.data_dir = data_dir
 
                 result = service.restore_backup(
@@ -440,7 +440,7 @@ class TestRestoreBackup:
 
             service = BackupService(backup_dir=backup_dir)
 
-            with patch("invoice_machine.services.get_settings") as mock_settings:
+            with patch("invoice_machine.service.backups.get_settings") as mock_settings:
                 mock_settings.return_value.data_dir = data_dir
 
                 result = service.restore_backup(
@@ -481,7 +481,7 @@ class TestRestoreBackup:
 
             service = BackupService(backup_dir=backup_dir)
 
-            with patch("invoice_machine.services.get_settings") as mock_settings:
+            with patch("invoice_machine.service.backups.get_settings") as mock_settings:
                 mock_settings.return_value.data_dir = data_dir
 
                 result = service.restore_backup(
@@ -510,7 +510,7 @@ class TestRestoreBackup:
 
             service = BackupService(backup_dir=backup_dir)
 
-            with patch("invoice_machine.services.get_settings") as mock_settings:
+            with patch("invoice_machine.service.backups.get_settings") as mock_settings:
                 mock_settings.return_value.data_dir = data_dir
 
                 service.restore_backup(
