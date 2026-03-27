@@ -337,7 +337,9 @@ export const formatCurrency = (amount, currency = 'USD') => {
 };
 
 export const formatDate = (dateStr, format = 'short') => {
-  const date = new Date(dateStr);
+  // Parse YYYY-MM-DD as local date to avoid UTC timezone shift
+  const [year, month, day] = dateStr.split('-').map(Number);
+  const date = new Date(year, month - 1, day);
   if (format === 'short') {
     return date.toLocaleDateString('en-US', {
       month: 'short',

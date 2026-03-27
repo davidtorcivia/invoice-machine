@@ -8,7 +8,7 @@ from datetime import date, datetime
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import Integer, and_, case, func, select
+from sqlalchemy import Integer, and_, case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.requests import Request
 
@@ -111,21 +111,41 @@ async def get_revenue_summary(
     from_date_parsed = date.fromisoformat(from_date) if from_date else date(today.year, 1, 1)
     to_date_parsed = date.fromisoformat(to_date) if to_date else today
 
-    # Base filter for date range and non-deleted invoices
-    base_filter = and_(
+    # Date-scoped filter for period-based metrics (invoiced, paid, draft)
+    period_filter = and_(
         Invoice.document_type == "invoice",
         Invoice.issue_date >= from_date_parsed,
         Invoice.issue_date <= to_date_parsed,
         Invoice.deleted_at.is_(None),
     )
 
-    # SQL aggregation query - single pass through the data
-    totals_query = select(
+    # Global filter for point-in-time metrics (outstanding, overdue)
+    # These reflect current state regardless of when the invoice was issued
+    global_filter = and_(
+        Invoice.document_type == "invoice",
+        Invoice.deleted_at.is_(None),
+    )
+
+    # Period-scoped totals: invoiced, paid, draft
+    period_query = select(
         func.count(Invoice.id).label("invoice_count"),
         func.coalesce(func.sum(Invoice.total), 0).label("total_invoiced"),
         func.coalesce(
             func.sum(case((Invoice.status == "paid", Invoice.total), else_=0)), 0
         ).label("total_paid"),
+        func.coalesce(
+            func.sum(case((Invoice.status == "draft", Invoice.total), else_=0)), 0
+        ).label("total_draft"),
+    ).where(period_filter)
+
+    # Match frontend overdue logic: status is "overdue" OR (status is "sent" AND past due)
+    is_effectively_overdue = or_(
+        Invoice.status == "overdue",
+        and_(Invoice.status == "sent", Invoice.due_date < today),
+    )
+
+    # Point-in-time totals: outstanding and overdue across ALL invoices
+    outstanding_query = select(
         func.coalesce(
             func.sum(
                 case((Invoice.status.in_(["sent", "overdue"]), Invoice.total), else_=0)
@@ -133,22 +153,20 @@ async def get_revenue_summary(
             0,
         ).label("total_outstanding"),
         func.coalesce(
-            func.sum(case((Invoice.status == "draft", Invoice.total), else_=0)), 0
-        ).label("total_draft"),
-        func.coalesce(
-            func.sum(case((Invoice.status == "overdue", Invoice.total), else_=0)), 0
+            func.sum(case((is_effectively_overdue, Invoice.total), else_=0)), 0
         ).label("total_overdue"),
-    ).where(base_filter)
+    ).where(global_filter)
 
-    result = await session.execute(totals_query)
-    totals = result.one()
+    period_result, outstanding_result = await session.execute(period_query), await session.execute(outstanding_query)
+    period_totals = period_result.one()
+    outstanding_totals = outstanding_result.one()
 
-    invoice_count = totals.invoice_count
-    total_invoiced = Decimal(str(totals.total_invoiced))
-    total_paid = Decimal(str(totals.total_paid))
-    total_outstanding = Decimal(str(totals.total_outstanding))
-    total_draft = Decimal(str(totals.total_draft))
-    total_overdue = Decimal(str(totals.total_overdue))
+    invoice_count = period_totals.invoice_count
+    total_invoiced = Decimal(str(period_totals.total_invoiced))
+    total_paid = Decimal(str(period_totals.total_paid))
+    total_draft = Decimal(str(period_totals.total_draft))
+    total_outstanding = Decimal(str(outstanding_totals.total_outstanding))
+    total_overdue = Decimal(str(outstanding_totals.total_overdue))
 
     # Period breakdown query using SQL grouping
     # SQLite uses strftime for date formatting
@@ -174,7 +192,7 @@ async def get_revenue_summary(
                 func.sum(case((Invoice.status == "paid", Invoice.total), else_=0)), 0
             ).label("paid"),
         )
-        .where(base_filter)
+        .where(period_filter)
         .group_by(period_expr)
         .order_by(period_expr)
     )

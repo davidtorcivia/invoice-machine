@@ -43,7 +43,9 @@ export function isOverdue(invoice) {
     return false;
   }
   if (!invoice.due_date) return false;
-  const dueDate = new Date(invoice.due_date);
+  // Parse as local date to avoid UTC timezone mismatch
+  const [year, month, day] = invoice.due_date.split('-').map(Number);
+  const dueDate = new Date(year, month - 1, day);
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   return dueDate < today;

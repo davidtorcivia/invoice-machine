@@ -160,6 +160,12 @@ async def lifespan(app: FastAPI):
     except Exception as exc:
         _startup_notice(f"FTS rebuild failed (non-fatal): {exc}")
 
+    _startup_notice("Running overdue invoice check...")
+    try:
+        await _overdue_check_job()
+    except Exception as exc:
+        _startup_notice(f"Overdue check failed (non-fatal): {exc}")
+
     _startup_notice("Starting background tasks...")
     tasks = [
         asyncio.create_task(_run_hourly_task(app, _session_cleanup_job)),

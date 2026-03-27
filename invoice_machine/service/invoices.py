@@ -289,9 +289,15 @@ class InvoiceService:
         if notes is not None:
             invoice.notes = notes
 
+        tax_fields_changed = False
         for key, value in kwargs.items():
             if hasattr(invoice, key) and value is not None:
+                if key in ("tax_enabled", "tax_rate") and getattr(invoice, key) != value:
+                    tax_fields_changed = True
                 setattr(invoice, key, value)
+
+        if tax_fields_changed:
+            await recalculate_invoice_totals(session, invoice)
 
         if client:
             await snapshot_client_info(session, client, invoice)

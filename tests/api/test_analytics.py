@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, timedelta
 
 import pytest
 
@@ -190,6 +190,160 @@ class TestAnalyticsEndpoints:
 
         data = response.json()
         assert "breakdown" in data
+
+    @pytest.mark.asyncio
+    async def test_get_revenue_outstanding_and_overdue_not_filtered_by_date(self, test_client):
+        """Outstanding and overdue totals include invoices from all years."""
+        today = date.today()
+        last_year = f"{today.year - 1}-06-15"
+        this_year = f"{today.year}-03-01"
+
+        # Create an overdue invoice from last year
+        old_invoice = await test_client.post(
+            "/api/invoices",
+            json={
+                "document_type": "invoice",
+                "issue_date": last_year,
+                "items": [{"description": "Old overdue", "quantity": 1, "unit_price": 9000}],
+            },
+        )
+        await test_client.put(
+            f"/api/invoices/{old_invoice.json()['id']}",
+            json={"status": "overdue"},
+        )
+
+        # Create an overdue invoice from this year
+        new_invoice = await test_client.post(
+            "/api/invoices",
+            json={
+                "document_type": "invoice",
+                "issue_date": this_year,
+                "items": [{"description": "New overdue", "quantity": 1, "unit_price": 1200}],
+            },
+        )
+        await test_client.put(
+            f"/api/invoices/{new_invoice.json()['id']}",
+            json={"status": "overdue"},
+        )
+
+        # Query revenue for this year only
+        response = await test_client.get(
+            f"/api/analytics/revenue?from_date={today.year}-01-01&to_date={today.year}-12-31"
+        )
+        assert response.status_code == 200
+        data = response.json()
+
+        # Period-scoped metrics should only include this year's invoice
+        assert data["totals"]["invoiced"] == "1200.00"
+
+        # Point-in-time metrics should include BOTH invoices
+        assert data["totals"]["outstanding"] == "10200.00"
+        assert data["totals"]["overdue"] == "10200.00"
+
+    @pytest.mark.asyncio
+    async def test_get_revenue_sent_past_due_counted_as_overdue(self, test_client):
+        """Sent invoices past their due date are counted as overdue in reports."""
+        today = date.today()
+        past_due_date = (today - timedelta(days=10)).isoformat()
+        issue_date = (today - timedelta(days=40)).isoformat()
+
+        # Create invoice with status "sent" but past its due date
+        sent_past_due = await test_client.post(
+            "/api/invoices",
+            json={
+                "document_type": "invoice",
+                "issue_date": issue_date,
+                "due_date": past_due_date,
+                "items": [{"description": "Past due work", "quantity": 1, "unit_price": 5000}],
+            },
+        )
+        await test_client.put(
+            f"/api/invoices/{sent_past_due.json()['id']}",
+            json={"status": "sent"},
+        )
+
+        # Create invoice with explicit overdue status
+        explicitly_overdue = await test_client.post(
+            "/api/invoices",
+            json={
+                "document_type": "invoice",
+                "issue_date": issue_date,
+                "due_date": past_due_date,
+                "items": [{"description": "Overdue work", "quantity": 1, "unit_price": 3000}],
+            },
+        )
+        await test_client.put(
+            f"/api/invoices/{explicitly_overdue.json()['id']}",
+            json={"status": "overdue"},
+        )
+
+        response = await test_client.get("/api/analytics/revenue")
+        assert response.status_code == 200
+        data = response.json()
+
+        # Both should count as outstanding
+        assert data["totals"]["outstanding"] == "8000.00"
+        # Both should count as overdue (sent+past_due and explicit overdue)
+        assert data["totals"]["overdue"] == "8000.00"
+
+    @pytest.mark.asyncio
+    async def test_update_invoice_tax_recalculates_total(self, test_client):
+        """Updating tax settings on an invoice recalculates the total."""
+        invoice = await test_client.post(
+            "/api/invoices",
+            json={
+                "document_type": "invoice",
+                "items": [{"description": "Service", "quantity": 1, "unit_price": 1000}],
+            },
+        )
+        invoice_data = invoice.json()
+        assert invoice_data["total"] == "1000.00"
+
+        # Enable 10% tax
+        updated = await test_client.put(
+            f"/api/invoices/{invoice_data['id']}",
+            json={"tax_enabled": 1, "tax_rate": 10},
+        )
+        updated_data = updated.json()
+        assert updated_data["total"] == "1100.00"
+        assert updated_data["tax_amount"] == "100.00"
+
+        # Disable tax
+        updated2 = await test_client.put(
+            f"/api/invoices/{invoice_data['id']}",
+            json={"tax_enabled": 0},
+        )
+        updated2_data = updated2.json()
+        assert updated2_data["total"] == "1000.00"
+        assert updated2_data["tax_amount"] == "0.00"
+
+    @pytest.mark.asyncio
+    async def test_get_revenue_sent_not_yet_due_not_overdue(self, test_client):
+        """Sent invoices NOT past due should be outstanding but NOT overdue."""
+        today = date.today()
+        future_due_date = (today + timedelta(days=30)).isoformat()
+
+        sent_not_due = await test_client.post(
+            "/api/invoices",
+            json={
+                "document_type": "invoice",
+                "issue_date": today.isoformat(),
+                "due_date": future_due_date,
+                "items": [{"description": "Not yet due", "quantity": 1, "unit_price": 2000}],
+            },
+        )
+        await test_client.put(
+            f"/api/invoices/{sent_not_due.json()['id']}",
+            json={"status": "sent"},
+        )
+
+        response = await test_client.get("/api/analytics/revenue")
+        assert response.status_code == 200
+        data = response.json()
+
+        # Should count as outstanding but NOT overdue
+        assert data["totals"]["outstanding"] == "2000.00"
+        assert data["totals"]["overdue"] == "0.00"
 
     @pytest.mark.asyncio
     async def test_get_client_lifetime_values_empty(self, test_client):
