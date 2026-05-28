@@ -9,13 +9,32 @@ These tests verify:
 """
 
 import gzip
+import sqlite3
 import tempfile
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from invoice_machine.services import BackupService
+
+
+def _make_sqlite_db(path: Path) -> None:
+    """Create a real (minimal) SQLite database with the required tables."""
+    conn = sqlite3.connect(str(path))
+    try:
+        for table in ("users", "business_profile", "clients", "invoices", "invoice_items"):
+            conn.execute(f"CREATE TABLE {table} (id INTEGER PRIMARY KEY)")
+        conn.execute("INSERT INTO invoices (id) VALUES (1)")
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def _backup_filename(when: datetime, compressed: bool = True) -> str:
+    suffix = ".db.gz" if compressed else ".db"
+    return f"invoice_machine_backup_{when.strftime('%Y%m%d_%H%M%S')}{suffix}"
 
 
 class TestBackupServiceInit:
@@ -64,7 +83,7 @@ class TestCreateBackup:
             data_dir = Path(tmpdir) / "data"
             data_dir.mkdir()
             db_file = data_dir / "invoice_machine.db"
-            db_file.write_bytes(b"SQLite format 3\x00" + b"\x00" * 100)
+            _make_sqlite_db(db_file)
             yield db_file
 
     def test_create_backup_compressed(self, mock_db_file):
@@ -341,22 +360,15 @@ class TestRetentionCleanup:
             backup_dir = Path(tmpdir) / "backups"
             backup_dir.mkdir()
 
-            # Create old backup (simulate old mtime)
-            old_backup = backup_dir / "invoice_machine_backup_20240101_120000.db.gz"
+            # Retention now uses the timestamp embedded in the filename (not
+            # mtime), so build names relative to "now".
+            now = datetime.now(UTC)
+            old_backup = backup_dir / _backup_filename(now - timedelta(days=40))
             old_backup.write_bytes(b"old")
-
-            # Create recent backup
-            new_backup = backup_dir / "invoice_machine_backup_20250115_120000.db.gz"
+            new_backup = backup_dir / _backup_filename(now - timedelta(days=1))
             new_backup.write_bytes(b"new")
 
             service = BackupService(backup_dir=backup_dir, retention_days=30)
-
-            # Mock the file modification time for old backup
-            import os
-            import time
-
-            old_time = time.time() - (40 * 24 * 60 * 60)  # 40 days ago
-            os.utime(old_backup, (old_time, old_time))
 
             deleted_count = service.cleanup_old_backups()
 
@@ -370,9 +382,10 @@ class TestRetentionCleanup:
             backup_dir = Path(tmpdir) / "backups"
             backup_dir.mkdir()
 
-            # Create recent backups
+            # Create recent backups (within the retention window relative to now)
+            now = datetime.now(UTC)
             for i in range(3):
-                backup = backup_dir / f"invoice_machine_backup_2025011{i}_120000.db.gz"
+                backup = backup_dir / _backup_filename(now - timedelta(days=i))
                 backup.write_bytes(b"recent")
 
             service = BackupService(backup_dir=backup_dir, retention_days=30)
@@ -382,6 +395,23 @@ class TestRetentionCleanup:
             # All backups should still exist
             backups = list(backup_dir.glob("invoice_machine_backup_*.db.gz"))
             assert len(backups) == 3
+
+    def test_pre_restore_backups_are_capped(self):
+        """Pre-restore safety copies are bounded by count, not age."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            backup_dir = Path(tmpdir) / "backups"
+            backup_dir.mkdir()
+            now = datetime.now(UTC)
+            # 14 pre-restore copies with distinct timestamps.
+            for i in range(14):
+                ts = (now - timedelta(minutes=i)).strftime("%Y%m%d_%H%M%S")
+                (backup_dir / f"pre_restore_{ts}.db").write_bytes(b"x")
+
+            service = BackupService(backup_dir=backup_dir, retention_days=3650)
+            service.cleanup_old_backups()
+
+            remaining = list(backup_dir.glob("pre_restore_*.db"))
+            assert len(remaining) == 10
 
 
 class TestRestoreBackup:

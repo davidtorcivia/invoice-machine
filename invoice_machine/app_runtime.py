@@ -17,37 +17,43 @@ from invoice_machine.utils import utc_now
 logger = logging.getLogger(__name__)
 settings = get_settings()
 
-
-def _startup_notice(message: str) -> None:
-    """Emit a startup/shutdown message consistently."""
-    print(message, flush=True)
+# How long to wait between rechecks while a restore is in progress.
+_RESTORE_WAIT_SECONDS = 60
 
 
 def _seconds_until_hour(target_hour_utc: int) -> float:
-    """Return seconds until the next UTC clock hour."""
+    """Return seconds until the next occurrence of the given UTC clock hour."""
     now = utc_now()
     target = now.replace(hour=target_hour_utc, minute=0, second=0, microsecond=0)
-    if now.hour >= target_hour_utc:
+    if target <= now:
         target += timedelta(days=1)
     return (target - now).total_seconds()
 
 
-async def _run_hourly_task(app: FastAPI, job) -> None:
-    """Run a task once per hour, skipping restore windows."""
+async def _wait_out_restore(app: FastAPI) -> None:
+    """Block while a backup restore is in progress (recheck periodically)."""
+    while getattr(app.state, "restore_in_progress", False):
+        await asyncio.sleep(_RESTORE_WAIT_SECONDS)
+
+
+async def _run_hourly_task(app: FastAPI, name: str, job) -> None:
+    """Run a task once per hour. A failure is logged but never kills the loop."""
     while True:
         await asyncio.sleep(3600)
-        if app.state.restore_in_progress:
-            continue
-        await job()
+        await _wait_out_restore(app)
+        try:
+            await job()
+        except Exception as exc:
+            logger.error("%s failed: %s", name, exc, exc_info=True)
 
 
 async def _run_daily_task(app: FastAPI, hour_utc: int, name: str, job) -> None:
-    """Run a task daily at a given UTC hour, skipping restore windows."""
+    """Run a task daily at a given UTC hour. Waits out restores instead of
+    skipping a whole day, and logs (does not propagate) failures."""
     while True:
         await asyncio.sleep(_seconds_until_hour(hour_utc))
+        await _wait_out_restore(app)
         try:
-            if app.state.restore_in_progress:
-                continue
             await job()
         except Exception as exc:
             logger.error("%s failed: %s", name, exc, exc_info=True)
@@ -131,51 +137,79 @@ async def _rebuild_search_indexes() -> None:
     async with async_session_maker() as session:
         reindex_result = await SearchService.reindex_fts(session)
         if reindex_result.get("skipped"):
-            _startup_notice(
-                f"FTS rebuild skipped: {reindex_result.get('reason', 'no data')}"
-            )
+            logger.info("FTS rebuild skipped: %s", reindex_result.get("reason", "no data"))
         elif reindex_result.get("error"):
-            _startup_notice(f"FTS rebuild error: {reindex_result.get('error')}")
+            logger.warning("FTS rebuild error: %s", reindex_result.get("error"))
         elif reindex_result.get("rebuilt"):
-            _startup_notice(
-                "FTS rebuild complete: "
-                f"{reindex_result.get('invoices_indexed', 0)} invoices, "
-                f"{reindex_result.get('clients_indexed', 0)} clients, "
-                f"{reindex_result.get('line_items_indexed', 0)} line items indexed"
+            logger.info(
+                "FTS rebuild complete: %s invoices, %s clients, %s line items indexed",
+                reindex_result.get("invoices_indexed", 0),
+                reindex_result.get("clients_indexed", 0),
+                reindex_result.get("line_items_indexed", 0),
             )
+
+
+def _acquire_scheduler_lock():
+    """Acquire a single-instance lock so only one process runs the scheduler.
+
+    Returns the open file handle (which must be kept alive to hold the lock) or
+    None if another process already holds it. Best-effort; on platforms without
+    fcntl the scheduler simply runs.
+    """
+    try:
+        import fcntl
+    except ImportError:
+        return object()  # No advisory locking available; run unconditionally.
+
+    lock_path = settings.data_dir / "scheduler.lock"
+    handle = open(lock_path, "w")
+    try:
+        fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        return handle
+    except OSError:
+        handle.close()
+        return None
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """FastAPI lifespan manager."""
-    _startup_notice("Starting Invoice Machine...")
-    _startup_notice("Running database migrations...")
+    logger.info("Starting Invoice Machine...")
+    logger.info("Running database migrations...")
     await ensure_database_schema(apply_migrations=True)
-    _startup_notice("Migrations complete.")
-    _startup_notice("Database initialized.")
+    logger.info("Database initialized.")
 
-    _startup_notice("Rebuilding FTS search indexes...")
+    logger.info("Rebuilding FTS search indexes...")
     try:
         await _rebuild_search_indexes()
     except Exception as exc:
-        _startup_notice(f"FTS rebuild failed (non-fatal): {exc}")
+        logger.warning("FTS rebuild failed (non-fatal): %s", exc, exc_info=True)
 
-    _startup_notice("Running overdue invoice check...")
-    try:
-        await _overdue_check_job()
-    except Exception as exc:
-        _startup_notice(f"Overdue check failed (non-fatal): {exc}")
+    # Run time-sensitive jobs once at startup so a restart doesn't skip a day.
+    # Both are idempotent (recurring catches up missed periods exactly once).
+    for name, job in (("Overdue check", _overdue_check_job), ("Recurring invoices", _recurring_invoice_job)):
+        try:
+            await job()
+        except Exception as exc:
+            logger.warning("%s at startup failed (non-fatal): %s", name, exc, exc_info=True)
 
-    _startup_notice("Starting background tasks...")
-    tasks = [
-        asyncio.create_task(_run_hourly_task(app, _session_cleanup_job)),
-        asyncio.create_task(_run_daily_task(app, 0, "Scheduled backup task", _scheduled_backup_job)),
-        asyncio.create_task(_run_daily_task(app, 3, "Trash cleanup task", _trash_cleanup_job)),
-        asyncio.create_task(_run_daily_task(app, 1, "Overdue check task", _overdue_check_job)),
-        asyncio.create_task(_run_daily_task(app, 2, "Recurring invoice task", _recurring_invoice_job)),
-    ]
-    _startup_notice("Background tasks started.")
-    _startup_notice("Invoice Machine ready! Listening on port 8080")
+    tasks: list[asyncio.Task] = []
+    scheduler_lock = _acquire_scheduler_lock()
+    if scheduler_lock is None:
+        logger.warning(
+            "Another process holds the scheduler lock; background tasks will not "
+            "run in this worker (expected with multiple workers)."
+        )
+    else:
+        logger.info("Starting background tasks...")
+        tasks = [
+            asyncio.create_task(_run_hourly_task(app, "Session cleanup", _session_cleanup_job)),
+            asyncio.create_task(_run_daily_task(app, 0, "Scheduled backup task", _scheduled_backup_job)),
+            asyncio.create_task(_run_daily_task(app, 3, "Trash cleanup task", _trash_cleanup_job)),
+            asyncio.create_task(_run_daily_task(app, 1, "Overdue check task", _overdue_check_job)),
+            asyncio.create_task(_run_daily_task(app, 2, "Recurring invoice task", _recurring_invoice_job)),
+        ]
+    logger.info("Invoice Machine ready! Listening on port %s", settings.port)
 
     yield
 
@@ -185,4 +219,6 @@ async def lifespan(app: FastAPI):
             await task
         except asyncio.CancelledError:
             pass
+    if scheduler_lock is not None and hasattr(scheduler_lock, "close"):
+        scheduler_lock.close()
     await close_db()

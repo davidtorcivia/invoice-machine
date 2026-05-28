@@ -1,7 +1,9 @@
 """Backup-related service operations."""
 
 import gzip
+import logging
 import os
+import re
 import shutil
 import sqlite3
 import tempfile
@@ -13,6 +15,44 @@ from botocore.config import Config
 
 from invoice_machine.config import get_settings
 from invoice_machine.utils import utc_now
+
+logger = logging.getLogger(__name__)
+
+# Keep at most this many pre-restore safety copies (they are never age-pruned
+# by retention since they are the most important recovery artifact).
+_MAX_PRE_RESTORE_BACKUPS = 10
+
+# Embedded timestamp like 20260115_120000 in backup filenames.
+_BACKUP_TS_RE = re.compile(r"(\d{8}_\d{6})")
+
+
+def _parse_backup_timestamp(filename: str) -> datetime | None:
+    """Parse the embedded YYYYMMDD_HHMMSS timestamp from a backup filename."""
+    match = _BACKUP_TS_RE.search(filename)
+    if not match:
+        return None
+    try:
+        return datetime.strptime(match.group(1), "%Y%m%d_%H%M%S").replace(tzinfo=UTC)
+    except ValueError:
+        return None
+
+
+def _snapshot_database(db_path: Path, dest_path: Path) -> None:
+    """Write a transactionally-consistent copy of the SQLite DB to dest_path.
+
+    Uses the SQLite online backup API, which is safe under WAL and concurrent
+    writers (a plain file copy can capture a torn page or miss the -wal file).
+    """
+    src = sqlite3.connect(str(db_path))
+    try:
+        dst = sqlite3.connect(str(dest_path))
+        try:
+            with dst:
+                src.backup(dst)
+        finally:
+            dst.close()
+    finally:
+        src.close()
 
 
 class BackupService:
@@ -48,11 +88,22 @@ class BackupService:
         )
         backup_path = self.backup_dir / backup_filename
 
-        if compress:
-            with open(db_path, "rb") as src, gzip.open(backup_path, "wb", compresslevel=6) as dst:
-                shutil.copyfileobj(src, dst)
-        else:
-            shutil.copy2(db_path, backup_path)
+        # Take a consistent snapshot first (safe under WAL/concurrent writes),
+        # then compress or move it into place.
+        snapshot_fd, snapshot_name = tempfile.mkstemp(suffix=".db", dir=self.backup_dir)
+        os.close(snapshot_fd)
+        snapshot_path = Path(snapshot_name)
+        try:
+            _snapshot_database(db_path, snapshot_path)
+            if compress:
+                with open(snapshot_path, "rb") as src, gzip.open(
+                    backup_path, "wb", compresslevel=6
+                ) as dst:
+                    shutil.copyfileobj(src, dst)
+            else:
+                shutil.copy2(snapshot_path, backup_path)
+        finally:
+            snapshot_path.unlink(missing_ok=True)
 
         result = {
             "filename": backup_filename,
@@ -96,11 +147,15 @@ class BackupService:
         for pattern in ["invoice_machine_backup_*.db*", "invoicely_backup_*.db*"]:
             for path in self.backup_dir.glob(pattern):
                 stat = path.stat()
+                # Prefer the timestamp embedded in the filename; fall back to mtime.
+                created = _parse_backup_timestamp(path.name) or datetime.fromtimestamp(
+                    stat.st_mtime, tz=UTC
+                )
                 backups.append({
                     "filename": path.name,
                     "path": str(path),
                     "size_bytes": stat.st_size,
-                    "created_at": datetime.fromtimestamp(stat.st_mtime, tz=UTC).isoformat(),
+                    "created_at": created.isoformat(),
                     "compressed": path.suffix == ".gz",
                 })
 
@@ -108,23 +163,46 @@ class BackupService:
         return backups
 
     def cleanup_old_backups(self) -> int:
-        """Delete local and optional S3 backups older than retention_days."""
+        """Delete local and optional S3 backups older than retention_days.
+
+        Age is taken from the timestamp embedded in the filename (not mtime,
+        which a copy/rsync/restore would reset). Pre-restore safety copies are
+        capped by count rather than age.
+        """
         cutoff = utc_now() - timedelta(days=self.retention_days)
         deleted = 0
 
         for pattern in ["invoice_machine_backup_*.db*", "invoicely_backup_*.db*"]:
             for path in self.backup_dir.glob(pattern):
-                created = datetime.fromtimestamp(path.stat().st_mtime, tz=UTC)
+                created = _parse_backup_timestamp(path.name) or datetime.fromtimestamp(
+                    path.stat().st_mtime, tz=UTC
+                )
                 if created < cutoff:
                     path.unlink()
                     deleted += 1
+
+        deleted += self._cleanup_pre_restore_backups()
 
         if self.s3_config and self.s3_config.get("enabled"):
             try:
                 deleted += self._cleanup_s3_backups(cutoff)
             except Exception:
-                pass
+                logger.warning("S3 backup cleanup failed", exc_info=True)
 
+        return deleted
+
+    def _cleanup_pre_restore_backups(self) -> int:
+        """Keep only the most recent _MAX_PRE_RESTORE_BACKUPS pre-restore copies."""
+        pre_restore = sorted(
+            self.backup_dir.glob("pre_restore_*.db"),
+            key=lambda p: _parse_backup_timestamp(p.name)
+            or datetime.fromtimestamp(p.stat().st_mtime, tz=UTC),
+            reverse=True,
+        )
+        deleted = 0
+        for path in pre_restore[_MAX_PRE_RESTORE_BACKUPS:]:
+            path.unlink(missing_ok=True)
+            deleted += 1
         return deleted
 
     def _cleanup_s3_backups(self, cutoff: datetime) -> int:
@@ -229,11 +307,24 @@ class BackupService:
 
             if db_path.exists():
                 pre_restore_filename = f"pre_restore_{utc_now().strftime('%Y%m%d_%H%M%S')}.db"
+                # A raw copy is correct here: the restore endpoint closes the DB
+                # engine first, so WAL is checkpointed into the main file.
                 shutil.copy2(db_path, self.backup_dir / pre_restore_filename)
 
             os.replace(tmp_path, db_path)
+
+            # Remove stale WAL/SHM sidecars so the restored DB isn't read with
+            # leftover write-ahead log data from the previous database.
+            for sidecar in (
+                db_path.with_name(db_path.name + "-wal"),
+                db_path.with_name(db_path.name + "-shm"),
+            ):
+                sidecar.unlink(missing_ok=True)
         finally:
             tmp_path.unlink(missing_ok=True)
+
+        # Keep the pre-restore copies bounded.
+        self._cleanup_pre_restore_backups()
 
         return {
             "restored_from": backup_filename,

@@ -291,9 +291,19 @@ async def restore_backup(
         restore_state.restore_in_progress = True
 
         try:
-            # Wait for any in-flight requests to complete before closing the DB engine.
-            while restore_state.active_requests > 1:
+            # Wait (bounded) for in-flight requests to drain before closing the
+            # DB engine. A long-lived connection (e.g. an SSE stream) must not be
+            # able to hang the restore forever holding the lock.
+            waited = 0.0
+            while restore_state.active_requests > 1 and waited < 30.0:
                 await asyncio.sleep(0.05)
+                waited += 0.05
+            if restore_state.active_requests > 1:
+                logger.warning(
+                    "Proceeding with restore despite %s in-flight request(s) after %.0fs",
+                    restore_state.active_requests - 1,
+                    waited,
+                )
 
             await session.close()
             await close_db()
