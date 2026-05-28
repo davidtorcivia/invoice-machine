@@ -480,5 +480,40 @@ class TestAnalyticsEndpoints:
         assert [client["name"] for client in data] == ["Highest", "Middle"]
         assert [client["total_paid"] for client in data] == ["900.00", "500.00"]
 
+    @pytest.mark.asyncio
+    async def test_revenue_does_not_sum_across_currencies(self, test_client):
+        """USD and EUR invoices are reported per-currency, never summed as one."""
+        await test_client.post(
+            "/api/invoices",
+            json={
+                "document_type": "invoice",
+                "currency_code": "USD",
+                "items": [{"description": "usd", "quantity": 1, "unit_price": 1000}],
+            },
+        )
+        await test_client.post(
+            "/api/invoices",
+            json={
+                "document_type": "invoice",
+                "currency_code": "EUR",
+                "items": [{"description": "eur", "quantity": 1, "unit_price": 500}],
+            },
+        )
+
+        response = await test_client.get("/api/analytics/revenue")
+        assert response.status_code == 200
+        data = response.json()
+
+        # Top-level total must equal a single currency's total, NOT 1500
+        assert data["totals"]["invoiced"] in ("1000.00", "500.00")
+        assert data["currency"] in ("USD", "EUR")
+        # Both currencies present in the breakdown
+        assert set(data["by_currency"].keys()) == {"USD", "EUR"}
+        assert data["by_currency"]["USD"]["invoiced"] == "1000.00"
+        assert data["by_currency"]["EUR"]["invoiced"] == "500.00"
+        # Formatted strings use the right symbol, not a hardcoded $
+        assert data["by_currency"]["EUR"]["invoiced_formatted"].endswith("EUR")
+        assert data["by_currency"]["USD"]["invoiced_formatted"].startswith("$")
+
 
 

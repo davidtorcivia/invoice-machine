@@ -1,5 +1,18 @@
 """Test fixtures and configuration."""
 
+# IMPORTANT: pin the runtime environment BEFORE importing anything from
+# invoice_machine. database.py calls get_settings() at import time, and
+# pydantic-settings would otherwise read the developer's real production .env
+# (e.g. production CORS_ORIGINS / SECURE_COOKIES), making tests depend on local
+# machine config. OS env vars take precedence over the .env file, so these
+# setdefaults give the suite a deterministic configuration on any machine.
+import os
+
+os.environ.setdefault("ENVIRONMENT", "development")
+os.environ.setdefault("CORS_ORIGINS", "http://localhost:3000,http://localhost:8080")
+os.environ.setdefault("SECURE_COOKIES", "false")
+os.environ.setdefault("APP_BASE_URL", "http://localhost:8080")
+
 import tempfile
 from datetime import date, timedelta
 from decimal import Decimal
@@ -24,7 +37,11 @@ def temp_db_path():
 @pytest.fixture(scope="function")
 async def engine(temp_db_path):
     """Create test database engine."""
+    from invoice_machine.database import register_sqlite_pragmas
+
     engine = create_async_engine(f"sqlite+aiosqlite:///{temp_db_path}", echo=False)
+    # Match production connection behavior (FK enforcement, WAL, busy_timeout).
+    register_sqlite_pragmas(engine)
 
     # Create tables
     async with engine.begin() as conn:

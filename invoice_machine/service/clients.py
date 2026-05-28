@@ -2,10 +2,11 @@
 
 from decimal import Decimal
 
-from sqlalchemy import and_, desc, func, select
+from sqlalchemy import and_, case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from invoice_machine.database import Client, Invoice
+from invoice_machine.database import BusinessProfile, Client, Invoice
+from invoice_machine.service.common import quantize_money
 from invoice_machine.utils import utc_now
 
 
@@ -18,16 +19,14 @@ class ClientService:
         client_id: int | None = None,
         limit: int = 100,
     ) -> list[dict]:
-        """Get aggregated invoice statistics for clients in a single query."""
-        from sqlalchemy import case
+        """Get aggregated invoice statistics for clients in a single query.
 
-        total_invoiced_expr = func.coalesce(func.sum(Invoice.total), 0)
-        total_paid_expr = func.coalesce(
-            func.sum(case((Invoice.status == "paid", Invoice.total), else_=0)),
-            0,
-        )
-        invoice_count_expr = func.count(Invoice.id)
-        paid_invoice_count_expr = func.sum(case((Invoice.status == "paid", 1), else_=0))
+        Money is grouped per currency (never summed across currencies). Each
+        client's headline ``total_invoiced``/``total_paid`` are reported in the
+        client's dominant currency, with a full ``by_currency`` breakdown.
+        """
+        profile = await BusinessProfile.get(session)
+        default_cur = (profile.default_currency_code if profile else None) or "USD"
 
         query = (
             select(
@@ -35,10 +34,15 @@ class ClientService:
                 Client.name,
                 Client.business_name,
                 Client.email,
-                total_invoiced_expr.label("total_invoiced"),
-                total_paid_expr.label("total_paid"),
-                invoice_count_expr.label("invoice_count"),
-                paid_invoice_count_expr.label("paid_invoice_count"),
+                Invoice.currency_code.label("currency"),
+                func.coalesce(func.sum(Invoice.total), 0).label("total_invoiced"),
+                func.coalesce(
+                    func.sum(case((Invoice.status == "paid", Invoice.total), else_=0)), 0
+                ).label("total_paid"),
+                func.count(Invoice.id).label("invoice_count"),
+                func.coalesce(
+                    func.sum(case((Invoice.status == "paid", 1), else_=0)), 0
+                ).label("paid_invoice_count"),
                 func.min(Invoice.issue_date).label("first_invoice"),
                 func.max(Invoice.issue_date).label("last_invoice"),
             )
@@ -51,30 +55,77 @@ class ClientService:
                 ),
             )
             .where(Client.deleted_at.is_(None))
-            .group_by(Client.id)
-            .order_by(desc(total_paid_expr), Client.id)
+            .group_by(Client.id, Invoice.currency_code)
         )
 
         if client_id:
             query = query.where(Client.id == client_id)
 
-        result = await session.execute(query.limit(limit))
-        rows = result.all()
+        rows = (await session.execute(query)).all()
 
-        return [
-            {
-                "client_id": row.id,
-                "name": row.business_name or row.name or "Unknown",
-                "email": row.email,
-                "total_invoiced": Decimal(str(row.total_invoiced)),
-                "total_paid": Decimal(str(row.total_paid)),
-                "invoice_count": row.invoice_count or 0,
-                "paid_invoice_count": row.paid_invoice_count or 0,
-                "first_invoice": row.first_invoice,
-                "last_invoice": row.last_invoice,
-            }
-            for row in rows
-        ]
+        clients: dict[int, dict] = {}
+        for row in rows:
+            entry = clients.setdefault(
+                row.id,
+                {
+                    "client_id": row.id,
+                    "name": row.business_name or row.name or "Unknown",
+                    "email": row.email,
+                    "by_currency": {},
+                    "invoice_count": 0,
+                    "paid_invoice_count": 0,
+                    "first_invoice": None,
+                    "last_invoice": None,
+                },
+            )
+
+            # Track overall first/last across all currencies.
+            if row.first_invoice and (
+                entry["first_invoice"] is None or row.first_invoice < entry["first_invoice"]
+            ):
+                entry["first_invoice"] = row.first_invoice
+            if row.last_invoice and (
+                entry["last_invoice"] is None or row.last_invoice > entry["last_invoice"]
+            ):
+                entry["last_invoice"] = row.last_invoice
+
+            # currency is NULL only for clients with no invoices (outer join).
+            if row.currency is not None:
+                invoiced = quantize_money(row.total_invoiced)
+                paid = quantize_money(row.total_paid)
+                entry["by_currency"][row.currency] = {
+                    "invoiced": str(invoiced),
+                    "paid": str(paid),
+                    "invoice_count": row.invoice_count or 0,
+                    "paid_invoice_count": row.paid_invoice_count or 0,
+                }
+                entry["invoice_count"] += row.invoice_count or 0
+                entry["paid_invoice_count"] += row.paid_invoice_count or 0
+
+        for entry in clients.values():
+            by_currency = entry["by_currency"]
+            if by_currency:
+                dominant = (
+                    default_cur
+                    if default_cur in by_currency
+                    else max(by_currency, key=lambda c: by_currency[c]["invoice_count"])
+                )
+            else:
+                dominant = default_cur
+            entry["currency"] = dominant
+            entry["total_invoiced"] = (
+                Decimal(by_currency[dominant]["invoiced"]) if dominant in by_currency else Decimal("0.00")
+            )
+            entry["total_paid"] = (
+                Decimal(by_currency[dominant]["paid"]) if dominant in by_currency else Decimal("0.00")
+            )
+
+        ordered = sorted(
+            clients.values(),
+            key=lambda c: (c["total_paid"], c["client_id"]),
+            reverse=True,
+        )
+        return ordered[:limit]
 
     @staticmethod
     async def list_clients(

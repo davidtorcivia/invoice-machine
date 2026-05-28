@@ -2,6 +2,11 @@
 
 Optimized for performance using SQL-level aggregation instead of in-memory loops.
 This is critical for scaling to thousands of invoices.
+
+Money is never summed across currencies. All aggregates are grouped by
+``currency_code``; the response exposes a single "primary" currency at the top
+level (for the headline cards) plus a ``by_currency`` map so multi-currency data
+is never silently collapsed or mislabeled.
 """
 
 from datetime import date, datetime
@@ -12,15 +17,35 @@ from sqlalchemy import Integer, and_, case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.requests import Request
 
-from invoice_machine.database import Invoice, get_session
+from invoice_machine.database import BusinessProfile, Invoice, get_session
 from invoice_machine.rate_limit import limiter
-from invoice_machine.services import ClientService, format_currency
+from invoice_machine.services import ClientService, format_currency, quantize_money
+from invoice_machine.utils import utc_now
 
 router = APIRouter(prefix="/api/analytics", tags=["analytics"])
 
 # Reasonable limits to prevent excessive queries
 MAX_INVOICE_QUERY_LIMIT = 1000
 MAX_CLIENT_LIMIT = 100
+
+
+async def _default_currency(session: AsyncSession) -> str:
+    """Return the business default currency (fallback USD)."""
+    profile = await BusinessProfile.get(session)
+    return (profile.default_currency_code if profile else None) or "USD"
+
+
+def _pick_primary_currency(per_currency: dict[str, dict], default_cur: str) -> str:
+    """Choose the headline currency: the default if it has activity, else the
+    most active currency present, else the default."""
+    if default_cur in per_currency:
+        return default_cur
+    if per_currency:
+        return max(
+            per_currency,
+            key=lambda c: per_currency[c].get("invoice_count", 0),
+        )
+    return default_cur
 
 
 @router.get("/dashboard")
@@ -30,7 +55,7 @@ async def get_dashboard_summary(
     session: AsyncSession = Depends(get_session),
 ) -> dict:
     """Get dashboard summary totals for invoice documents."""
-    today = date.today()
+    today = utc_now().date()
     month_start = datetime(today.year, today.month, 1)
     if today.month == 12:
         next_month_start = datetime(today.year + 1, 1, 1)
@@ -42,46 +67,86 @@ async def get_dashboard_summary(
         Invoice.deleted_at.is_(None),
     )
 
-    totals_query = select(
-        func.coalesce(
-            func.sum(
-                case((Invoice.status.in_(["sent", "overdue"]), Invoice.total), else_=0)
-            ),
-            0,
-        ).label("total_outstanding"),
-        func.coalesce(
-            func.sum(
-                case(
-                    (
-                        and_(
-                            Invoice.status == "paid",
-                            Invoice.created_at >= month_start,
-                            Invoice.created_at < next_month_start,
-                        ),
-                        Invoice.total,
+    # Money grouped by currency (never summed across currencies).
+    money_rows = (
+        await session.execute(
+            select(
+                Invoice.currency_code.label("currency"),
+                func.coalesce(
+                    func.sum(
+                        case(
+                            (Invoice.status.in_(["sent", "overdue"]), Invoice.total),
+                            else_=0,
+                        )
                     ),
-                    else_=0,
-                )
-            ),
-            0,
-        ).label("paid_this_month"),
-        func.count(case((Invoice.status == "draft", 1))).label("draft_count"),
-        func.count(Invoice.id).label("invoice_count"),
-    ).where(base_filter)
+                    0,
+                ).label("outstanding"),
+                func.coalesce(
+                    func.sum(
+                        case(
+                            (
+                                and_(
+                                    Invoice.status == "paid",
+                                    Invoice.paid_at.is_not(None),
+                                    Invoice.paid_at >= month_start,
+                                    Invoice.paid_at < next_month_start,
+                                ),
+                                Invoice.total,
+                            ),
+                            else_=0,
+                        )
+                    ),
+                    0,
+                ).label("paid_this_month"),
+                func.count(Invoice.id).label("invoice_count"),
+            )
+            .where(base_filter)
+            .group_by(Invoice.currency_code)
+        )
+    ).all()
 
-    result = await session.execute(totals_query)
-    totals = result.one()
+    # Counts are currency-agnostic.
+    counts = (
+        await session.execute(
+            select(
+                func.count(case((Invoice.status == "draft", 1))).label("draft_count"),
+                func.count(Invoice.id).label("invoice_count"),
+            ).where(base_filter)
+        )
+    ).one()
 
-    total_outstanding = Decimal(str(totals.total_outstanding))
-    paid_this_month = Decimal(str(totals.paid_this_month))
+    default_cur = await _default_currency(session)
+    per_currency = {
+        (row.currency or default_cur): {
+            "outstanding": quantize_money(row.outstanding),
+            "paid_this_month": quantize_money(row.paid_this_month),
+            "invoice_count": row.invoice_count or 0,
+        }
+        for row in money_rows
+    }
+    primary = _pick_primary_currency(per_currency, default_cur)
+    prim = per_currency.get(
+        primary, {"outstanding": Decimal("0.00"), "paid_this_month": Decimal("0.00")}
+    )
 
     return {
-        "total_outstanding": str(total_outstanding),
-        "total_outstanding_formatted": format_currency(total_outstanding, "USD"),
-        "paid_this_month": str(paid_this_month),
-        "paid_this_month_formatted": format_currency(paid_this_month, "USD"),
-        "draft_count": totals.draft_count or 0,
-        "invoice_count": totals.invoice_count or 0,
+        "currency": primary,
+        "total_outstanding": str(prim["outstanding"]),
+        "total_outstanding_formatted": format_currency(prim["outstanding"], primary),
+        "paid_this_month": str(prim["paid_this_month"]),
+        "paid_this_month_formatted": format_currency(prim["paid_this_month"], primary),
+        "draft_count": counts.draft_count or 0,
+        "invoice_count": counts.invoice_count or 0,
+        "by_currency": {
+            cur: {
+                "outstanding": str(vals["outstanding"]),
+                "outstanding_formatted": format_currency(vals["outstanding"], cur),
+                "paid_this_month": str(vals["paid_this_month"]),
+                "paid_this_month_formatted": format_currency(vals["paid_this_month"], cur),
+            }
+            for cur, vals in per_currency.items()
+        },
+        "other_currencies": [c for c in per_currency if c != primary],
     }
 
 
@@ -103,11 +168,13 @@ async def get_revenue_summary(
     """
     Get revenue summary for the specified period.
 
-    Returns total invoiced, paid, outstanding, and breakdown by period.
+    Returns total invoiced, paid, outstanding, and breakdown by period — grouped
+    by currency. The top-level ``totals`` reflect the primary currency; the
+    ``by_currency`` map carries every currency present.
 
     Uses SQL-level aggregation for O(1) memory usage regardless of invoice count.
     """
-    today = date.today()
+    today = utc_now().date()
     from_date_parsed = date.fromisoformat(from_date) if from_date else date(today.year, 1, 1)
     to_date_parsed = date.fromisoformat(to_date) if to_date else today
 
@@ -126,17 +193,24 @@ async def get_revenue_summary(
         Invoice.deleted_at.is_(None),
     )
 
-    # Period-scoped totals: invoiced, paid, draft
-    period_query = select(
-        func.count(Invoice.id).label("invoice_count"),
-        func.coalesce(func.sum(Invoice.total), 0).label("total_invoiced"),
-        func.coalesce(
-            func.sum(case((Invoice.status == "paid", Invoice.total), else_=0)), 0
-        ).label("total_paid"),
-        func.coalesce(
-            func.sum(case((Invoice.status == "draft", Invoice.total), else_=0)), 0
-        ).label("total_draft"),
-    ).where(period_filter)
+    # Period-scoped totals grouped by currency: invoiced, paid, draft
+    period_rows = (
+        await session.execute(
+            select(
+                Invoice.currency_code.label("currency"),
+                func.count(Invoice.id).label("invoice_count"),
+                func.coalesce(func.sum(Invoice.total), 0).label("total_invoiced"),
+                func.coalesce(
+                    func.sum(case((Invoice.status == "paid", Invoice.total), else_=0)), 0
+                ).label("total_paid"),
+                func.coalesce(
+                    func.sum(case((Invoice.status == "draft", Invoice.total), else_=0)), 0
+                ).label("total_draft"),
+            )
+            .where(period_filter)
+            .group_by(Invoice.currency_code)
+        )
+    ).all()
 
     # Match frontend overdue logic: status is "overdue" OR (status is "sent" AND past due)
     is_effectively_overdue = or_(
@@ -144,32 +218,70 @@ async def get_revenue_summary(
         and_(Invoice.status == "sent", Invoice.due_date < today),
     )
 
-    # Point-in-time totals: outstanding and overdue across ALL invoices
-    outstanding_query = select(
-        func.coalesce(
-            func.sum(
-                case((Invoice.status.in_(["sent", "overdue"]), Invoice.total), else_=0)
-            ),
-            0,
-        ).label("total_outstanding"),
-        func.coalesce(
-            func.sum(case((is_effectively_overdue, Invoice.total), else_=0)), 0
-        ).label("total_overdue"),
-    ).where(global_filter)
+    # Point-in-time totals grouped by currency: outstanding and overdue (ALL invoices)
+    outstanding_rows = (
+        await session.execute(
+            select(
+                Invoice.currency_code.label("currency"),
+                func.coalesce(
+                    func.sum(
+                        case(
+                            (Invoice.status.in_(["sent", "overdue"]), Invoice.total),
+                            else_=0,
+                        )
+                    ),
+                    0,
+                ).label("total_outstanding"),
+                func.coalesce(
+                    func.sum(case((is_effectively_overdue, Invoice.total), else_=0)), 0
+                ).label("total_overdue"),
+            )
+            .where(global_filter)
+            .group_by(Invoice.currency_code)
+        )
+    ).all()
 
-    period_result, outstanding_result = await session.execute(period_query), await session.execute(outstanding_query)
-    period_totals = period_result.one()
-    outstanding_totals = outstanding_result.one()
+    default_cur = await _default_currency(session)
 
-    invoice_count = period_totals.invoice_count
-    total_invoiced = Decimal(str(period_totals.total_invoiced))
-    total_paid = Decimal(str(period_totals.total_paid))
-    total_draft = Decimal(str(period_totals.total_draft))
-    total_outstanding = Decimal(str(outstanding_totals.total_outstanding))
-    total_overdue = Decimal(str(outstanding_totals.total_overdue))
+    per_currency: dict[str, dict] = {}
+    for row in period_rows:
+        cur = row.currency or default_cur
+        bucket = per_currency.setdefault(cur, {})
+        bucket["invoice_count"] = row.invoice_count or 0
+        bucket["invoiced"] = quantize_money(row.total_invoiced)
+        bucket["paid"] = quantize_money(row.total_paid)
+        bucket["draft"] = quantize_money(row.total_draft)
+    for row in outstanding_rows:
+        cur = row.currency or default_cur
+        bucket = per_currency.setdefault(cur, {})
+        bucket["outstanding"] = quantize_money(row.total_outstanding)
+        bucket["overdue"] = quantize_money(row.total_overdue)
 
-    # Period breakdown query using SQL grouping
-    # SQLite uses strftime for date formatting
+    def _bucket_totals(vals: dict, cur: str) -> dict:
+        invoiced = vals.get("invoiced", Decimal("0.00"))
+        paid = vals.get("paid", Decimal("0.00"))
+        draft = vals.get("draft", Decimal("0.00"))
+        outstanding = vals.get("outstanding", Decimal("0.00"))
+        overdue = vals.get("overdue", Decimal("0.00"))
+        return {
+            "invoiced": str(invoiced),
+            "invoiced_formatted": format_currency(invoiced, cur),
+            "paid": str(paid),
+            "paid_formatted": format_currency(paid, cur),
+            "outstanding": str(outstanding),
+            "outstanding_formatted": format_currency(outstanding, cur),
+            "draft": str(draft),
+            "draft_formatted": format_currency(draft, cur),
+            "overdue": str(overdue),
+            "overdue_formatted": format_currency(overdue, cur),
+            "invoice_count": vals.get("invoice_count", 0),
+        }
+
+    primary = _pick_primary_currency(per_currency, default_cur)
+    totals = _bucket_totals(per_currency.get(primary, {}), primary)
+
+    # Period breakdown query using SQL grouping, scoped to the primary currency
+    # so a single chart series is never a mix of currencies.
     if group_by == "month":
         period_expr = func.strftime("%Y-%m", Invoice.issue_date)
     elif group_by == "quarter":
@@ -192,7 +304,7 @@ async def get_revenue_summary(
                 func.sum(case((Invoice.status == "paid", Invoice.total), else_=0)), 0
             ).label("paid"),
         )
-        .where(period_filter)
+        .where(and_(period_filter, Invoice.currency_code == primary))
         .group_by(period_expr)
         .order_by(period_expr)
     )
@@ -203,10 +315,10 @@ async def get_revenue_summary(
     breakdown = [
         {
             "period": row.period,
-            "invoiced": str(Decimal(str(row.invoiced))),
-            "invoiced_formatted": format_currency(Decimal(str(row.invoiced)), "USD"),
-            "paid": str(Decimal(str(row.paid))),
-            "paid_formatted": format_currency(Decimal(str(row.paid)), "USD"),
+            "invoiced": str(quantize_money(row.invoiced)),
+            "invoiced_formatted": format_currency(quantize_money(row.invoiced), primary),
+            "paid": str(quantize_money(row.paid)),
+            "paid_formatted": format_currency(quantize_money(row.paid), primary),
             "count": row.count,
         }
         for row in breakdown_rows
@@ -214,19 +326,10 @@ async def get_revenue_summary(
 
     return {
         "period": f"{from_date_parsed} to {to_date_parsed}",
-        "totals": {
-            "invoiced": str(total_invoiced),
-            "invoiced_formatted": format_currency(total_invoiced, "USD"),
-            "paid": str(total_paid),
-            "paid_formatted": format_currency(total_paid, "USD"),
-            "outstanding": str(total_outstanding),
-            "outstanding_formatted": format_currency(total_outstanding, "USD"),
-            "draft": str(total_draft),
-            "draft_formatted": format_currency(total_draft, "USD"),
-            "overdue": str(total_overdue),
-            "overdue_formatted": format_currency(total_overdue, "USD"),
-            "invoice_count": invoice_count,
-        },
+        "currency": primary,
+        "totals": totals,
+        "by_currency": {cur: _bucket_totals(vals, cur) for cur, vals in per_currency.items()},
+        "other_currencies": [c for c in per_currency if c != primary],
         "breakdown": breakdown,
     }
 
@@ -242,8 +345,9 @@ async def get_client_lifetime_values(
     """
     Get lifetime value for clients.
 
-    Returns list of clients with total invoiced, paid, and invoice counts.
-    Sorted by total paid descending.
+    Returns list of clients with total invoiced, paid, and invoice counts in the
+    client's dominant currency (plus a per-currency breakdown). Sorted by total
+    paid descending.
 
     Uses optimized SQL aggregation to avoid N+1 queries.
     """
@@ -260,12 +364,14 @@ async def get_client_lifetime_values(
             "client_id": stat["client_id"],
             "name": stat["name"],
             "email": stat["email"],
+            "currency": stat["currency"],
             "total_invoiced": str(stat["total_invoiced"]),
-            "total_invoiced_formatted": format_currency(stat["total_invoiced"], "USD"),
+            "total_invoiced_formatted": format_currency(stat["total_invoiced"], stat["currency"]),
             "total_paid": str(stat["total_paid"]),
-            "total_paid_formatted": format_currency(stat["total_paid"], "USD"),
+            "total_paid_formatted": format_currency(stat["total_paid"], stat["currency"]),
             "invoice_count": stat["invoice_count"],
             "paid_invoice_count": stat["paid_invoice_count"],
+            "by_currency": stat["by_currency"],
             "first_invoice": stat["first_invoice"].isoformat() if stat["first_invoice"] else None,
             "last_invoice": stat["last_invoice"].isoformat() if stat["last_invoice"] else None,
         }

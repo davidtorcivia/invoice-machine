@@ -1,12 +1,26 @@
 """Shared service-layer helpers."""
 
 from datetime import date, datetime, timedelta
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 
 from sqlalchemy import and_, delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from invoice_machine.database import BusinessProfile, Client, Invoice, InvoiceItem
+
+# All monetary values are rounded to 2 decimal places. SQLite does not enforce
+# DECIMAL(10,2) scale, so quantization must happen in Python before persisting.
+CENTS = Decimal("0.01")
+
+
+def quantize_money(amount: Decimal | float | int | str) -> Decimal:
+    """Round a monetary amount to 2 decimal places (ROUND_HALF_UP)."""
+    return Decimal(str(amount)).quantize(CENTS, rounding=ROUND_HALF_UP)
+
+
+def line_item_total(unit_price: Decimal | float | int | str, quantity: Decimal | float | int | str) -> Decimal:
+    """Compute a line-item total, quantized to cents."""
+    return quantize_money(Decimal(str(unit_price)) * Decimal(str(quantity)))
 
 
 async def generate_invoice_number(
@@ -61,17 +75,15 @@ async def recalculate_invoice_totals(session: AsyncSession, invoice: Invoice):
     )
     item_totals = result.scalars().all()
 
-    subtotal = sum(Decimal(str(total)) for total in item_totals)
+    subtotal = quantize_money(sum((Decimal(str(total)) for total in item_totals), Decimal("0")))
     invoice.subtotal = subtotal
 
     if invoice.tax_enabled and invoice.tax_rate and invoice.tax_rate > 0:
-        invoice.tax_amount = (subtotal * invoice.tax_rate / Decimal("100")).quantize(
-            Decimal("0.01")
-        )
+        invoice.tax_amount = quantize_money(subtotal * invoice.tax_rate / Decimal("100"))
     else:
         invoice.tax_amount = Decimal("0.00")
 
-    invoice.total = subtotal + invoice.tax_amount
+    invoice.total = quantize_money(subtotal + invoice.tax_amount)
 
 
 async def snapshot_client_info(session: AsyncSession, client: Client, invoice: Invoice):

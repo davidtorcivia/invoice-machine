@@ -10,6 +10,7 @@ from invoice_machine.database import BusinessProfile, Client, Invoice, InvoiceIt
 from invoice_machine.service.common import (
     calculate_due_date,
     generate_invoice_number,
+    line_item_total,
     recalculate_invoice_totals,
     snapshot_client_info,
 )
@@ -236,7 +237,7 @@ class InvoiceService:
                         quantity=quantity,
                         unit_type=unit_type,
                         unit_price=unit_price,
-                        total=unit_price * Decimal(quantity),
+                        total=line_item_total(unit_price, quantity),
                         sort_order=item_data.get("sort_order", index),
                     )
                 )
@@ -284,6 +285,11 @@ class InvoiceService:
             valid_statuses = ["draft", "sent", "paid", "overdue", "cancelled"]
             if status not in valid_statuses:
                 raise ValueError(f"Invalid status. Must be one of: {valid_statuses}")
+            # Track when the invoice was paid for cash-basis reporting.
+            if status == "paid" and invoice.status != "paid":
+                invoice.paid_at = utc_now()
+            elif status != "paid" and invoice.status == "paid":
+                invoice.paid_at = None
             invoice.status = status
 
         if notes is not None:
@@ -362,7 +368,7 @@ class InvoiceService:
             quantity=quantity,
             unit_type=unit_type,
             unit_price=unit_price,
-            total=unit_price * Decimal(quantity),
+            total=line_item_total(unit_price, quantity),
             sort_order=sort_order,
         )
         session.add(item)
@@ -414,7 +420,7 @@ class InvoiceService:
         if unit_type is not None:
             item.unit_type = unit_type
 
-        item.total = item.unit_price * Decimal(str(item.quantity))
+        item.total = line_item_total(item.unit_price, item.quantity)
         await recalculate_invoice_totals(session, item.invoice)
 
         await session.commit()
@@ -519,7 +525,7 @@ class InvoiceService:
                 await session.execute(
                     update(Invoice)
                     .where(Invoice.id.in_(valid_ids))
-                    .values(status="paid", updated_at=now)
+                    .values(status="paid", paid_at=now, updated_at=now)
                 )
             else:
                 await session.execute(

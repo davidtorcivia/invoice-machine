@@ -92,6 +92,11 @@ def run_alembic_migrations() -> None:
 
 async def ensure_database_schema(*, apply_migrations: bool = True) -> None:
     """Bring the database schema to a usable state for app or MCP startup."""
+    # One-time filesystem bootstrap (create data/pdf/logo dirs, legacy rename)
+    # before anything touches the database file.
+    from invoice_machine.config import prepare_runtime
+
+    prepare_runtime()
     if apply_migrations:
         run_alembic_migrations()
     await init_db()

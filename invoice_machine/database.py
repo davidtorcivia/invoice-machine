@@ -13,6 +13,7 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    event,
 )
 from sqlalchemy.ext.asyncio import (
     AsyncSession,
@@ -240,6 +241,9 @@ class Invoice(Base):
     client_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     status: Mapped[str] = mapped_column(String(20), default="draft")
+    # Timestamp set when the invoice transitions to "paid" (cleared if un-paid).
+    # Used for cash-basis reporting ("paid this month") instead of created_at.
+    paid_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     document_type: Mapped[str] = mapped_column(String(20), default="invoice")  # invoice/quote
     client_reference: Mapped[str | None] = mapped_column(String(100), nullable=True)  # PO/job number
     show_payment_instructions: Mapped[int] = mapped_column(Integer, default=1)
@@ -513,6 +517,36 @@ db_url = settings.database_url
 if db_url.startswith("sqlite://"):
     db_url = db_url.replace("sqlite://", "sqlite+aiosqlite://", 1)
 
+def _apply_sqlite_pragmas(dbapi_connection) -> None:
+    """Apply required PRAGMAs to a raw SQLite DBAPI connection.
+
+    SQLite needs these set per-connection:
+    - foreign_keys=ON   -> enforce FK constraints / ON DELETE CASCADE
+    - journal_mode=WAL  -> concurrent readers during writes, safer backups
+    - busy_timeout      -> wait instead of immediately raising "database is locked"
+    - synchronous=NORMAL-> safe with WAL, much faster than FULL
+    """
+    cursor = dbapi_connection.cursor()
+    try:
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.execute("PRAGMA journal_mode=WAL")
+        cursor.execute("PRAGMA busy_timeout=5000")
+        cursor.execute("PRAGMA synchronous=NORMAL")
+    finally:
+        cursor.close()
+
+
+def register_sqlite_pragmas(target_engine) -> None:
+    """Register a connect-time PRAGMA listener on a sync or async SQLite engine."""
+    sync_engine = getattr(target_engine, "sync_engine", target_engine)
+    if sync_engine.dialect.name != "sqlite":
+        return
+
+    @event.listens_for(sync_engine, "connect")
+    def _set_sqlite_pragma(dbapi_connection, connection_record):  # noqa: ARG001
+        _apply_sqlite_pragmas(dbapi_connection)
+
+
 engine = create_async_engine(
     db_url,
     echo=False,
@@ -520,6 +554,7 @@ engine = create_async_engine(
     pool_pre_ping=True,  # Verify connections before use
     connect_args={"check_same_thread": False},  # Allow multi-threaded access
 )
+register_sqlite_pragmas(engine)
 
 async_session_maker = async_sessionmaker(
     engine,

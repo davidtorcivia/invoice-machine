@@ -52,10 +52,14 @@ def run_migrations_offline() -> None:
 
 def run_migrations_online() -> None:
     """Run migrations in 'online' mode with sync engine."""
+    from invoice_machine.database import register_sqlite_pragmas
+
     connectable = create_engine(
         db_url,
         poolclass=pool.NullPool,
     )
+    # Enforce foreign keys (so DDL respecting FKs behaves) and avoid lock errors.
+    register_sqlite_pragmas(connectable)
 
     with connectable.connect() as connection:
         context.configure(connection=connection, target_metadata=target_metadata)
