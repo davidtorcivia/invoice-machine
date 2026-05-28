@@ -83,7 +83,8 @@ class RecurringService:
             currency_code=currency_code,
             payment_terms_days=payment_terms_days,
             notes=notes,
-            line_items=json.dumps(line_items) if line_items else None,
+            # default=str so Decimal quantities/prices serialize cleanly.
+            line_items=json.dumps(line_items, default=str) if line_items else None,
             tax_enabled=tax_enabled,
             tax_rate=tax_rate,
             tax_name=tax_name,
@@ -130,7 +131,7 @@ class RecurringService:
             return None
 
         if "line_items" in kwargs and kwargs["line_items"] is not None:
-            kwargs["line_items"] = json.dumps(kwargs["line_items"])
+            kwargs["line_items"] = json.dumps(kwargs["line_items"], default=str)
 
         new_frequency = kwargs.get("frequency", schedule.frequency)
         new_schedule_day = kwargs.get("schedule_day", schedule.schedule_day)

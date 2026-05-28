@@ -35,8 +35,15 @@ def zfill_filter(value, width):
     """Pad a value with zeros to the specified width."""
     return str(value).zfill(width)
 
+def quantity_filter(value):
+    """Render a quantity without trailing zeros (2, 1.5, 0.25)."""
+    from invoice_machine.service.common import format_quantity
+
+    return format_quantity(value)
+
 env.filters["strftime"] = strftime_filter
 env.filters["zfill"] = zfill_filter
+env.filters["format_quantity"] = quantity_filter
 
 
 def format_money(amount: Decimal | str | float, currency_code: str = "USD") -> str:

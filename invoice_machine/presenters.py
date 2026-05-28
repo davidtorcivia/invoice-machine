@@ -13,6 +13,7 @@ from invoice_machine.database import (
     InvoiceItem,
     RecurringSchedule,
 )
+from invoice_machine.service.common import format_quantity
 
 
 def _maybe_iso(value: Any, json_ready: bool) -> Any:
@@ -53,7 +54,7 @@ def serialize_invoice_item(item: InvoiceItem) -> dict:
     return {
         "id": item.id,
         "description": item.description,
-        "quantity": item.quantity,
+        "quantity": format_quantity(item.quantity),
         "unit_type": getattr(item, "unit_type", "qty"),
         "unit_price": str(item.unit_price),
         "total": str(item.total),

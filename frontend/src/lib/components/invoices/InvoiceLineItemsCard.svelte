@@ -72,8 +72,8 @@
               id={`item-qty-${index}`}
               type="number"
               class="input"
-              min="1"
-              step={item.unit_type === 'hours' ? '0.5' : '1'}
+              min={item.unit_type === 'hours' ? '0.25' : '1'}
+              step={item.unit_type === 'hours' ? '0.25' : '1'}
               bind:value={item.quantity}
             />
           </div>

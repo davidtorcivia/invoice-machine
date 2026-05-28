@@ -29,7 +29,7 @@ class InvoiceItemSchema(BaseModel):
 
     id: int
     description: str
-    quantity: int
+    quantity: str
     unit_type: str = "qty"
     unit_price: str
     total: str
@@ -120,7 +120,7 @@ class InvoiceItemUpdate(BaseModel):
     """Invoice item update schema."""
 
     description: str | None = Field(None, max_length=2000)
-    quantity: int | None = Field(None, ge=1, le=10000)
+    quantity: Decimal | None = Field(None, gt=0, le=10000)
     unit_type: str | None = Field(None, pattern="^(qty|hours)$")
     unit_price: Decimal | str | None = None
     sort_order: int | None = Field(None, ge=0)

@@ -32,6 +32,27 @@ def line_item_total(unit_price: Decimal | float | int | str, quantity: Decimal |
     return quantize_money(Decimal(str(unit_price)) * Decimal(str(quantity)))
 
 
+# Quantities support up to 3 decimal places (e.g. 1.5 hours, 0.25 hours).
+QUANTITY_PRECISION = Decimal("0.001")
+
+
+def quantize_quantity(value: Decimal | float | int | str) -> Decimal:
+    """Coerce a line-item quantity to a positive Decimal (max 3dp)."""
+    try:
+        qty = Decimal(str(value)).quantize(QUANTITY_PRECISION, rounding=ROUND_HALF_UP)
+    except (ArithmeticError, ValueError, TypeError):
+        raise ValueError("Quantity must be a number") from None
+    if qty <= 0:
+        raise ValueError("Quantity must be greater than 0")
+    return qty
+
+
+def format_quantity(value: Decimal | float | int | str) -> str:
+    """Render a quantity without trailing zeros ("2", "1.5", "0.25")."""
+    text = f"{Decimal(str(value)):.3f}".rstrip("0").rstrip(".")
+    return text or "0"
+
+
 async def generate_invoice_number(
     session: AsyncSession, issue_date: date, document_type: str = "invoice"
 ) -> str:

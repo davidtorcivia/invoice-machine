@@ -4,8 +4,15 @@ from decimal import Decimal
 
 import pytest
 
-from invoice_machine.service.common import line_item_total, quantize_money
+from invoice_machine.service.common import format_quantity, line_item_total, quantize_money
 from invoice_machine.services import InvoiceService
+
+
+def test_format_quantity_strips_trailing_zeros():
+    assert format_quantity(Decimal("1.500")) == "1.5"
+    assert format_quantity(Decimal("2")) == "2"
+    assert format_quantity("0.250") == "0.25"
+    assert format_quantity(3) == "3"
 
 
 def test_quantize_money_rounds_half_up():
@@ -42,6 +49,21 @@ async def test_invoice_totals_reconcile_to_cents(db_session, test_client):
     assert invoice.total == invoice.subtotal + invoice.tax_amount
     for value in (invoice.subtotal, invoice.tax_amount, invoice.total):
         assert value == value.quantize(cents)
+
+
+@pytest.mark.asyncio
+async def test_fractional_hours_quantity(db_session, test_client):
+    """1.5 hours at $100 must bill $150 (quantity is no longer truncated)."""
+    invoice = await InvoiceService.create_invoice(
+        db_session,
+        client_id=test_client.id,
+        items=[
+            {"description": "Consulting", "quantity": "1.5", "unit_type": "hours", "unit_price": "100"}
+        ],
+    )
+    assert invoice.items[0].quantity == Decimal("1.500")
+    assert invoice.items[0].total == Decimal("150.00")
+    assert invoice.subtotal == Decimal("150.00")
 
 
 @pytest.mark.asyncio

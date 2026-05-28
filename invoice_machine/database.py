@@ -335,7 +335,8 @@ class InvoiceItem(Base):
         Integer, ForeignKey("invoices.id", ondelete="CASCADE"), nullable=False
     )
     description: Mapped[str] = mapped_column(Text, nullable=False)
-    quantity: Mapped[int] = mapped_column(Integer, default=1)
+    # Decimal so fractional hours (1.5, 0.25) can be billed.
+    quantity: Mapped[Decimal] = mapped_column(DECIMAL(12, 3), default=Decimal("1"))
     unit_type: Mapped[str] = mapped_column(String(10), default="qty")  # qty/hours
     unit_price: Mapped[Decimal] = mapped_column(DECIMAL(10, 2), nullable=False)
     total: Mapped[Decimal] = mapped_column(DECIMAL(10, 2), nullable=False)

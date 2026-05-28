@@ -13,6 +13,7 @@ from invoice_machine.service.common import (
     generate_invoice_number,
     is_auto_invoice_number,
     line_item_total,
+    quantize_quantity,
     recalculate_invoice_totals,
     snapshot_client_info,
 )
@@ -22,15 +23,9 @@ from invoice_machine.utils import normalize_invoice_number_override, utc_now
 _NUMBER_ALLOCATION_ATTEMPTS = 6
 
 
-def _coerce_quantity(value) -> int:
-    """Coerce a line-item quantity to a positive int (tolerant of str/float input)."""
-    try:
-        qty = int(Decimal(str(value)))
-    except (ArithmeticError, ValueError, TypeError):
-        raise ValueError("Quantity must be a number") from None
-    if qty < 1:
-        raise ValueError("Quantity must be at least 1")
-    return qty
+def _coerce_quantity(value):
+    """Coerce a line-item quantity to a positive Decimal (tolerant of str/float)."""
+    return quantize_quantity(value)
 
 
 class InvoiceService:
@@ -414,7 +409,7 @@ class InvoiceService:
         session: AsyncSession,
         invoice_id: int,
         description: str,
-        quantity: int = 1,
+        quantity: Decimal | int | float | str = 1,
         unit_price: Decimal | float | str = 0,
         sort_order: int = 0,
         unit_type: str = "qty",
@@ -455,7 +450,7 @@ class InvoiceService:
         session: AsyncSession,
         item_id: int,
         description: str | None = None,
-        quantity: int | None = None,
+        quantity: Decimal | int | float | str | None = None,
         unit_price: Decimal | float | str | None = None,
         sort_order: int | None = None,
         unit_type: str | None = None,

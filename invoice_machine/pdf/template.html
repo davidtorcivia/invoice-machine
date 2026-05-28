@@ -484,7 +484,7 @@
                     <tr>
                         <td class="col-num">{{ loop.index }}</td>
                         <td class="col-desc">{{ item.description }}</td>
-                        <td class="col-qty">{{ item.quantity }}</td>
+                        <td class="col-qty">{{ item.quantity | format_quantity }}</td>
                         <td class="col-rate">{{ format_money(item.unit_price, invoice.currency_code) }}</td>
                         <td class="col-amount">{{ format_money(item.total, invoice.currency_code) }}</td>
                     </tr>
