@@ -1,15 +1,18 @@
 #!/bin/bash
 set -e
 
-# Fix ownership of data directory if running as root
-# This handles cases where the mounted volume has different ownership
+# Fix ownership of the data directory if running as root, then drop privileges.
+# We re-exec THIS entrypoint (not the CMD directly) so migrations below run as
+# the unprivileged appuser.
 if [ "$(id -u)" = "0" ]; then
-    # Ensure data directory and all contents are writable by appuser
     chown -R appuser:appuser /app/data 2>/dev/null || true
-
-    # Re-exec as appuser
-    exec gosu appuser "$@"
+    exec gosu appuser "$0" "$@"
 fi
 
-# If not root, just run the command directly
+# Apply database migrations before starting the app. `set -e` ensures the
+# container fails to start if migrations fail, rather than serving a broken
+# schema. Running here (single process) avoids multi-worker migration races.
+echo "Running database migrations..."
+python -c "from alembic.config import Config; from alembic import command; command.upgrade(Config('alembic.ini'), 'head')"
+
 exec "$@"
