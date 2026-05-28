@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 # Import tool modules to register @mcp.tool() decorated functions.
 # New tools added to any module are automatically registered.
 from . import (  # noqa: F401
@@ -15,6 +17,8 @@ from . import (  # noqa: F401
     search_tools,
 )
 from .context import mcp
+
+logger = logging.getLogger(__name__)
 
 
 def main():
@@ -72,15 +76,15 @@ def run_sse_server(host: str = "0.0.0.0", port: int = 8081):
         ]
     )
 
-    print(f"Starting MCP SSE server on {host}:{port}")
+    logger.info("Starting MCP SSE server on %s:%s", host, port)
     api_key_hash = asyncio.run(get_mcp_api_key_hash())
     if api_key_hash:
-        print("API key authentication is ENABLED")
+        logger.info("MCP API key authentication is ENABLED")
     else:
-        print(
-            "WARNING: No MCP API key configured - connections will be rejected until one is generated."
+        logger.warning(
+            "No MCP API key configured - connections will be rejected until one is generated."
         )
-    print(f"SSE endpoint: http://{host}:{port}/sse")
+    logger.info("MCP SSE endpoint: http://%s:%s/sse", host, port)
 
     uvicorn.run(app, host=host, port=port)
 

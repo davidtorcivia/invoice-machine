@@ -74,8 +74,24 @@ app.mount("/mcp", mcp_asgi_app)
 
 
 @app.get("/health")
-async def health_check():
-    """Health check endpoint."""
+async def health_check(request: Request):
+    """Health check: verifies the app can reach the database.
+
+    Skips the DB check while a backup restore is swapping the database file so
+    the container isn't marked unhealthy (and restarted) mid-restore.
+    """
+    if getattr(request.app.state, "restore_in_progress", False):
+        return {"status": "healthy"}
+
+    from sqlalchemy import text
+
+    from invoice_machine.database import async_session_maker
+
+    try:
+        async with async_session_maker() as session:
+            await session.execute(text("SELECT 1"))
+    except Exception:
+        return JSONResponse({"status": "unhealthy"}, status_code=503)
     return {"status": "healthy"}
 
 

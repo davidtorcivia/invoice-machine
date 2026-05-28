@@ -2,17 +2,21 @@
 .git
 .gitignore
 .gitattributes
+.github
 
-# Documentation
-README.md
+# Documentation (README.md is kept: pyproject.toml references it during build)
 designdoc.md
 
 # Data
 data/
 *.db
+*.db-journal
+*.db-shm
+*.db-wal
 
 # Python
 __pycache__/
+**/__pycache__/
 *.pyc
 *.pyo
 *.pyd
@@ -21,14 +25,30 @@ __pycache__/
 *.egg-info/
 venv/
 .venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+coverage.xml
+
+# Tests (not needed in the image)
+tests/
+
+# Frontend build artifacts / deps (rebuilt in the image)
+frontend/node_modules/
+frontend/.svelte-kit/
+frontend/dist/
 
 # IDE
 .vscode/
 .idea/
+.claude/
 
 # Environment
 .env
-.env.local
+.env.*
+!.env.example
 
 # Logs
 *.log
@@ -36,3 +56,8 @@ venv/
 # OS
 .DS_Store
 Thumbs.db
+
+# Misc
+*.bak
+*.tmp
+docker-compose.override.yml

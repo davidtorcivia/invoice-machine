@@ -347,7 +347,7 @@ If running locally with Docker, you can use stdio transport instead:
 
 **Search:** `search` - Full-text search across invoices and clients
 
-**Analytics:** `get_revenue_summary`, `get_top_clients`, `get_client_lifetime_value`
+**Analytics:** `get_revenue_summary`, `get_client_lifetime_value`, `get_client_invoice_context`
 
 **Email:** `send_invoice_email`, `test_smtp_connection`
 
@@ -464,9 +464,9 @@ Invoice Machine includes several security features:
 
 ### Production Recommendations
 
-1. **Set encryption key**: Generate and set `INVOICE_MACHINE_ENCRYPTION_KEY` (see [Generating an Encryption Key](#generating-an-encryption-key))
+1. **Set encryption key**: Generate and set `INVOICE_MACHINE_ENCRYPTION_KEY` (see [Generating an Encryption Key](#generating-an-encryption-key)). Protect the `.env` file (`chmod 600 .env`) and back the key up out-of-band — it decrypts your stored SMTP credentials.
 2. **Use HTTPS**: Set `SECURE_COOKIES=true` when behind HTTPS
-3. **Restrict CORS**: Set `CORS_ORIGINS` to your actual domain only
+3. **Restrict CORS**: Set `CORS_ORIGINS` to your actual domain only (it must match `APP_BASE_URL`; the app logs a warning at startup if it doesn't)
 4. **Regular backups**: Enable automatic backups with S3 for offsite storage
 5. **Access control**: Use Cloudflare Access or similar for additional protection
 6. **Keep updated**: Pull latest Docker images regularly

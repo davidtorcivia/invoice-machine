@@ -5,12 +5,15 @@ Run via cron or manually:
 """
 
 import asyncio
+import logging
 from datetime import timedelta
 
 from invoice_machine.config import get_settings
 from invoice_machine.database import async_session_maker
 from invoice_machine.services import purge_trashed_records
 from invoice_machine.utils import utc_now
+
+logger = logging.getLogger(__name__)
 
 
 async def cleanup_trash():
@@ -24,9 +27,10 @@ async def cleanup_trash():
         result = await purge_trashed_records(session, deleted_before=cutoff)
         await session.commit()
 
-        print(
-            "Cleanup complete: "
-            f"{result['clients_deleted']} clients, {result['invoices_deleted']} invoices purged"
+        logger.info(
+            "Trash cleanup complete: %s clients, %s invoices purged",
+            result["clients_deleted"],
+            result["invoices_deleted"],
         )
 
 

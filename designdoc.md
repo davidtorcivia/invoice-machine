@@ -1,5 +1,12 @@
 # Invoicely: AI-First Invoicing App
 
+> **⚠️ Historical design document.** This captures the *original* design and is
+> kept for context only. It has drifted from the current implementation — the
+> project is now **Invoice Machine** (`invoice_machine/`, `invoice_machine.db`),
+> and several stated non-goals were since implemented: built-in authentication
+> (sessions + CSRF + rate limiting), recurring invoices, SMTP email, S3 backups,
+> and per-currency analytics. **See `README.md` for the source of truth.**
+
 ## Overview
 
 A minimal, self-hosted invoicing application designed for freelancers and small businesses. Primary interface is via MCP for AI-driven invoice management, with a clean web UI for manual operations and configuration.
