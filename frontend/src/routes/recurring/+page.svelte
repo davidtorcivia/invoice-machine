@@ -220,8 +220,9 @@
   message="Are you sure you want to delete this recurring schedule? This cannot be undone."
   confirmText={deleting ? 'Deleting...' : 'Delete'}
   confirmVariant="danger"
-  on:confirm={confirmDelete}
-  on:cancel={() => {
+  loading={deleting}
+  onConfirm={confirmDelete}
+  onCancel={() => {
     showDeleteModal = false;
     deleteTarget = null;
   }}

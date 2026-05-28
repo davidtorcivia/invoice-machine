@@ -1,7 +1,7 @@
 <script>
   import { onMount } from 'svelte';
   import { page } from '$app/stores';
-  import { goto } from '$app/navigation';
+  import { goto, beforeNavigate } from '$app/navigation';
   import { invoicesApi, profileApi } from '$lib/api';
   import { parseJsonArray, stringifyJsonArray } from '$lib/json';
   import { toast } from '$lib/stores';
@@ -51,6 +51,38 @@
   let taxEnabled = false;
   let taxRate = '';
   let taxName = 'Tax';
+
+  // Unsaved-changes guard: compare current form state to a snapshot taken on load.
+  let allowLeave = false;
+  let initialSnapshot = '';
+
+  function formState() {
+    return JSON.stringify({
+      issueDate,
+      dueDate,
+      paymentTermsDays,
+      notes,
+      status,
+      documentType,
+      clientReference,
+      showPaymentInstructions,
+      selectedPaymentMethods,
+      items,
+      taxEnabled,
+      taxRate,
+      taxName,
+    });
+  }
+
+  $: isDirty = !allowLeave && initialSnapshot !== '' && formState() !== initialSnapshot;
+
+  beforeNavigate((nav) => {
+    if (isDirty && !saving) {
+      if (!confirm('You have unsaved changes. Leave without saving?')) {
+        nav.cancel();
+      }
+    }
+  });
 
   // Default notes from profile
   $: defaultNotesText = profile?.default_notes || '';
@@ -106,8 +138,12 @@
 
       // Track original notes and check if using default
       originalNotes = data.notes || '';
+
+      // Snapshot the clean form state for the unsaved-changes guard.
+      initialSnapshot = formState();
     } catch (error) {
       toast.error('Failed to load invoice');
+      allowLeave = true;
       goto('/invoices');
     } finally {
       loading = false;
@@ -179,9 +215,16 @@
       }
 
       toast.success('Invoice updated successfully');
+      allowLeave = true;
       goto(`/invoices/${invoiceId}`);
     } catch (error) {
-      toast.error('Failed to update invoice');
+      // The save is a sequence of calls; on failure some may have applied.
+      // Reload from the server so the form reflects the true persisted state.
+      toast.error(
+        (error.message || 'Failed to update invoice') +
+          ' — reloading the latest saved state.'
+      );
+      await loadInvoice();
     } finally {
       saving = false;
     }
@@ -193,6 +236,7 @@
 
   function confirmDiscard() {
     showDiscardModal = false;
+    allowLeave = true;
     goto(`/invoices/${invoiceId}`);
   }
 </script>
@@ -224,7 +268,13 @@
         bind:clientReference
       />
 
-      <InvoiceLineItemsCard bind:items bind:taxEnabled bind:taxRate bind:taxName />
+      <InvoiceLineItemsCard
+        bind:items
+        bind:taxEnabled
+        bind:taxRate
+        bind:taxName
+        currencyCode={invoice?.currency_code || 'USD'}
+      />
 
       <InvoiceTaxCard
         bind:taxEnabled

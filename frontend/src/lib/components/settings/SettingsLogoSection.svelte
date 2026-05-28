@@ -5,7 +5,6 @@
   export let open = false;
   export let logoPreview = null;
   export let logoUploading = false;
-  export let uploadProgress = 0;
   export let handleLogoSelect;
   export let openDeleteLogoModal;
 </script>
@@ -16,7 +15,8 @@
       {#if logoUploading}
         <div class="upload-progress">
           <div class="progress-bar">
-            <div class="progress-fill" style="width: {Math.min(uploadProgress, 100)}%"></div>
+            <!-- Indeterminate: real upload progress isn't tracked. -->
+            <div class="progress-fill indeterminate"></div>
           </div>
           <span class="progress-text">Uploading...</span>
         </div>
@@ -122,6 +122,17 @@
     height: 100%;
     background: var(--color-primary);
     transition: width 0.1s ease;
+  }
+
+  .progress-fill.indeterminate {
+    width: 40%;
+    border-radius: var(--radius-full);
+    animation: indeterminate 1.1s ease-in-out infinite;
+  }
+
+  @keyframes indeterminate {
+    0% { margin-left: -40%; }
+    100% { margin-left: 100%; }
   }
 
   .progress-text {

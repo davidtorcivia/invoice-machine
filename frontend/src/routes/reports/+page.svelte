@@ -3,11 +3,13 @@
   import { analyticsApi } from '$lib/api';
   import { toast } from '$lib/stores';
   import Header from '$lib/components/Header.svelte';
+  import Icon from '$lib/components/Icons.svelte';
   import ReportSummaryGrid from '$lib/components/reports/ReportSummaryGrid.svelte';
   import RevenueBreakdownCard from '$lib/components/reports/RevenueBreakdownCard.svelte';
   import TopClientsCard from '$lib/components/reports/TopClientsCard.svelte';
 
   let loading = true;
+  let loadError = false;
   let revenueData = null;
   let clientData = [];
   let groupBy = 'month';
@@ -22,6 +24,7 @@
 
   async function loadData() {
     loading = true;
+    loadError = false;
     try {
       const [revenue, clients] = await Promise.all([
         analyticsApi.getRevenue({ from_date: fromDate, to_date: toDate, group_by: groupBy }),
@@ -30,6 +33,7 @@
       revenueData = revenue;
       clientData = clients;
     } catch (error) {
+      loadError = true;
       toast.error('Failed to load analytics');
       console.error(error);
     } finally {
@@ -61,6 +65,14 @@
   {#if loading}
     <div class="loading-container">
       <div class="spinner"></div>
+    </div>
+  {:else if loadError}
+    <div class="load-error">
+      <p>Couldn't load analytics.</p>
+      <button type="button" class="btn btn-secondary" on:click={loadData}>
+        <Icon name="refresh" size="sm" />
+        Retry
+      </button>
     </div>
   {:else}
     <ReportSummaryGrid totals={revenueData?.totals} />
@@ -100,6 +112,15 @@
     display: flex;
     justify-content: center;
     padding: var(--space-10);
+  }
+
+  .load-error {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--space-4);
+    padding: var(--space-10);
+    color: var(--color-text-secondary);
   }
 
   .spinner {

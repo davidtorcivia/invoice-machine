@@ -41,7 +41,7 @@
                   {invoice.status}
                 </span>
               </td>
-              <td class="text-right font-medium">{formatCurrency(invoice.total)}</td>
+              <td class="text-right font-medium">{formatCurrency(invoice.total, invoice.currency_code)}</td>
             </tr>
           {/each}
         </tbody>
@@ -60,7 +60,7 @@
           <div class="invoice-card-client">{invoice.client_business || invoice.client_name || '---'}</div>
           <div class="invoice-card-footer">
             <span class="invoice-card-date">{formatDate(invoice.issue_date)}</span>
-            <span class="invoice-card-total">{formatCurrency(invoice.total)}</span>
+            <span class="invoice-card-total">{formatCurrency(invoice.total, invoice.currency_code)}</span>
           </div>
         </button>
       {/each}

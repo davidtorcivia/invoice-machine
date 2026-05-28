@@ -91,7 +91,13 @@
               aria-label="Select invoice {invoice.invoice_number}"
             />
           </td>
-          <td><span class="invoice-number font-mono">#{invoice.invoice_number}</span></td>
+          <td>
+            <a
+              class="invoice-number font-mono row-link"
+              href={`/invoices/${invoice.id}`}
+              on:click|stopPropagation
+            >#{invoice.invoice_number}</a>
+          </td>
           <td><span class="client-name">{invoice.client_business || invoice.client_name || '---'}</span></td>
           <td>
             {#if invoice.line_items_count > 0}
@@ -114,7 +120,7 @@
               {statusConfig[effectiveStatus]?.label || effectiveStatus}
             </span>
           </td>
-          <td class="text-right"><span class="invoice-total">{formatCurrency(invoice.total)}</span></td>
+          <td class="text-right"><span class="invoice-total">{formatCurrency(invoice.total, invoice.currency_code)}</span></td>
           <td class="actions-col">
             <div class="action-buttons">
               {#if invoice.document_type !== 'quote' && (invoice.status === 'sent' || invoice.status === 'overdue')}
@@ -206,6 +212,17 @@
   .invoice-number {
     font-weight: 600;
     color: var(--color-text);
+  }
+
+  /* Keyboard-accessible link styled to match the rest of the row. */
+  a.row-link {
+    text-decoration: none;
+    color: inherit;
+  }
+
+  a.row-link:hover,
+  a.row-link:focus-visible {
+    text-decoration: underline;
   }
 
   .client-name {

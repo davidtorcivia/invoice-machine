@@ -10,6 +10,11 @@
   export let taxRate = '';
   export let taxName = 'Tax';
   export let addButtonText = 'Add Item';
+  export let currencyCode = 'USD';
+
+  // Round to cents per line so this live preview matches the backend's
+  // decimal arithmetic (the server is authoritative on save).
+  const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
 
   function addItem() {
     items = [...items, { description: '', quantity: 1, unit_price: '', unit_type: 'qty' }];
@@ -21,10 +26,12 @@
     }
   }
 
-  $: subtotal = items.reduce((sum, item) => sum + ((Number(item.unit_price) || 0) * item.quantity), 0);
+  $: subtotal = round2(
+    items.reduce((sum, item) => sum + round2((Number(item.unit_price) || 0) * item.quantity), 0)
+  );
   $: parsedTaxRate = Number(taxRate) || 0;
-  $: taxAmount = taxEnabled && parsedTaxRate > 0 ? (subtotal * parsedTaxRate / 100) : 0;
-  $: total = subtotal + taxAmount;
+  $: taxAmount = taxEnabled && parsedTaxRate > 0 ? round2(subtotal * parsedTaxRate / 100) : 0;
+  $: total = round2(subtotal + taxAmount);
 </script>
 
 <div class="card">
@@ -87,7 +94,7 @@
           <div class="form-group item-total">
             <div class="label">Total</div>
             <div class="item-total-value">
-              {formatCurrency((Number(item.unit_price) || 0) * item.quantity)}
+              {formatCurrency(round2((Number(item.unit_price) || 0) * item.quantity), currencyCode)}
             </div>
           </div>
         </div>
@@ -109,17 +116,17 @@
     <div class="totals-rows">
       <div class="total-row">
         <span class="totals-label">Subtotal</span>
-        <span class="totals-value">{formatCurrency(subtotal)}</span>
+        <span class="totals-value">{formatCurrency(subtotal, currencyCode)}</span>
       </div>
       {#if taxEnabled && parsedTaxRate > 0}
         <div class="total-row tax-row">
           <span class="totals-label">{taxName || 'Tax'} ({taxRate}%)</span>
-          <span class="totals-value">{formatCurrency(taxAmount)}</span>
+          <span class="totals-value">{formatCurrency(taxAmount, currencyCode)}</span>
         </div>
       {/if}
       <div class="total-row total-final">
         <span class="totals-label">Total</span>
-        <span class="totals-value totals-total">{formatCurrency(total)}</span>
+        <span class="totals-value totals-total">{formatCurrency(total, currencyCode)}</span>
       </div>
     </div>
   </div>

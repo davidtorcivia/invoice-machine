@@ -4,10 +4,11 @@
 </script>
 
 {#if $toast.length > 0}
-  <div class="toast-container">
+  <div class="toast-container" aria-live="polite" aria-atomic="false">
     {#each $toast as t (t.id)}
       <div
         class="toast"
+        role={t.type === 'error' ? 'alert' : 'status'}
         class:toast-success={t.type === 'success'}
         class:toast-error={t.type === 'error'}
         class:toast-info={t.type === 'info'}

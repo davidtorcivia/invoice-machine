@@ -6,7 +6,8 @@
     totalOutstanding: 0,
     paidThisMonth: 0,
     draftCount: 0,
-    clientCount: 0
+    clientCount: 0,
+    currency: 'USD'
   };
 
   const cards = [
@@ -24,7 +25,7 @@
         <Icon name={card.icon} size="lg" />
       </div>
       <div class="stat-info">
-        <div class="stat-value">{card.money ? formatCurrency(stats[card.key]) : stats[card.key]}</div>
+        <div class="stat-value">{card.money ? formatCurrency(stats[card.key], stats.currency) : stats[card.key]}</div>
         <div class="stat-label">{card.label}</div>
       </div>
     </div>

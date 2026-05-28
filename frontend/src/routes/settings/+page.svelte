@@ -52,7 +52,6 @@
 
   let logoPreview = null;
   let logoUploading = false;
-  let uploadProgress = 0;
   let showDeleteLogoModal = false;
   let deletingLogo = false;
 
@@ -164,24 +163,15 @@
     }
 
     logoUploading = true;
-    uploadProgress = 0;
 
     try {
-      const progressInterval = setInterval(() => {
-        if (uploadProgress < 90) uploadProgress += Math.random() * 20;
-      }, 100);
-
       const result = await profileApi.uploadLogo(file);
-      clearInterval(progressInterval);
-      uploadProgress = 100;
-      await new Promise((resolve) => setTimeout(resolve, 300));
       logoPreview = `/api/profile/logo/${result.logo_path}`;
       toast.success('Logo uploaded successfully');
     } catch (error) {
       toast.error('Failed to upload logo');
     } finally {
       logoUploading = false;
-      uploadProgress = 0;
       event.target.value = '';
     }
   }
@@ -314,22 +304,33 @@
     }
   }
 
-  function copyMcpKey() {
+  async function copyToClipboard(value, successMsg) {
+    if (!navigator.clipboard?.writeText) {
+      toast.error('Clipboard is unavailable (requires HTTPS). Copy the key manually.');
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(value);
+      toast.success(successMsg);
+    } catch {
+      toast.error('Could not copy to clipboard. Copy the key manually.');
+    }
+  }
+
+  async function copyMcpKey() {
     if (!apiAccess.mcpApiKey) {
       toast.error('Regenerate key to copy it again');
       return;
     }
-    navigator.clipboard.writeText(apiAccess.mcpApiKey);
-    toast.success('API key copied to clipboard');
+    await copyToClipboard(apiAccess.mcpApiKey, 'API key copied to clipboard');
   }
 
-  function copyBotKey() {
+  async function copyBotKey() {
     if (!apiAccess.botApiKey) {
       toast.error('Regenerate key to copy it again');
       return;
     }
-    navigator.clipboard.writeText(apiAccess.botApiKey);
-    toast.success('Bot API key copied to clipboard');
+    await copyToClipboard(apiAccess.botApiKey, 'Bot API key copied to clipboard');
   }
 
   async function loadBackupSettings() {
@@ -445,7 +446,6 @@
         bind:open={openSections.logo}
         {logoPreview}
         {logoUploading}
-        {uploadProgress}
         {handleLogoSelect}
         {openDeleteLogoModal}
       />
@@ -558,9 +558,13 @@
       />
 
       <div class="form-actions">
+        <p class="form-hint save-scope-hint">
+          Saves your business profile, branding, defaults and payment methods.
+          The Email (SMTP) and Backup sections each have their own Save button.
+        </p>
         <button type="button" class="btn btn-primary" on:click={saveProfile} disabled={saving}>
           <Icon name="check" size="sm" />
-          {saving ? 'Saving...' : 'Save Settings'}
+          {saving ? 'Saving...' : 'Save Business Profile'}
         </button>
       </div>
     </div>

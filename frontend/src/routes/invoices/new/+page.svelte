@@ -1,6 +1,6 @@
 <script>
   import { onMount } from 'svelte';
-  import { goto } from '$app/navigation';
+  import { goto, beforeNavigate } from '$app/navigation';
   import { clientsApi, invoicesApi, profileApi } from '$lib/api';
   import { buildClientPayload, createClientDraft } from '$lib/clients/config';
   import { parseJsonArray, stringifyJsonArray } from '$lib/json';
@@ -28,6 +28,22 @@
   let profile = null;
   let loading = false;
   let saving = false;
+  // Warn before navigating away from a partially-filled form.
+  let allowLeave = false;
+
+  $: isDirty =
+    !allowLeave &&
+    (!!clientId ||
+      !!(notes && notes.trim()) ||
+      items.some((i) => (i.description || '').trim() || `${i.unit_price ?? ''}`.trim()));
+
+  beforeNavigate((nav) => {
+    if (isDirty && !saving) {
+      if (!confirm('You have unsaved changes. Leave without saving?')) {
+        nav.cancel();
+      }
+    }
+  });
 
   // Form data
   let clientId = '';
@@ -118,24 +134,34 @@
   // Get selected client data
   $: selectedClient = clients.find(c => c.id === parseInt(clientId)) || null;
 
-  // When client changes, update currency and tax settings from client
-  $: if (selectedClient) {
-    // Use client's preferred currency if set
-    if (selectedClient.preferred_currency) {
-      currencyCode = selectedClient.preferred_currency;
+  // Apply client defaults ONLY when the selected client actually changes, so a
+  // background clients refresh (or any other reactive recompute) can't clobber
+  // values the user has since edited by hand.
+  let appliedClientId = null;
+  $: applyClientDefaults(selectedClient);
+
+  function applyClientDefaults(client) {
+    if (!client) {
+      appliedClientId = null;
+      return;
     }
-    // Use client's payment terms if set
-    if (selectedClient.payment_terms_days) {
-      paymentTermsDays = selectedClient.payment_terms_days;
+    if (client.id === appliedClientId) return;
+    appliedClientId = client.id;
+
+    if (client.preferred_currency) {
+      currencyCode = client.preferred_currency;
     }
-    // Use client's tax settings if they have custom settings (tax_enabled is not null)
-    if (selectedClient.tax_enabled !== null) {
-      taxEnabled = !!selectedClient.tax_enabled;
-      if (selectedClient.tax_rate) {
-        taxRate = String(selectedClient.tax_rate);
+    if (client.payment_terms_days) {
+      paymentTermsDays = client.payment_terms_days;
+    }
+    // Apply client tax settings only if the client has explicit overrides.
+    if (client.tax_enabled !== null && client.tax_enabled !== undefined) {
+      taxEnabled = !!client.tax_enabled;
+      if (client.tax_rate) {
+        taxRate = String(client.tax_rate);
       }
-      if (selectedClient.tax_name) {
-        taxName = selectedClient.tax_name;
+      if (client.tax_name) {
+        taxName = client.tax_name;
       }
     }
   }
@@ -188,6 +214,7 @@
       const invoice = await invoicesApi.create(invoiceData);
 
       toast.success(isQuote ? 'Quote created successfully' : 'Invoice created successfully');
+      allowLeave = true;
       goto(`/invoices/${invoice.id}`);
     } catch (error) {
       toast.error(error.message || 'Failed to create invoice');
@@ -232,6 +259,7 @@
 
   function confirmDiscard() {
     showDiscardModal = false;
+    allowLeave = true;
     goto('/invoices');
   }
 </script>
@@ -259,7 +287,7 @@
         {openClientModal}
       />
 
-      <InvoiceLineItemsCard bind:items bind:taxEnabled bind:taxRate bind:taxName />
+      <InvoiceLineItemsCard bind:items bind:taxEnabled bind:taxRate bind:taxName {currencyCode} />
 
       <InvoiceTaxCard
         bind:taxEnabled

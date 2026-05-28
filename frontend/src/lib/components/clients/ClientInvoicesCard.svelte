@@ -41,7 +41,7 @@
                   {statusConfig[invoice.status]?.label || invoice.status}
                 </span>
               </td>
-              <td class="text-right"><span class="invoice-total">{formatCurrency(invoice.total)}</span></td>
+              <td class="text-right"><span class="invoice-total">{formatCurrency(invoice.total, invoice.currency_code)}</span></td>
             </tr>
           {/each}
         </tbody>

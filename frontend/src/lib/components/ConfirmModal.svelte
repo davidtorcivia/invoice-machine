@@ -1,4 +1,5 @@
 <script>
+  import { tick } from 'svelte';
   import Icon from './Icons.svelte';
 
   /** @type {boolean} */
@@ -25,6 +26,38 @@
   /** @type {() => void} */
   export let onCancel = () => {};
 
+  /** @type {HTMLElement | null} */
+  let dialogEl = null;
+  /** @type {HTMLButtonElement | null} */
+  let confirmBtn = null;
+  /** @type {Element | null} */
+  let previouslyFocused = null;
+  let wasShown = false;
+
+  // Focus the primary action on open; restore focus to the trigger on close.
+  $: if (show && !wasShown) {
+    wasShown = true;
+    openModal();
+  } else if (!show && wasShown) {
+    wasShown = false;
+    restoreFocus();
+  }
+
+  async function openModal() {
+    if (typeof document !== 'undefined') {
+      previouslyFocused = document.activeElement;
+    }
+    await tick();
+    confirmBtn?.focus();
+  }
+
+  function restoreFocus() {
+    if (previouslyFocused && previouslyFocused instanceof HTMLElement) {
+      previouslyFocused.focus();
+    }
+    previouslyFocused = null;
+  }
+
   function handleConfirm() {
     onConfirm();
   }
@@ -36,6 +69,22 @@
   function handleKeydown(e) {
     if (e.key === 'Escape') {
       handleCancel();
+      return;
+    }
+    // Simple focus trap so Tab stays within the dialog.
+    if (e.key === 'Tab' && dialogEl) {
+      /** @type {NodeListOf<HTMLElement>} */
+      const focusables = dialogEl.querySelectorAll('button:not([disabled])');
+      if (focusables.length === 0) return;
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
     }
   }
 
@@ -47,17 +96,25 @@
 {#if show}
   <div class="modal-overlay" role="presentation" tabindex="-1" on:keydown={handleKeydown}>
     <button type="button" class="modal-backdrop" aria-label="Close confirmation dialog" on:click={handleCancel}></button>
-    <div class="modal confirm-modal" role="dialog" aria-modal="true" tabindex="-1">
+    <div
+      bind:this={dialogEl}
+      class="modal confirm-modal"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="confirm-modal-title"
+      aria-describedby="confirm-modal-message"
+      tabindex="-1"
+    >
       <div class="modal-icon {iconClass}">
         <Icon name={icon} size="lg" />
       </div>
-      <h3 class="modal-title">{title}</h3>
-      <p class="modal-message">{message}</p>
+      <h3 class="modal-title" id="confirm-modal-title">{title}</h3>
+      <p class="modal-message" id="confirm-modal-message">{message}</p>
       <div class="modal-actions">
         <button class="btn btn-secondary" on:click={handleCancel} disabled={loading}>
           {cancelText}
         </button>
-        <button class="btn {buttonClass}" on:click={handleConfirm} disabled={loading}>
+        <button class="btn {buttonClass}" bind:this={confirmBtn} on:click={handleConfirm} disabled={loading}>
           {#if loading}
             <span class="spinner-sm"></span>
           {/if}

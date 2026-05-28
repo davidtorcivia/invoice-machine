@@ -3,6 +3,9 @@
 
   export let invoices = [];
 
+  // Use the client's dominant currency for labels (clients are typically
+  // single-currency); per-currency reporting lives in the analytics endpoints.
+  $: currency = invoices.find((invoice) => invoice.currency_code)?.currency_code || 'USD';
   $: totalBilled = invoices.reduce((sum, invoice) => sum + parseFloat(invoice.total || 0), 0);
   $: totalPaid = invoices.filter((invoice) => invoice.status === 'paid').reduce((sum, invoice) => sum + parseFloat(invoice.total || 0), 0);
   $: totalOutstanding = invoices
@@ -13,15 +16,15 @@
 <div class="stats-row">
   <div class="stat-card">
     <div class="stat-label">Total Billed</div>
-    <div class="stat-value">{formatCurrency(totalBilled)}</div>
+    <div class="stat-value">{formatCurrency(totalBilled, currency)}</div>
   </div>
   <div class="stat-card">
     <div class="stat-label">Total Paid</div>
-    <div class="stat-value stat-success">{formatCurrency(totalPaid)}</div>
+    <div class="stat-value stat-success">{formatCurrency(totalPaid, currency)}</div>
   </div>
   <div class="stat-card">
     <div class="stat-label">Outstanding</div>
-    <div class="stat-value stat-warning">{formatCurrency(totalOutstanding)}</div>
+    <div class="stat-value stat-warning">{formatCurrency(totalOutstanding, currency)}</div>
   </div>
   <div class="stat-card">
     <div class="stat-label">Invoices</div>

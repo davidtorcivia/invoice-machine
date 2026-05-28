@@ -139,15 +139,19 @@ function createToastStore() {
   /** @type {import('svelte/store').Writable<ToastMessage[]>} */
   const { subscribe, update } = writable([]);
 
+  let nextId = 0;
+
   /** @param {string} message @param {'success' | 'error' | 'info'} [type='info'] */
   const show = (message, type = 'info') => {
-    const id = Date.now();
+    // Monotonic id so two toasts in the same millisecond don't collide.
+    const id = ++nextId;
     update((toasts) => [...toasts, { id, message, type }]);
 
-    // Auto-dismiss after 3 seconds
+    // Errors linger so they can actually be read; others auto-dismiss quickly.
+    const ttl = type === 'error' ? 8000 : 3000;
     setTimeout(() => {
       update((toasts) => toasts.filter((t) => t.id !== id));
-    }, 3000);
+    }, ttl);
   };
 
   return {
@@ -323,22 +327,27 @@ export const invoices = createDataStore(
 // ===== Formatters =====
 
 export const formatCurrency = (amount, currency = 'USD') => {
-  const num = typeof amount === 'string' ? parseFloat(amount) : amount;
-  if (currency === 'USD') {
+  const num = typeof amount === 'string' ? parseFloat(amount) : Number(amount);
+  const safe = Number.isFinite(num) ? num : 0;
+  try {
     return new Intl.NumberFormat('en-US', {
       style: 'currency',
-      currency: 'USD',
-    }).format(num);
+      currency: currency || 'USD',
+    }).format(safe);
+  } catch {
+    // Unknown/invalid currency code: fall back to amount + code.
+    return `${safe.toFixed(2)} ${currency}`;
   }
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency,
-  }).format(num);
 };
 
 export const formatDate = (dateStr, format = 'short') => {
-  // Parse YYYY-MM-DD as local date to avoid UTC timezone shift
-  const [year, month, day] = dateStr.split('-').map(Number);
+  if (!dateStr) return '';
+  // Accept both date-only ("2026-05-28") and full ISO datetimes
+  // ("2026-05-28T12:00:00+00:00"); parse the date part as a local date to
+  // avoid a UTC shift.
+  const datePart = String(dateStr).split('T')[0];
+  const [year, month, day] = datePart.split('-').map(Number);
+  if (!year || !month || !day) return '';
   const date = new Date(year, month - 1, day);
   if (format === 'short') {
     return date.toLocaleDateString('en-US', {

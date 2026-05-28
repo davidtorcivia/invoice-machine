@@ -2,7 +2,25 @@
  * API client for Invoice Machine backend
  */
 
+import { browser } from '$app/environment';
+
 const API_BASE = '/api';
+
+/**
+ * Handle an expired/invalid session (HTTP 401) by sending the user to the login
+ * page. A hard navigation re-runs the layout's auth.check on load, which keeps
+ * the auth store in sync and avoids the login<->app redirect bounce. No redirect
+ * for the auth endpoints themselves (the login form handles its own 401).
+ *
+ * @param {string} endpoint
+ */
+function handleUnauthorized(endpoint) {
+  if (!browser) return;
+  if (endpoint.startsWith('/auth/')) return;
+  const path = window.location.pathname;
+  if (path === '/login' || path === '/setup') return;
+  window.location.assign('/login');
+}
 
 /**
  * @typedef {string | number | boolean | null | undefined} QueryValue
@@ -130,7 +148,13 @@ export async function request(endpoint, options = {}) {
   }
 
   /** @type {RequestInit} */
-  const fetchConfig = { ...config, body: config.body ?? undefined };
+  const fetchConfig = {
+    ...config,
+    // Always send cookies (session + CSRF), even if the API is ever served
+    // from a different origin than the SPA.
+    credentials: config.credentials ?? 'same-origin',
+    body: config.body ?? undefined,
+  };
   const response = await fetch(url, fetchConfig);
 
   // Handle 204 No Content
@@ -142,7 +166,13 @@ export async function request(endpoint, options = {}) {
   const data = contentType.includes('application/json') ? await response.json() : null;
 
   if (!response.ok) {
-    throw new Error(data?.detail || data?.message || `Request failed: ${response.status}`);
+    // Session expired / not authenticated -> bounce to login.
+    if (response.status === 401) {
+      handleUnauthorized(endpoint);
+    }
+    throw new Error(
+      data?.detail || data?.message || response.statusText || `Request failed: ${response.status}`
+    );
   }
 
   return data;

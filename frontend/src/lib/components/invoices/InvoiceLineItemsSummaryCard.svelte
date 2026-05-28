@@ -25,9 +25,9 @@
           {#each items as item}
             <tr>
               <td class="col-desc">{item.description}</td>
-              <td class="col-price text-right text-secondary">{formatCurrency(item.unit_price)}</td>
+              <td class="col-price text-right text-secondary">{formatCurrency(item.unit_price, invoice.currency_code)}</td>
               <td class="col-qty text-center text-secondary">{item.quantity}</td>
-              <td class="col-total text-right font-medium">{formatCurrency(item.total)}</td>
+              <td class="col-total text-right font-medium">{formatCurrency(item.total, invoice.currency_code)}</td>
             </tr>
           {/each}
         </tbody>
@@ -37,17 +37,17 @@
     <div class="totals">
       <div class="total-row">
         <span class="total-label">Subtotal</span>
-        <span class="total-value">{formatCurrency(invoice.subtotal)}</span>
+        <span class="total-value">{formatCurrency(invoice.subtotal, invoice.currency_code)}</span>
       </div>
       {#if invoice.tax_enabled && parseFloat(invoice.tax_amount) > 0}
         <div class="total-row tax-row">
           <span class="total-label">{invoice.tax_name || 'Tax'} ({invoice.tax_rate}%)</span>
-          <span class="total-value">{formatCurrency(invoice.tax_amount)}</span>
+          <span class="total-value">{formatCurrency(invoice.tax_amount, invoice.currency_code)}</span>
         </div>
       {/if}
       <div class="total-row total-final">
         <span class="total-label">Total</span>
-        <span class="total-value total-amount">{formatCurrency(invoice.total)}</span>
+        <span class="total-value total-amount">{formatCurrency(invoice.total, invoice.currency_code)}</span>
       </div>
     </div>
   {:else}

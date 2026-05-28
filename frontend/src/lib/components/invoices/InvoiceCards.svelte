@@ -43,7 +43,7 @@
               <span class="overdue-indicator">overdue</span>
             {/if}
           </span>
-          <span class="invoice-card-total">{formatCurrency(invoice.total)}</span>
+          <span class="invoice-card-total">{formatCurrency(invoice.total, invoice.currency_code)}</span>
         </div>
       </button>
       <div class="invoice-card-actions">

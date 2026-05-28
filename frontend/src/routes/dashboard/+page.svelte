@@ -12,13 +12,17 @@
     totalOutstanding: 0,
     paidThisMonth: 0,
     draftCount: 0,
-    clientCount: 0
+    clientCount: 0,
+    currency: 'USD'
   };
 
   let recentInvoices = [];
   let loading = true;
+  let loadError = false;
 
-  onMount(async () => {
+  async function load() {
+    loading = true;
+    loadError = false;
     try {
       const [dashboardData, invoicesData, clientsData] = await Promise.all([
         analyticsApi.getDashboardSummary(),
@@ -30,15 +34,19 @@
         totalOutstanding: parseFloat(dashboardData.total_outstanding) || 0,
         paidThisMonth: parseFloat(dashboardData.paid_this_month) || 0,
         draftCount: dashboardData.draft_count || 0,
-        clientCount: clientsData.length
+        clientCount: clientsData.length,
+        currency: dashboardData.currency || 'USD'
       };
       recentInvoices = invoicesData;
     } catch (error) {
+      loadError = true;
       toast.error('Failed to load dashboard');
     } finally {
       loading = false;
     }
-  });
+  }
+
+  onMount(load);
 </script>
 
 <Header title="Dashboard" />
@@ -58,6 +66,14 @@
   {#if loading}
     <div class="loading-container">
       <div class="spinner"></div>
+    </div>
+  {:else if loadError}
+    <div class="load-error">
+      <p>Couldn't load the dashboard.</p>
+      <button type="button" class="btn btn-secondary" on:click={load}>
+        <Icon name="refresh" size="sm" />
+        Retry
+      </button>
     </div>
   {:else}
     <DashboardStatsGrid {stats} />
@@ -96,6 +112,15 @@
     display: flex;
     justify-content: center;
     padding: var(--space-12);
+  }
+
+  .load-error {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--space-4);
+    padding: var(--space-12);
+    color: var(--color-text-secondary);
   }
 
   .spinner {
