@@ -189,7 +189,7 @@ def decrypt_credential(ciphertext: str, allow_plaintext: bool = False) -> str:
 
 def is_encrypted(value: str) -> bool:
     """Check if a value is encrypted (has 'enc:' prefix)."""
-    return value and value.startswith("enc:")
+    return bool(value) and value.startswith("enc:")
 
 
 # MCP API Key hashing
@@ -232,16 +232,20 @@ def verify_api_key(api_key: str, hashed: str) -> bool:
     if not hashed.startswith("hash:"):
         environment = os.environ.get("ENVIRONMENT", "development").lower()
 
+        # SECURITY: never accept a plaintext-stored key in production. This
+        # prevents a downgrade where a DB edit / restored old backup leaves a
+        # cleartext credential that would otherwise be accepted verbatim.
         if environment == "production":
             logging.error(
-                "SECURITY WARNING: Unhashed API key detected in production. "
-                "Please regenerate the API key to ensure it is properly hashed."
+                "SECURITY: Rejecting unhashed API key in production. "
+                "Regenerate the API key via settings to store it hashed."
             )
+            return False
 
-        # Still allow comparison but log warning
+        # Development only: allow comparison but log warning so it can migrate.
         logging.warning(
             "Unhashed API key detected. Please regenerate the API key "
-            "via the MCP settings page for improved security."
+            "via the settings page for improved security."
         )
         return secrets.compare_digest(api_key, hashed)
 

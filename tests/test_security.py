@@ -305,3 +305,31 @@ class TestFileUploadSecurity:
         """Content shorter than minimum signature is rejected."""
         assert validate_image_content(b"PNG") is False
         assert validate_image_content(b"\xff\xd8") is False
+
+
+class TestApiKeyHashing:
+    """Security tests for API key storage/verification."""
+
+    def test_hashed_key_roundtrip(self):
+        from invoice_machine.crypto import hash_api_key, verify_api_key
+
+        key = "a" * 64
+        hashed = hash_api_key(key)
+        assert hashed.startswith("hash:")
+        assert verify_api_key(key, hashed) is True
+        assert verify_api_key("wrong", hashed) is False
+
+    def test_rejects_unhashed_key_in_production(self, monkeypatch):
+        """A plaintext-stored key must never be accepted in production."""
+        from invoice_machine.crypto import verify_api_key
+
+        monkeypatch.setenv("ENVIRONMENT", "production")
+        # Stored value lacks the 'hash:' prefix -> downgrade attempt -> rejected.
+        assert verify_api_key("plaintext-key", "plaintext-key") is False
+
+    def test_is_encrypted_returns_bool(self):
+        from invoice_machine.crypto import is_encrypted
+
+        assert is_encrypted("") is False
+        assert is_encrypted("enc:abc") is True
+        assert is_encrypted("plain") is False

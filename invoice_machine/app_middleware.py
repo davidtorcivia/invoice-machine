@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import secrets
 
 from fastapi import FastAPI, Request, Response, status
@@ -14,9 +15,10 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 from invoice_machine.api.auth import SESSION_COOKIE_NAME, get_session_data
 from invoice_machine.config import get_settings
-from invoice_machine.rate_limit import limiter
+from invoice_machine.rate_limit import bearer_auth_throttle, get_client_ip, limiter
 
 settings = get_settings()
+logger = logging.getLogger(__name__)
 PUBLIC_PATHS = {"/health", "/api/auth/status", "/api/auth/setup", "/api/auth/login"}
 UNSAFE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 
@@ -147,6 +149,19 @@ async def _verify_bot_api_key(token: str | None) -> bool:
 
 def configure_http_middleware(app: FastAPI) -> None:
     """Attach shared middleware and request guards to the app."""
+    # In production, warn loudly if the app's own origin isn't in the CORS
+    # allow-list — a common misconfiguration (e.g. the invoice/invoices typo).
+    if settings.environment.lower() == "production":
+        origins = settings.cors_origins_list
+        base = settings.app_base_url.rstrip("/")
+        if base and base not in origins:
+            logger.warning(
+                "CORS_ORIGINS (%s) does not include APP_BASE_URL (%s); "
+                "cross-origin browser requests from the app will be blocked.",
+                origins,
+                base,
+            )
+
     app.state.limiter = limiter
     app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
     app.add_middleware(
@@ -193,8 +208,17 @@ def configure_http_middleware(app: FastAPI) -> None:
 
         if not path.startswith("/api/auth/"):
             bearer_token = _extract_bearer_token(request)
-            if await _verify_bot_api_key(bearer_token):
-                return await call_next(request)
+            if bearer_token:
+                client_ip = get_client_ip(request)
+                if bearer_auth_throttle.is_blocked(client_ip):
+                    return JSONResponse(
+                        {"detail": "Too many authentication attempts. Try again later."},
+                        status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                    )
+                if await _verify_bot_api_key(bearer_token):
+                    return await call_next(request)
+                # Invalid bearer token: count it before falling back to cookie auth.
+                bearer_auth_throttle.record_failure(client_ip)
 
         session_token = request.cookies.get(SESSION_COOKIE_NAME)
         if not session_token:

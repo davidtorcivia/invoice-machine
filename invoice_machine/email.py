@@ -1,7 +1,9 @@
 """Email service for sending invoices via SMTP."""
 
+import ipaddress
 import re
 import smtplib
+import socket
 import ssl
 from email import encoders
 from email.mime.base import MIMEBase
@@ -24,6 +26,41 @@ settings = get_settings()
 EMAIL_REGEX = re.compile(
     r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$"
 )
+
+
+def _validate_smtp_target(host: str, port: int) -> None:
+    """Guard against SSRF: refuse SMTP hosts that resolve to loopback,
+    link-local (incl. the cloud metadata IP 169.254.169.254), multicast,
+    reserved, or unspecified addresses.
+
+    Private LAN ranges (RFC1918) are intentionally allowed so self-hosters can
+    relay through a mail server on their own network. DNS resolution happens on
+    the caller's worker thread (not the event loop).
+    """
+    if not host:
+        raise ValueError("SMTP host is not configured.")
+    try:
+        infos = socket.getaddrinfo(host, port, proto=socket.IPPROTO_TCP)
+    except socket.gaierror as exc:
+        raise ValueError(f"SMTP host '{host}' could not be resolved") from exc
+
+    for info in infos:
+        addr = info[4][0]
+        try:
+            ip = ipaddress.ip_address(addr)
+        except ValueError:
+            continue
+        if (
+            ip.is_loopback
+            or ip.is_link_local
+            or ip.is_multicast
+            or ip.is_reserved
+            or ip.is_unspecified
+        ):
+            raise ValueError(
+                "SMTP host resolves to a disallowed address "
+                "(loopback/link-local/metadata). Use a routable mail server."
+            )
 
 
 def _sanitize_email(email: str) -> str:
@@ -259,6 +296,9 @@ class EmailService:
         use_tls = bool(self.profile.smtp_use_tls)
         port = self.profile.smtp_port or 587
 
+        # SSRF guard before any outbound connection.
+        _validate_smtp_target(self.profile.smtp_host, port)
+
         # Decrypt password for authentication
         smtp_password = self._get_smtp_password()
 
@@ -378,6 +418,9 @@ class EmailService:
             def _test_sync():
                 use_tls = bool(self.profile.smtp_use_tls)
                 port = self.profile.smtp_port or 587
+
+                # SSRF guard before any outbound connection.
+                _validate_smtp_target(self.profile.smtp_host, port)
 
                 if use_tls and port == 465:
                     context = ssl.create_default_context()

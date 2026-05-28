@@ -37,6 +37,11 @@ PASSWORD_REQUIREMENTS = [
     (r"[0-9]", "Password must contain at least one digit"),
 ]
 
+# A well-formed but unmatchable PBKDF2 hash. When a username does not exist we
+# still run verify_password() against this so login timing does not reveal
+# whether the account exists (prevents username enumeration).
+_DUMMY_PASSWORD_HASH = ("ff" * 32) + "$600000$" + ("00" * 32)
+
 
 def validate_password_complexity(password: str) -> str | None:
     """
@@ -124,10 +129,10 @@ async def create_session(
     ip_address = None
     if request:
         user_agent = request.headers.get("user-agent", "")[:500]  # Truncate to fit
-        # Get real IP, considering proxies
-        ip_address = request.headers.get("x-forwarded-for", request.client.host if request.client else None)
-        if ip_address and "," in ip_address:
-            ip_address = ip_address.split(",")[0].strip()
+        # Resolve the real client IP via the shared proxy-aware helper.
+        from invoice_machine.rate_limit import get_client_ip
+
+        ip_address = get_client_ip(request)
 
     return await DbSession.create(
         db_session,
@@ -336,7 +341,10 @@ async def login(
 ):
     """Log in with username and password."""
     user = await User.get_by_username(db_session, data.username)
-    if not user or not verify_password(data.password, user.password_hash):
+    # Always run a password verification (against a dummy hash if the user does
+    # not exist) so response timing can't be used to enumerate usernames.
+    password_hash = user.password_hash if user else _DUMMY_PASSWORD_HASH
+    if not verify_password(data.password, password_hash) or not user:
         # Use generic error message to prevent username enumeration
         raise HTTPException(status_code=401, detail="Invalid username or password")
 
@@ -357,6 +365,20 @@ async def logout(
     if session_token:
         await delete_session(db_session, session_token)
 
-    response.delete_cookie(SESSION_COOKIE_NAME)
-    response.delete_cookie(CSRF_COOKIE_NAME)
+    # Delete with the SAME attributes used when setting, or browsers under
+    # SameSite=Strict/Secure may ignore the deletion and keep a stale cookie.
+    samesite = "strict" if settings.secure_cookies else "lax"
+    response.delete_cookie(
+        SESSION_COOKIE_NAME,
+        path="/",
+        secure=settings.secure_cookies,
+        httponly=True,
+        samesite=samesite,
+    )
+    response.delete_cookie(
+        CSRF_COOKIE_NAME,
+        path="/",
+        secure=settings.secure_cookies,
+        samesite=samesite,
+    )
     return {"success": True}

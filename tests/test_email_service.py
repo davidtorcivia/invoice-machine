@@ -436,14 +436,34 @@ class TestEmailService:
             "invoice_machine.email.run_in_threadpool",
             side_effect=lambda fn: fn(),
         ):
-            with patch("smtplib.SMTP") as mock_smtp:
-                mock_smtp.return_value.__enter__ = MagicMock()
-                mock_smtp.return_value.__exit__ = MagicMock()
+            # Neutralize the SSRF/DNS guard; this test covers connection logic.
+            with patch("invoice_machine.email._validate_smtp_target"):
+                with patch("smtplib.SMTP") as mock_smtp:
+                    mock_smtp.return_value.__enter__ = MagicMock()
+                    mock_smtp.return_value.__exit__ = MagicMock()
 
-                result = await service.test_connection()
+                    result = await service.test_connection()
 
-                assert result["success"] is True
-                assert "Successfully connected" in result["message"]
+                    assert result["success"] is True
+                    assert "Successfully connected" in result["message"]
+
+    @pytest.mark.asyncio
+    async def test_test_connection_blocks_internal_host(self, mock_profile):
+        """SSRF guard: SMTP host resolving to loopback is rejected."""
+        mock_profile.smtp_host = "localhost"
+        service = EmailService(mock_profile)
+
+        result = await service.test_connection()
+        assert result["success"] is False
+        assert "disallowed" in result["error"].lower()
+
+    def test_validate_smtp_target_blocks_metadata_and_loopback(self):
+        """Direct unit test of the SSRF guard for known-bad addresses."""
+        from invoice_machine.email import _validate_smtp_target
+
+        for bad in ("127.0.0.1", "169.254.169.254", "0.0.0.0"):
+            with pytest.raises(ValueError, match="disallowed"):
+                _validate_smtp_target(bad, 587)
 
     @pytest.mark.asyncio
     async def test_test_connection_failure(self, mock_profile):

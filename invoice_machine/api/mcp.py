@@ -6,6 +6,7 @@ from starlette.responses import Response as StarletteResponse
 
 from invoice_machine.crypto import verify_api_key
 from invoice_machine.database import BusinessProfile, async_session_maker
+from invoice_machine.rate_limit import bearer_auth_throttle, get_client_ip
 
 
 async def get_mcp_api_key_hash() -> str | None:
@@ -21,6 +22,11 @@ async def verify_mcp_auth(request: Request) -> bool:
     Only accepts Bearer token authentication to avoid API key exposure in logs/URLs.
     The stored key is hashed, so we verify by hashing the provided key.
     """
+    # Brute-force/DoS protection per client IP (process-local; single-worker).
+    client_ip = get_client_ip(request)
+    if bearer_auth_throttle.is_blocked(client_ip):
+        return False
+
     stored_hash = await get_mcp_api_key_hash()
 
     # If no API key is configured, MCP is disabled for remote access
@@ -35,7 +41,10 @@ async def verify_mcp_auth(request: Request) -> bool:
     provided_key = auth_header[7:]
 
     # Verify using hash comparison (supports both hashed and legacy unhashed keys)
-    return verify_api_key(provided_key, stored_hash)
+    result = verify_api_key(provided_key, stored_hash)
+    if not result:
+        bearer_auth_throttle.record_failure(client_ip)
+    return result
 
 
 # Global SSE transport - initialized lazily
