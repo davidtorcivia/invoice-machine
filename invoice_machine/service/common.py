@@ -1,5 +1,6 @@
 """Shared service-layer helpers."""
 
+import re
 from datetime import date, datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 
@@ -7,6 +8,14 @@ from sqlalchemy import and_, delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from invoice_machine.database import BusinessProfile, Client, Invoice, InvoiceItem
+
+# Matches auto-generated numbers like "20260115-1" or "Q-20260115-3".
+_AUTO_INVOICE_NUMBER_RE = re.compile(r"^(Q-)?\d{8}-\d+$")
+
+
+def is_auto_invoice_number(number: str | None) -> bool:
+    """Return True if a number looks auto-generated (vs. a manual override)."""
+    return bool(number) and _AUTO_INVOICE_NUMBER_RE.fullmatch(number) is not None
 
 # All monetary values are rounded to 2 decimal places. SQLite does not enforce
 # DECIMAL(10,2) scale, so quantization must happen in Python before persisting.

@@ -1,6 +1,7 @@
 """Recurring schedule service operations."""
 
 import json
+import logging
 from datetime import date, timedelta
 from decimal import Decimal
 
@@ -14,6 +15,12 @@ from invoice_machine.service.common import (
     validate_recurring_schedule,
 )
 from invoice_machine.utils import utc_now
+
+logger = logging.getLogger(__name__)
+
+# Cap invoices generated for a single schedule in one catch-up run, so a long
+# outage (or a misconfigured far-past next_invoice_date) can't flood the system.
+_MAX_CATCHUP_PER_SCHEDULE = 366
 
 
 class RecurringService:
@@ -44,7 +51,7 @@ class RecurringService:
         )
 
         if next_invoice_date is None:
-            today = date.today()
+            today = utc_now().date()
             if frequency == "daily":
                 next_invoice_date = today + timedelta(days=1)
             elif frequency == "weekly":
@@ -142,7 +149,7 @@ class RecurringService:
             and "next_invoice_date" not in kwargs
         ):
             kwargs["next_invoice_date"] = RecurringService.calculate_next_date(
-                date.today(), new_frequency, new_schedule_day
+                utc_now().date(), new_frequency, new_schedule_day
             )
 
         for key, value in kwargs.items():
@@ -209,10 +216,17 @@ class RecurringService:
 
     @staticmethod
     async def process_due_schedules(session: AsyncSession) -> list[dict]:
-        """Process all schedules due today or earlier and create invoices."""
+        """Process all schedules due today or earlier and create invoices.
+
+        For each due schedule this generates one invoice per *missed period*
+        (catch-up), dating each invoice on its own period date and advancing the
+        schedule from the period date (not "today") so the cadence never drifts.
+        next_invoice_date is advanced and committed after each invoice, so a
+        crash mid-run cannot regenerate already-billed periods.
+        """
         from invoice_machine.service.invoices import InvoiceService
 
-        today = date.today()
+        today = utc_now().date()
         result = await session.execute(
             select(RecurringSchedule).where(
                 RecurringSchedule.is_active == 1,
@@ -223,43 +237,68 @@ class RecurringService:
 
         results = []
         for schedule in due_schedules:
+            line_items = json.loads(schedule.line_items) if schedule.line_items else []
+            generated = 0
             try:
-                line_items = json.loads(schedule.line_items) if schedule.line_items else []
-                invoice = await InvoiceService.create_invoice(
-                    session,
-                    client_id=schedule.client_id,
-                    issue_date=today,
-                    currency_code=schedule.currency_code,
-                    payment_terms_days=schedule.payment_terms_days,
-                    notes=schedule.notes,
-                    items=line_items,
-                    tax_enabled=schedule.tax_enabled,
-                    tax_rate=schedule.tax_rate,
-                    tax_name=schedule.tax_name,
-                )
+                while schedule.next_invoice_date <= today and generated < _MAX_CATCHUP_PER_SCHEDULE:
+                    period_date = schedule.next_invoice_date
+                    invoice = await InvoiceService.create_invoice(
+                        session,
+                        client_id=schedule.client_id,
+                        issue_date=period_date,
+                        currency_code=schedule.currency_code,
+                        payment_terms_days=schedule.payment_terms_days,
+                        notes=schedule.notes,
+                        items=line_items,
+                        tax_enabled=schedule.tax_enabled,
+                        tax_rate=schedule.tax_rate,
+                        tax_name=schedule.tax_name,
+                    )
 
-                schedule.last_invoice_id = invoice.id
-                schedule.next_invoice_date = RecurringService.calculate_next_date(
-                    today, schedule.frequency, schedule.schedule_day
-                )
-                schedule.updated_at = utc_now()
+                    schedule.last_invoice_id = invoice.id
+                    schedule.next_invoice_date = RecurringService.calculate_next_date(
+                        period_date, schedule.frequency, schedule.schedule_day
+                    )
+                    schedule.updated_at = utc_now()
+                    # Persist the advance alongside the (already-committed) invoice
+                    # so this period is never regenerated on a later run.
+                    await session.commit()
+                    generated += 1
 
-                results.append({
-                    "schedule_id": schedule.id,
-                    "schedule_name": schedule.name,
-                    "invoice_id": invoice.id,
-                    "invoice_number": invoice.invoice_number,
-                    "success": True,
-                })
+                    results.append({
+                        "schedule_id": schedule.id,
+                        "schedule_name": schedule.name,
+                        "invoice_id": invoice.id,
+                        "invoice_number": invoice.invoice_number,
+                        "issue_date": period_date.isoformat(),
+                        "success": True,
+                    })
+
+                if generated >= _MAX_CATCHUP_PER_SCHEDULE and schedule.next_invoice_date <= today:
+                    logger.warning(
+                        "Recurring schedule %s (%s) hit the %s-invoice catch-up cap; "
+                        "remaining periods will generate on the next run.",
+                        schedule.id,
+                        schedule.name,
+                        _MAX_CATCHUP_PER_SCHEDULE,
+                    )
             except Exception as exc:
+                await session.rollback()
+                logger.error(
+                    "Recurring schedule %s failed after generating %s invoice(s): %s",
+                    schedule.id,
+                    generated,
+                    exc,
+                    exc_info=True,
+                )
                 results.append({
                     "schedule_id": schedule.id,
                     "schedule_name": schedule.name,
+                    "invoices_generated": generated,
                     "success": False,
                     "error": str(exc),
                 })
 
-        await session.commit()
         return results
 
     @staticmethod
@@ -271,7 +310,7 @@ class RecurringService:
         if not schedule:
             return {"success": False, "error": "Schedule not found"}
 
-        today = date.today()
+        today = utc_now().date()
         try:
             line_items = json.loads(schedule.line_items) if schedule.line_items else []
             invoice = await InvoiceService.create_invoice(

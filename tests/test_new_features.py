@@ -1,6 +1,6 @@
 """Tests for new features: tax handling, recurring invoices, and search."""
 
-from datetime import date
+from datetime import UTC, date, datetime
 from decimal import Decimal
 
 import pytest
@@ -11,6 +11,15 @@ from invoice_machine.services import (
     RecurringService,
     SearchService,
 )
+
+
+def _fixed_utc_now(year, month, day):
+    """Build a patch target for utc_now() that returns a fixed UTC datetime."""
+
+    def _now():
+        return datetime(year, month, day, 12, 0, tzinfo=UTC)
+
+    return _now
 
 
 class TestTaxCascade:
@@ -145,12 +154,9 @@ class TestRecurringInvoices:
     ):
         """Initial monthly scheduling keeps day 31 when the target month supports it."""
 
-        class FixedDate(date):
-            @classmethod
-            def today(cls):
-                return cls(2025, 6, 10)
-
-        monkeypatch.setattr("invoice_machine.service.recurring.date", FixedDate)
+        monkeypatch.setattr(
+            "invoice_machine.service.recurring.utc_now", _fixed_utc_now(2025, 6, 10)
+        )
 
         schedule = await RecurringService.create_schedule(
             db_session,
@@ -232,12 +238,9 @@ class TestRecurringInvoices:
     async def test_update_schedule_recalculates_next_date(self, db_session, test_client, monkeypatch):
         """Changing schedule cadence recalculates the stored next invoice date."""
 
-        class FixedDate(date):
-            @classmethod
-            def today(cls):
-                return cls(2025, 1, 10)
-
-        monkeypatch.setattr("invoice_machine.service.recurring.date", FixedDate)
+        monkeypatch.setattr(
+            "invoice_machine.service.recurring.utc_now", _fixed_utc_now(2025, 1, 10)
+        )
 
         schedule = await RecurringService.create_schedule(
             db_session,

@@ -151,7 +151,7 @@ class TestInputValidation:
         """add_item rejects negative quantity."""
         invoice = await InvoiceService.create_invoice(db_session)
 
-        with pytest.raises(ValueError, match="Quantity cannot be negative"):
+        with pytest.raises(ValueError, match="Quantity must be at least 1"):
             await InvoiceService.add_item(
                 db_session, invoice.id, description="Test", quantity=-1, unit_price=100
             )
@@ -184,7 +184,7 @@ class TestInputValidation:
             db_session, invoice.id, description="Test", quantity=1, unit_price=100
         )
 
-        with pytest.raises(ValueError, match="Quantity cannot be negative"):
+        with pytest.raises(ValueError, match="Quantity must be at least 1"):
             await InvoiceService.update_item(db_session, item.id, quantity=-1)
 
     @pytest.mark.asyncio

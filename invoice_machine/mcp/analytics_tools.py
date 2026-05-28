@@ -1,16 +1,24 @@
-"""Analytics MCP tools."""
+"""Analytics MCP tools.
+
+These delegate to invoice_machine.service.analytics so MCP results match the
+REST analytics endpoints exactly (currency-aware, consistent overdue logic).
+"""
 
 from __future__ import annotations
 
+from collections import Counter
 from datetime import date
 from decimal import Decimal
 
+from invoice_machine.service import analytics as analytics_service
 from invoice_machine.services import (
     ClientService,
     InvoiceService,
     format_currency,
     is_invoice_document,
+    quantize_money,
 )
+from invoice_machine.utils import utc_now
 
 from .context import get_session, mcp
 
@@ -30,72 +38,19 @@ async def get_revenue_summary(
         group_by: How to group breakdown - "month", "quarter", or "year"
 
     Returns:
-        Total invoiced, paid, outstanding, and breakdown by period
+        Total invoiced, paid, outstanding, overdue (per currency), and a period
+        breakdown. Outstanding/overdue are point-in-time across all invoices;
+        overdue counts "sent" invoices past their due date.
     """
-    from collections import defaultdict
-
+    if group_by not in ("month", "quarter", "year"):
+        raise ValueError('group_by must be "month", "quarter", or "year"')
     async with get_session() as session:
-        # Parse dates
-        today = date.today()
+        today = utc_now().date()
         from_date_parsed = date.fromisoformat(from_date) if from_date else date(today.year, 1, 1)
         to_date_parsed = date.fromisoformat(to_date) if to_date else today
-
-        # Get all invoices in range (exclude deleted)
-        invoices = await InvoiceService.list_invoices(
-            session,
-            from_date=from_date_parsed,
-            to_date=to_date_parsed,
-            limit=10000,
+        return await analytics_service.revenue_summary(
+            session, from_date_parsed, to_date_parsed, group_by
         )
-
-        invoices = [inv for inv in invoices if is_invoice_document(inv)]
-
-        # Calculate totals
-        total_invoiced = sum(inv.total for inv in invoices)
-        total_paid = sum(inv.total for inv in invoices if inv.status == "paid")
-        total_outstanding = sum(inv.total for inv in invoices if inv.status in ("sent", "overdue"))
-        total_draft = sum(inv.total for inv in invoices if inv.status == "draft")
-        total_overdue = sum(inv.total for inv in invoices if inv.status == "overdue")
-
-        # Group by period
-        by_period = defaultdict(lambda: {"invoiced": Decimal(0), "paid": Decimal(0), "count": 0})
-
-        for inv in invoices:
-            if group_by == "month":
-                period = inv.issue_date.strftime("%Y-%m")
-            elif group_by == "quarter":
-                q = (inv.issue_date.month - 1) // 3 + 1
-                period = f"{inv.issue_date.year}-Q{q}"
-            else:
-                period = str(inv.issue_date.year)
-
-            by_period[period]["invoiced"] += inv.total
-            by_period[period]["count"] += 1
-            if inv.status == "paid":
-                by_period[period]["paid"] += inv.total
-
-        return {
-            "period": f"{from_date_parsed} to {to_date_parsed}",
-            "totals": {
-                "invoiced": str(total_invoiced),
-                "invoiced_formatted": format_currency(total_invoiced, "USD"),
-                "paid": str(total_paid),
-                "paid_formatted": format_currency(total_paid, "USD"),
-                "outstanding": str(total_outstanding),
-                "outstanding_formatted": format_currency(total_outstanding, "USD"),
-                "draft": str(total_draft),
-                "overdue": str(total_overdue),
-                "invoice_count": len(invoices),
-            },
-            "by_period": {
-                k: {
-                    "invoiced": str(v["invoiced"]),
-                    "paid": str(v["paid"]),
-                    "count": v["count"],
-                }
-                for k, v in sorted(by_period.items())
-            },
-        }
 
 
 @mcp.tool()
@@ -111,47 +66,13 @@ async def get_client_lifetime_value(
         limit: Maximum clients to return (default 20, sorted by total paid)
 
     Returns:
-        List of clients with their total invoiced, paid, and invoice counts
+        List of clients with total invoiced/paid in their dominant currency,
+        a per-currency breakdown, and invoice counts.
     """
     async with get_session() as session:
-        if client_id:
-            client = await ClientService.get_client(session, client_id)
-            clients = [client] if client else []
-        else:
-            clients = await ClientService.list_clients(session)
-
-        results = []
-        for client in clients:
-            if not client:
-                continue
-
-            invoices = await InvoiceService.list_invoices(
-                session, client_id=client.id, limit=10000
-            )
-
-            invoices = [inv for inv in invoices if is_invoice_document(inv)]
-
-            total_invoiced = sum(inv.total for inv in invoices)
-            total_paid = sum(inv.total for inv in invoices if inv.status == "paid")
-            paid_invoices = [inv for inv in invoices if inv.status == "paid"]
-
-            results.append({
-                "client_id": client.id,
-                "name": client.display_name,
-                "email": client.email,
-                "total_invoiced": str(total_invoiced),
-                "total_invoiced_formatted": format_currency(total_invoiced, "USD"),
-                "total_paid": str(total_paid),
-                "total_paid_formatted": format_currency(total_paid, "USD"),
-                "invoice_count": len(invoices),
-                "paid_invoice_count": len(paid_invoices),
-                "first_invoice": min(inv.issue_date for inv in invoices).isoformat() if invoices else None,
-                "last_invoice": max(inv.issue_date for inv in invoices).isoformat() if invoices else None,
-            })
-
-        # Sort by total paid (descending) and limit
-        results.sort(key=lambda x: Decimal(x["total_paid"]), reverse=True)
-        return results[:limit]
+        return await analytics_service.client_lifetime_values(
+            session, client_id=client_id, limit=limit
+        )
 
 
 @mcp.tool()
@@ -194,9 +115,23 @@ async def get_client_invoice_context(
 
         all_invoices = [inv for inv in all_invoices if is_invoice_document(inv)]
 
-        total_billed = sum(inv.total for inv in all_invoices if inv.status in ("sent", "paid", "overdue"))
-        paid_invoices = [inv for inv in all_invoices if inv.status == "paid"]
-        total_paid = sum(inv.total for inv in paid_invoices)
+        # Scope statistics to the client's dominant currency so totals/averages
+        # are never a mix of currencies.
+        cur_counts = Counter(inv.currency_code for inv in all_invoices)
+        dominant_currency = (
+            cur_counts.most_common(1)[0][0]
+            if cur_counts
+            else (client.preferred_currency or "USD")
+        )
+        scoped = [inv for inv in all_invoices if inv.currency_code == dominant_currency]
+        billable = [inv for inv in scoped if inv.status in ("sent", "paid", "overdue")]
+        total_billed = sum((inv.total for inv in billable), Decimal("0"))
+        paid_invoices = [inv for inv in scoped if inv.status == "paid"]
+        total_paid = sum((inv.total for inv in paid_invoices), Decimal("0"))
+        # Average over BILLABLE invoices (not drafts/cancelled, not all docs).
+        average_invoice = (
+            quantize_money(total_billed / len(billable)) if billable else Decimal("0.00")
+        )
 
         return {
             "client": {
@@ -229,13 +164,15 @@ async def get_client_invoice_context(
                 for inv in invoices
             ],
             "statistics": {
-                "total_billed": str(total_billed),
-                "total_billed_formatted": format_currency(total_billed, "USD"),
-                "total_paid": str(total_paid),
-                "total_paid_formatted": format_currency(total_paid, "USD"),
-                "invoice_count": len(all_invoices),
+                "currency": dominant_currency,
+                "total_billed": str(quantize_money(total_billed)),
+                "total_billed_formatted": format_currency(total_billed, dominant_currency),
+                "total_paid": str(quantize_money(total_paid)),
+                "total_paid_formatted": format_currency(total_paid, dominant_currency),
+                "invoice_count": len(scoped),
                 "paid_count": len(paid_invoices),
-                "average_invoice": str(total_billed / len(all_invoices)) if all_invoices else "0",
+                "average_invoice": str(average_invoice),
+                "average_invoice_formatted": format_currency(average_invoice, dominant_currency),
             },
         }
 

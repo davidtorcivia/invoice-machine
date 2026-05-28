@@ -4,17 +4,33 @@ from datetime import date
 from decimal import Decimal
 
 from sqlalchemy import and_, asc, desc, func, select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from invoice_machine.database import BusinessProfile, Client, Invoice, InvoiceItem
 from invoice_machine.service.common import (
     calculate_due_date,
     generate_invoice_number,
+    is_auto_invoice_number,
     line_item_total,
     recalculate_invoice_totals,
     snapshot_client_info,
 )
 from invoice_machine.utils import normalize_invoice_number_override, utc_now
+
+# How many times to retry invoice-number allocation under a concurrent-create race.
+_NUMBER_ALLOCATION_ATTEMPTS = 6
+
+
+def _coerce_quantity(value) -> int:
+    """Coerce a line-item quantity to a positive int (tolerant of str/float input)."""
+    try:
+        qty = int(Decimal(str(value)))
+    except (ArithmeticError, ValueError, TypeError):
+        raise ValueError("Quantity must be a number") from None
+    if qty < 1:
+        raise ValueError("Quantity must be at least 1")
+    return qty
 
 
 class InvoiceService:
@@ -176,79 +192,103 @@ class InvoiceService:
         else:
             use_tax_name = business.default_tax_name
 
-        invoice_date = issue_date or date.today()
-        if invoice_number_override is not None:
-            invoice_number = normalize_invoice_number_override(invoice_number_override)
-        else:
-            invoice_number = await generate_invoice_number(session, invoice_date, document_type)
+        invoice_date = issue_date or utc_now().date()
+
+        # Validate/normalize line items up front so a failure doesn't leave a
+        # half-built invoice, and so string/float quantities (e.g. from MCP) are
+        # coerced rather than crashing mid-build.
+        valid_unit_types = {"qty", "hours"}
+        normalized_items: list[dict] = []
+        for index, item_data in enumerate(items or []):
+            quantity = _coerce_quantity(item_data.get("quantity", 1))
+            unit_price = Decimal(str(item_data.get("unit_price", 0)))
+            if unit_price < 0:
+                raise ValueError("Unit price cannot be negative")
+            unit_type = item_data.get("unit_type", "qty")
+            if unit_type not in valid_unit_types:
+                raise ValueError(f"Invalid unit type. Must be one of: {sorted(valid_unit_types)}")
+            normalized_items.append(
+                {
+                    "description": item_data.get("description", ""),
+                    "quantity": quantity,
+                    "unit_type": unit_type,
+                    "unit_price": unit_price,
+                    "total": line_item_total(unit_price, quantity),
+                    "sort_order": item_data.get("sort_order", index),
+                }
+            )
 
         calculated_due_date = calculate_due_date(
             invoice_date, payment_terms_days, due_date, client, business
         )
-
-        invoice = Invoice(
-            invoice_number=invoice_number,
-            client_id=client_id,
-            issue_date=invoice_date,
-            due_date=calculated_due_date,
-            payment_terms_days=payment_terms_days
+        resolved_terms = (
+            payment_terms_days
             or (client.payment_terms_days if client else None)
-            or business.default_payment_terms_days,
-            currency_code=currency_code,
-            notes=notes,
-            status="draft",
-            document_type=document_type,
-            client_reference=client_reference,
-            show_payment_instructions=1 if show_payment_instructions else 0,
-            selected_payment_methods=selected_payment_methods,
-            tax_enabled=1 if use_tax_enabled else 0,
-            tax_rate=use_tax_rate or Decimal("0.00"),
-            tax_name=use_tax_name or "Tax",
+            or business.default_payment_terms_days
         )
 
-        if client:
-            await snapshot_client_info(session, client, invoice)
+        override = invoice_number_override is not None
+        override_number = (
+            normalize_invoice_number_override(invoice_number_override) if override else None
+        )
+        attempts = 1 if override else _NUMBER_ALLOCATION_ATTEMPTS
+        last_error: IntegrityError | None = None
 
-        session.add(invoice)
-        await session.flush()
+        # Retry loop guards against the read-max-then-+1 numbering race: if a
+        # concurrent create grabs the same number, the unique constraint fires
+        # and we regenerate instead of returning a 500.
+        for _attempt in range(attempts):
+            invoice_number = override_number or await generate_invoice_number(
+                session, invoice_date, document_type
+            )
+            invoice = Invoice(
+                invoice_number=invoice_number,
+                client_id=client_id,
+                issue_date=invoice_date,
+                due_date=calculated_due_date,
+                payment_terms_days=resolved_terms,
+                currency_code=currency_code,
+                notes=notes,
+                status="draft",
+                document_type=document_type,
+                client_reference=client_reference,
+                show_payment_instructions=1 if show_payment_instructions else 0,
+                selected_payment_methods=selected_payment_methods,
+                tax_enabled=1 if use_tax_enabled else 0,
+                tax_rate=use_tax_rate or Decimal("0.00"),
+                tax_name=use_tax_name or "Tax",
+            )
+            if client:
+                await snapshot_client_info(session, client, invoice)
 
-        if items:
-            valid_unit_types = {"qty", "hours"}
-            invoice_items: list[InvoiceItem] = []
-            for index, item_data in enumerate(items):
-                quantity = item_data.get("quantity", 1)
-                if quantity < 0:
-                    raise ValueError("Quantity cannot be negative")
-
-                unit_price = Decimal(str(item_data.get("unit_price", 0)))
-                if unit_price < 0:
-                    raise ValueError("Unit price cannot be negative")
-
-                unit_type = item_data.get("unit_type", "qty")
-                if unit_type not in valid_unit_types:
+            session.add(invoice)
+            try:
+                await session.flush()
+                if normalized_items:
+                    session.add_all(
+                        InvoiceItem(invoice_id=invoice.id, **item) for item in normalized_items
+                    )
+                    await session.flush()
+                await recalculate_invoice_totals(session, invoice)
+                await session.commit()
+            except IntegrityError as exc:
+                await session.rollback()
+                last_error = exc
+                if override:
                     raise ValueError(
-                        f"Invalid unit type. Must be one of: {sorted(valid_unit_types)}"
-                    )
+                        f"Invoice number '{override_number}' already exists"
+                    ) from exc
+                # Re-resolve objects expired by the rollback before retrying.
+                business = await BusinessProfile.get_or_create(session)
+                client = await session.get(Client, client_id) if client_id else None
+                continue
 
-                invoice_items.append(
-                    InvoiceItem(
-                        invoice_id=invoice.id,
-                        description=item_data.get("description", ""),
-                        quantity=quantity,
-                        unit_type=unit_type,
-                        unit_price=unit_price,
-                        total=line_item_total(unit_price, quantity),
-                        sort_order=item_data.get("sort_order", index),
-                    )
-                )
+            await session.refresh(invoice)
+            return invoice
 
-            session.add_all(invoice_items)
-            await session.flush()
-
-        await recalculate_invoice_totals(session, invoice)
-        await session.commit()
-        await session.refresh(invoice)
-        return invoice
+        raise ValueError(
+            "Could not allocate a unique invoice number; please retry"
+        ) from last_error
 
     @staticmethod
     async def update_invoice(
@@ -268,15 +308,51 @@ class InvoiceService:
         business = await BusinessProfile.get_or_create(session)
         client = await session.get(Client, invoice.client_id) if invoice.client_id else None
 
-        if issue_date and issue_date != invoice.issue_date:
+        # Only these fields may be set via **kwargs. Computed money fields
+        # (subtotal/tax_amount/total) and identity fields are intentionally
+        # excluded so callers cannot desync totals from line items.
+        allowed_kwargs = {
+            "currency_code",
+            "payment_terms_days",
+            "client_reference",
+            "show_payment_instructions",
+            "selected_payment_methods",
+            "tax_enabled",
+            "tax_rate",
+            "tax_name",
+            "document_type",
+            "client_id",
+        }
+
+        tax_fields_changed = False
+        doc_type_changed = False
+        for key, value in kwargs.items():
+            if key == "invoice_number" and value is not None:
+                # Explicit custom number; normalize and treat as an override.
+                invoice.invoice_number = normalize_invoice_number_override(str(value))
+                continue
+            if key not in allowed_kwargs or value is None:
+                continue
+            if key in ("tax_enabled", "tax_rate") and getattr(invoice, key) != value:
+                tax_fields_changed = True
+            if key == "document_type" and value != invoice.document_type:
+                doc_type_changed = True
+            setattr(invoice, key, value)
+
+        date_changed = bool(issue_date and issue_date != invoice.issue_date)
+        if date_changed:
             invoice.issue_date = issue_date
-            invoice.invoice_number = await generate_invoice_number(
-                session, issue_date, invoice.document_type
-            )
             if not due_date:
                 invoice.due_date = calculate_due_date(
                     issue_date, invoice.payment_terms_days, None, client, business
                 )
+
+        # Regenerate the auto-number when the date or document type changes, but
+        # NEVER overwrite a manual/custom invoice number.
+        if (date_changed or doc_type_changed) and is_auto_invoice_number(invoice.invoice_number):
+            invoice.invoice_number = await generate_invoice_number(
+                session, invoice.issue_date, invoice.document_type
+            )
 
         if due_date:
             invoice.due_date = due_date
@@ -294,13 +370,6 @@ class InvoiceService:
 
         if notes is not None:
             invoice.notes = notes
-
-        tax_fields_changed = False
-        for key, value in kwargs.items():
-            if hasattr(invoice, key) and value is not None:
-                if key in ("tax_enabled", "tax_rate") and getattr(invoice, key) != value:
-                    tax_fields_changed = True
-                setattr(invoice, key, value)
 
         if tax_fields_changed:
             await recalculate_invoice_totals(session, invoice)
@@ -351,8 +420,7 @@ class InvoiceService:
         unit_type: str = "qty",
     ) -> InvoiceItem:
         """Add a line item to an invoice."""
-        if quantity < 0:
-            raise ValueError("Quantity cannot be negative")
+        quantity = _coerce_quantity(quantity)
 
         unit_price = Decimal(str(unit_price))
         if unit_price < 0:
@@ -400,8 +468,8 @@ class InvoiceService:
 
         if invoice_id is not None and item.invoice_id != invoice_id:
             raise ValueError("Item does not belong to the specified invoice")
-        if quantity is not None and quantity < 0:
-            raise ValueError("Quantity cannot be negative")
+        if quantity is not None:
+            quantity = _coerce_quantity(quantity)
         if unit_price is not None and Decimal(str(unit_price)) < 0:
             raise ValueError("Unit price cannot be negative")
         if unit_type is not None:
@@ -459,7 +527,7 @@ class InvoiceService:
             .where(
                 and_(
                     Invoice.status == "sent",
-                    Invoice.due_date < date.today(),
+                    Invoice.due_date < utc_now().date(),
                     Invoice.deleted_at.is_(None),
                 )
             )

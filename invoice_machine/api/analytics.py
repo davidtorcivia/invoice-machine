@@ -1,51 +1,25 @@
 """Analytics API endpoints.
 
-Optimized for performance using SQL-level aggregation instead of in-memory loops.
-This is critical for scaling to thousands of invoices.
-
-Money is never summed across currencies. All aggregates are grouped by
-``currency_code``; the response exposes a single "primary" currency at the top
-level (for the headline cards) plus a ``by_currency`` map so multi-currency data
-is never silently collapsed or mislabeled.
+Thin HTTP layer over invoice_machine.service.analytics, which performs
+currency-aware SQL aggregation. The MCP tools call the same service so the two
+surfaces cannot diverge.
 """
 
-from datetime import date, datetime
-from decimal import Decimal
+from datetime import date
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import Integer, and_, case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.requests import Request
 
-from invoice_machine.database import BusinessProfile, Invoice, get_session
+from invoice_machine.database import get_session
 from invoice_machine.rate_limit import limiter
-from invoice_machine.services import ClientService, format_currency, quantize_money
+from invoice_machine.service import analytics as analytics_service
 from invoice_machine.utils import utc_now
 
 router = APIRouter(prefix="/api/analytics", tags=["analytics"])
 
 # Reasonable limits to prevent excessive queries
-MAX_INVOICE_QUERY_LIMIT = 1000
 MAX_CLIENT_LIMIT = 100
-
-
-async def _default_currency(session: AsyncSession) -> str:
-    """Return the business default currency (fallback USD)."""
-    profile = await BusinessProfile.get(session)
-    return (profile.default_currency_code if profile else None) or "USD"
-
-
-def _pick_primary_currency(per_currency: dict[str, dict], default_cur: str) -> str:
-    """Choose the headline currency: the default if it has activity, else the
-    most active currency present, else the default."""
-    if default_cur in per_currency:
-        return default_cur
-    if per_currency:
-        return max(
-            per_currency,
-            key=lambda c: per_currency[c].get("invoice_count", 0),
-        )
-    return default_cur
 
 
 @router.get("/dashboard")
@@ -55,99 +29,7 @@ async def get_dashboard_summary(
     session: AsyncSession = Depends(get_session),
 ) -> dict:
     """Get dashboard summary totals for invoice documents."""
-    today = utc_now().date()
-    month_start = datetime(today.year, today.month, 1)
-    if today.month == 12:
-        next_month_start = datetime(today.year + 1, 1, 1)
-    else:
-        next_month_start = datetime(today.year, today.month + 1, 1)
-
-    base_filter = and_(
-        Invoice.document_type == "invoice",
-        Invoice.deleted_at.is_(None),
-    )
-
-    # Money grouped by currency (never summed across currencies).
-    money_rows = (
-        await session.execute(
-            select(
-                Invoice.currency_code.label("currency"),
-                func.coalesce(
-                    func.sum(
-                        case(
-                            (Invoice.status.in_(["sent", "overdue"]), Invoice.total),
-                            else_=0,
-                        )
-                    ),
-                    0,
-                ).label("outstanding"),
-                func.coalesce(
-                    func.sum(
-                        case(
-                            (
-                                and_(
-                                    Invoice.status == "paid",
-                                    Invoice.paid_at.is_not(None),
-                                    Invoice.paid_at >= month_start,
-                                    Invoice.paid_at < next_month_start,
-                                ),
-                                Invoice.total,
-                            ),
-                            else_=0,
-                        )
-                    ),
-                    0,
-                ).label("paid_this_month"),
-                func.count(Invoice.id).label("invoice_count"),
-            )
-            .where(base_filter)
-            .group_by(Invoice.currency_code)
-        )
-    ).all()
-
-    # Counts are currency-agnostic.
-    counts = (
-        await session.execute(
-            select(
-                func.count(case((Invoice.status == "draft", 1))).label("draft_count"),
-                func.count(Invoice.id).label("invoice_count"),
-            ).where(base_filter)
-        )
-    ).one()
-
-    default_cur = await _default_currency(session)
-    per_currency = {
-        (row.currency or default_cur): {
-            "outstanding": quantize_money(row.outstanding),
-            "paid_this_month": quantize_money(row.paid_this_month),
-            "invoice_count": row.invoice_count or 0,
-        }
-        for row in money_rows
-    }
-    primary = _pick_primary_currency(per_currency, default_cur)
-    prim = per_currency.get(
-        primary, {"outstanding": Decimal("0.00"), "paid_this_month": Decimal("0.00")}
-    )
-
-    return {
-        "currency": primary,
-        "total_outstanding": str(prim["outstanding"]),
-        "total_outstanding_formatted": format_currency(prim["outstanding"], primary),
-        "paid_this_month": str(prim["paid_this_month"]),
-        "paid_this_month_formatted": format_currency(prim["paid_this_month"], primary),
-        "draft_count": counts.draft_count or 0,
-        "invoice_count": counts.invoice_count or 0,
-        "by_currency": {
-            cur: {
-                "outstanding": str(vals["outstanding"]),
-                "outstanding_formatted": format_currency(vals["outstanding"], cur),
-                "paid_this_month": str(vals["paid_this_month"]),
-                "paid_this_month_formatted": format_currency(vals["paid_this_month"], cur),
-            }
-            for cur, vals in per_currency.items()
-        },
-        "other_currencies": [c for c in per_currency if c != primary],
-    }
+    return await analytics_service.dashboard_summary(session)
 
 
 @router.get("/revenue")
@@ -157,181 +39,19 @@ async def get_revenue_summary(
     from_date: str | None = Query(
         None, description="Start date (ISO format, defaults to start of current year)"
     ),
-    to_date: str | None = Query(
-        None, description="End date (ISO format, defaults to today)"
-    ),
+    to_date: str | None = Query(None, description="End date (ISO format, defaults to today)"),
     group_by: str = Query(
         "month", pattern="^(month|quarter|year)$", description="How to group breakdown"
     ),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
-    """
-    Get revenue summary for the specified period.
-
-    Returns total invoiced, paid, outstanding, and breakdown by period — grouped
-    by currency. The top-level ``totals`` reflect the primary currency; the
-    ``by_currency`` map carries every currency present.
-
-    Uses SQL-level aggregation for O(1) memory usage regardless of invoice count.
-    """
+    """Get revenue summary for the specified period (grouped by currency)."""
     today = utc_now().date()
     from_date_parsed = date.fromisoformat(from_date) if from_date else date(today.year, 1, 1)
     to_date_parsed = date.fromisoformat(to_date) if to_date else today
-
-    # Date-scoped filter for period-based metrics (invoiced, paid, draft)
-    period_filter = and_(
-        Invoice.document_type == "invoice",
-        Invoice.issue_date >= from_date_parsed,
-        Invoice.issue_date <= to_date_parsed,
-        Invoice.deleted_at.is_(None),
+    return await analytics_service.revenue_summary(
+        session, from_date_parsed, to_date_parsed, group_by
     )
-
-    # Global filter for point-in-time metrics (outstanding, overdue)
-    # These reflect current state regardless of when the invoice was issued
-    global_filter = and_(
-        Invoice.document_type == "invoice",
-        Invoice.deleted_at.is_(None),
-    )
-
-    # Period-scoped totals grouped by currency: invoiced, paid, draft
-    period_rows = (
-        await session.execute(
-            select(
-                Invoice.currency_code.label("currency"),
-                func.count(Invoice.id).label("invoice_count"),
-                func.coalesce(func.sum(Invoice.total), 0).label("total_invoiced"),
-                func.coalesce(
-                    func.sum(case((Invoice.status == "paid", Invoice.total), else_=0)), 0
-                ).label("total_paid"),
-                func.coalesce(
-                    func.sum(case((Invoice.status == "draft", Invoice.total), else_=0)), 0
-                ).label("total_draft"),
-            )
-            .where(period_filter)
-            .group_by(Invoice.currency_code)
-        )
-    ).all()
-
-    # Match frontend overdue logic: status is "overdue" OR (status is "sent" AND past due)
-    is_effectively_overdue = or_(
-        Invoice.status == "overdue",
-        and_(Invoice.status == "sent", Invoice.due_date < today),
-    )
-
-    # Point-in-time totals grouped by currency: outstanding and overdue (ALL invoices)
-    outstanding_rows = (
-        await session.execute(
-            select(
-                Invoice.currency_code.label("currency"),
-                func.coalesce(
-                    func.sum(
-                        case(
-                            (Invoice.status.in_(["sent", "overdue"]), Invoice.total),
-                            else_=0,
-                        )
-                    ),
-                    0,
-                ).label("total_outstanding"),
-                func.coalesce(
-                    func.sum(case((is_effectively_overdue, Invoice.total), else_=0)), 0
-                ).label("total_overdue"),
-            )
-            .where(global_filter)
-            .group_by(Invoice.currency_code)
-        )
-    ).all()
-
-    default_cur = await _default_currency(session)
-
-    per_currency: dict[str, dict] = {}
-    for row in period_rows:
-        cur = row.currency or default_cur
-        bucket = per_currency.setdefault(cur, {})
-        bucket["invoice_count"] = row.invoice_count or 0
-        bucket["invoiced"] = quantize_money(row.total_invoiced)
-        bucket["paid"] = quantize_money(row.total_paid)
-        bucket["draft"] = quantize_money(row.total_draft)
-    for row in outstanding_rows:
-        cur = row.currency or default_cur
-        bucket = per_currency.setdefault(cur, {})
-        bucket["outstanding"] = quantize_money(row.total_outstanding)
-        bucket["overdue"] = quantize_money(row.total_overdue)
-
-    def _bucket_totals(vals: dict, cur: str) -> dict:
-        invoiced = vals.get("invoiced", Decimal("0.00"))
-        paid = vals.get("paid", Decimal("0.00"))
-        draft = vals.get("draft", Decimal("0.00"))
-        outstanding = vals.get("outstanding", Decimal("0.00"))
-        overdue = vals.get("overdue", Decimal("0.00"))
-        return {
-            "invoiced": str(invoiced),
-            "invoiced_formatted": format_currency(invoiced, cur),
-            "paid": str(paid),
-            "paid_formatted": format_currency(paid, cur),
-            "outstanding": str(outstanding),
-            "outstanding_formatted": format_currency(outstanding, cur),
-            "draft": str(draft),
-            "draft_formatted": format_currency(draft, cur),
-            "overdue": str(overdue),
-            "overdue_formatted": format_currency(overdue, cur),
-            "invoice_count": vals.get("invoice_count", 0),
-        }
-
-    primary = _pick_primary_currency(per_currency, default_cur)
-    totals = _bucket_totals(per_currency.get(primary, {}), primary)
-
-    # Period breakdown query using SQL grouping, scoped to the primary currency
-    # so a single chart series is never a mix of currencies.
-    if group_by == "month":
-        period_expr = func.strftime("%Y-%m", Invoice.issue_date)
-    elif group_by == "quarter":
-        # SQLite doesn't have a built-in quarter function, compute manually
-        # Q = ((month - 1) / 3) + 1
-        period_expr = func.printf(
-            "%d-Q%d",
-            func.cast(func.strftime("%Y", Invoice.issue_date), Integer),
-            (func.cast(func.strftime("%m", Invoice.issue_date), Integer) - 1) / 3 + 1,
-        )
-    else:  # year
-        period_expr = func.strftime("%Y", Invoice.issue_date)
-
-    breakdown_query = (
-        select(
-            period_expr.label("period"),
-            func.count(Invoice.id).label("count"),
-            func.coalesce(func.sum(Invoice.total), 0).label("invoiced"),
-            func.coalesce(
-                func.sum(case((Invoice.status == "paid", Invoice.total), else_=0)), 0
-            ).label("paid"),
-        )
-        .where(and_(period_filter, Invoice.currency_code == primary))
-        .group_by(period_expr)
-        .order_by(period_expr)
-    )
-
-    breakdown_result = await session.execute(breakdown_query)
-    breakdown_rows = breakdown_result.all()
-
-    breakdown = [
-        {
-            "period": row.period,
-            "invoiced": str(quantize_money(row.invoiced)),
-            "invoiced_formatted": format_currency(quantize_money(row.invoiced), primary),
-            "paid": str(quantize_money(row.paid)),
-            "paid_formatted": format_currency(quantize_money(row.paid), primary),
-            "count": row.count,
-        }
-        for row in breakdown_rows
-    ]
-
-    return {
-        "period": f"{from_date_parsed} to {to_date_parsed}",
-        "currency": primary,
-        "totals": totals,
-        "by_currency": {cur: _bucket_totals(vals, cur) for cur, vals in per_currency.items()},
-        "other_currencies": [c for c in per_currency if c != primary],
-        "breakdown": breakdown,
-    }
 
 
 @router.get("/clients")
@@ -342,40 +62,7 @@ async def get_client_lifetime_values(
     limit: int = Query(20, ge=1, le=100, description="Max clients to return"),
     session: AsyncSession = Depends(get_session),
 ) -> list:
-    """
-    Get lifetime value for clients.
-
-    Returns list of clients with total invoiced, paid, and invoice counts in the
-    client's dominant currency (plus a per-currency breakdown). Sorted by total
-    paid descending.
-
-    Uses optimized SQL aggregation to avoid N+1 queries.
-    """
-    # Use optimized aggregated query instead of N+1 individual queries
-    stats = await ClientService.get_client_invoice_stats(
-        session,
-        client_id=client_id,
-        limit=min(limit, MAX_CLIENT_LIMIT),
+    """Get lifetime value for clients (in each client's dominant currency)."""
+    return await analytics_service.client_lifetime_values(
+        session, client_id=client_id, limit=min(limit, MAX_CLIENT_LIMIT)
     )
-
-    # Format results
-    results = [
-        {
-            "client_id": stat["client_id"],
-            "name": stat["name"],
-            "email": stat["email"],
-            "currency": stat["currency"],
-            "total_invoiced": str(stat["total_invoiced"]),
-            "total_invoiced_formatted": format_currency(stat["total_invoiced"], stat["currency"]),
-            "total_paid": str(stat["total_paid"]),
-            "total_paid_formatted": format_currency(stat["total_paid"], stat["currency"]),
-            "invoice_count": stat["invoice_count"],
-            "paid_invoice_count": stat["paid_invoice_count"],
-            "by_currency": stat["by_currency"],
-            "first_invoice": stat["first_invoice"].isoformat() if stat["first_invoice"] else None,
-            "last_invoice": stat["last_invoice"].isoformat() if stat["last_invoice"] else None,
-        }
-        for stat in stats
-    ]
-
-    return results
