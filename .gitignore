@@ -88,3 +88,6 @@ node_modules/
 *.bak
 *.tmp
 *.temp
+
+# Local docker compose overrides (environment-specific)
+docker-compose.override.yml

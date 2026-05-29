@@ -1,8 +1,0 @@
-services:
-  invoice-machine:
-    ports:
-      - "8085:8080"
-    volumes:
-      - /nvme-mirror/apps/invoice-machine/data:/app/data
-    environment:
-      - APP_BASE_URL=https://invoice.davidtorcivia.com
