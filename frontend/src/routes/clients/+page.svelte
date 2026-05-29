@@ -9,18 +9,25 @@
   import ConfirmModal from '$lib/components/ConfirmModal.svelte';
   import ClientListCard from '$lib/components/clients/ClientListCard.svelte';
   import ClientsToolbar from '$lib/components/clients/ClientsToolbar.svelte';
+  import Pagination from '$lib/components/Pagination.svelte';
+
+  const PER_PAGE = 24;
 
   let clients = [];
   let loading = true;
   let searchQuery = '';
   let sortBy = 'created_at';
   let sortDir = 'desc';
+  let currentPage = 1;
+  let pagination = { page: 1, per_page: PER_PAGE, total: 0, total_pages: 0, has_next: false, has_prev: false };
   let showDeleteModal = false;
   let deleteTargetId = null;
   let deleteTargetName = '';
   let deleting = false;
 
   $: selectedSortOption = `${sortBy}-${sortDir}`;
+  $: pageStart = pagination.total === 0 ? 0 : (pagination.page - 1) * pagination.per_page + 1;
+  $: pageEnd = pagination.total === 0 ? 0 : Math.min(pagination.total, pageStart + clients.length - 1);
 
   onMount(async () => {
     await loadClients();
@@ -29,9 +36,12 @@
   async function loadClients() {
     loading = true;
     try {
-      const params = { sort_by: sortBy, sort_dir: sortDir };
+      const params = { sort_by: sortBy, sort_dir: sortDir, page: currentPage, per_page: PER_PAGE };
       if (searchQuery) params.search = searchQuery;
-      clients = await clientsApi.list(params);
+      const result = await clientsApi.listPaginated(params);
+      clients = result.clients;
+      pagination = result;
+      currentPage = result.page || currentPage;
     } catch (error) {
       toast.error('Failed to load clients');
     } finally {
@@ -39,12 +49,23 @@
     }
   }
 
+  // Search/sort changes reset to the first page.
+  function reloadFromFirstPage() {
+    currentPage = 1;
+    return loadClients();
+  }
+
+  function changePage(page) {
+    currentPage = page;
+    loadClients();
+  }
+
   function handleSortChange(value) {
     const option = clientSortOptions.find((item) => item.value === value);
     if (!option) return;
     sortBy = option.field;
     sortDir = option.dir;
-    loadClients();
+    reloadFromFirstPage();
   }
 
   function openDeleteModal(client) {
@@ -61,6 +82,10 @@
       toast.success('Client moved to trash');
       showDeleteModal = false;
       await loadClients();
+      // If we deleted the last client on this page, step back a page.
+      if (clients.length === 0 && currentPage > 1) {
+        changePage(currentPage - 1);
+      }
     } catch (error) {
       toast.error('Failed to delete client');
     } finally {
@@ -83,7 +108,7 @@
   <div class="page-header">
     <div class="page-header-text">
       <h1>Clients</h1>
-      <p class="page-subtitle">{clients.length} client{clients.length !== 1 ? 's' : ''}</p>
+      <p class="page-subtitle">{pagination.total} client{pagination.total !== 1 ? 's' : ''}</p>
     </div>
     <a href="/clients/new" class="btn btn-primary">
       <Icon name="plus" size="sm" />
@@ -95,10 +120,10 @@
     bind:searchQuery
     {selectedSortOption}
     sortOptions={clientSortOptions}
-    on:search={loadClients}
+    on:search={reloadFromFirstPage}
     on:clear={() => {
       searchQuery = '';
-      loadClients();
+      reloadFromFirstPage();
     }}
     on:sortchange={(event) => handleSortChange(event.detail)}
   />
@@ -118,6 +143,14 @@
         />
       {/each}
     </div>
+    <Pagination
+      {pageStart}
+      {pageEnd}
+      {pagination}
+      {loading}
+      noun="client"
+      on:pagechange={(event) => changePage(event.detail)}
+    />
   {:else}
     <div class="empty-state">
       <div class="empty-state-icon">

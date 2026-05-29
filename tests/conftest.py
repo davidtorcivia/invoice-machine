@@ -22,6 +22,13 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from invoice_machine.database import Base, BusinessProfile, Client, Invoice, InvoiceItem
+from invoice_machine.rate_limit import limiter as _limiter
+
+# Disable rate limiting for the test suite. The slowapi limiter is a module-level
+# singleton whose in-memory counters accumulate across tests in a run (all
+# requests share one client key), so per-endpoint limits like "30/hour" would
+# otherwise produce spurious 429s once enough tests hit the same route.
+_limiter.enabled = False
 
 
 @pytest.fixture(scope="function")

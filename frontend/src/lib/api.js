@@ -251,6 +251,15 @@ export const clientsApi = {
     sort_by: params.sort_by,
     sort_dir: params.sort_dir,
   })),
+  listPaginated: (params = {}) =>
+    get(withQuery('/clients/paginated', {
+      search: params.search,
+      include_deleted: booleanQuery(params.include_deleted),
+      sort_by: params.sort_by,
+      sort_dir: params.sort_dir,
+      page: params.page || 1,
+      per_page: params.per_page || 24,
+    })),
   restore: (id) => post(`/clients/${id}/restore`),
 };
 

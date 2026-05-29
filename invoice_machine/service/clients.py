@@ -2,7 +2,7 @@
 
 from decimal import Decimal
 
-from sqlalchemy import and_, case, func, select
+from sqlalchemy import and_, asc, case, desc, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from invoice_machine.database import BusinessProfile, Client, Invoice
@@ -147,6 +147,52 @@ class ClientService:
 
         result = await session.execute(query.order_by(Client.created_at.desc()))
         return list(result.scalars().all())
+
+    _SORT_COLUMNS = {  # noqa: RUF012
+        "created_at": Client.created_at,
+        "updated_at": Client.updated_at,
+        "name": func.coalesce(Client.business_name, Client.name, ""),
+        "city": Client.city,
+        "payment_terms": Client.payment_terms_days,
+    }
+
+    @staticmethod
+    async def list_clients_paginated(
+        session: AsyncSession,
+        search: str | None = None,
+        include_deleted: bool = False,
+        sort_by: str = "created_at",
+        sort_dir: str = "desc",
+        page: int = 1,
+        per_page: int = 24,
+    ) -> tuple[list[Client], int]:
+        """List clients with server-side search, sorting, and pagination."""
+        conditions = []
+        if not include_deleted:
+            conditions.append(Client.deleted_at.is_(None))
+        if search:
+            term = f"%{search}%"
+            conditions.append(or_(Client.name.ilike(term), Client.business_name.ilike(term)))
+
+        count_query = select(func.count(Client.id))
+        if conditions:
+            count_query = count_query.where(*conditions)
+        total = int((await session.execute(count_query)).scalar() or 0)
+
+        sort_column = ClientService._SORT_COLUMNS.get((sort_by or "").lower(), Client.created_at)
+        order_expr = asc(sort_column) if (sort_dir or "").lower() == "asc" else desc(sort_column)
+
+        safe_page = max(1, int(page))
+        safe_per_page = max(1, min(int(per_page), 100))
+        offset = (safe_page - 1) * safe_per_page
+
+        query = select(Client)
+        if conditions:
+            query = query.where(*conditions)
+        query = query.order_by(order_expr, Client.id.desc()).offset(offset).limit(safe_per_page)
+
+        rows = (await session.execute(query)).scalars().all()
+        return list(rows), total
 
     @staticmethod
     async def get_client(session: AsyncSession, client_id: int) -> Client | None:

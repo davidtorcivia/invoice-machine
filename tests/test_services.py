@@ -17,6 +17,7 @@ from invoice_machine.services import (
     recalculate_invoice_totals,
     snapshot_client_info,
 )
+from invoice_machine.utils import utc_now
 
 
 class TestInvoiceNumberGeneration:
@@ -336,7 +337,7 @@ class TestInvoiceService:
         invoice = await InvoiceService.create_invoice(db_session)
 
         assert invoice.id is not None
-        assert invoice.invoice_number.startswith(date.today().strftime("%Y%m%d"))
+        assert invoice.invoice_number.startswith(utc_now().date().strftime("%Y%m%d"))
         assert invoice.status == "draft"
         assert invoice.currency_code == "USD"
 

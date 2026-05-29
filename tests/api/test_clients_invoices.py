@@ -13,6 +13,40 @@ class TestClientEndpoints:
         assert response.json() == []
 
     @pytest.mark.asyncio
+    async def test_list_clients_paginated(self, test_client):
+        """Paginated clients endpoint returns the right page slice + metadata."""
+        for i in range(5):
+            await test_client.post("/api/clients", json={"business_name": f"Co {i:02d}"})
+
+        # Page 1 of 2 (per_page=2)
+        resp = await test_client.get(
+            "/api/clients/paginated?per_page=2&page=1&sort_by=name&sort_dir=asc"
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["total"] == 5
+        assert data["total_pages"] == 3
+        assert data["page"] == 1
+        assert data["has_next"] is True
+        assert data["has_prev"] is False
+        assert len(data["clients"]) == 2
+        assert [c["business_name"] for c in data["clients"]] == ["Co 00", "Co 01"]
+
+        # Last page
+        resp_last = await test_client.get("/api/clients/paginated?per_page=2&page=3")
+        last = resp_last.json()
+        assert last["has_next"] is False
+        assert last["has_prev"] is True
+        assert len(last["clients"]) == 1
+
+    @pytest.mark.asyncio
+    async def test_paginated_route_not_shadowed_by_id(self, test_client):
+        """/clients/paginated must not be matched as /clients/{id}."""
+        resp = await test_client.get("/api/clients/paginated")
+        assert resp.status_code == 200
+        assert "clients" in resp.json()
+
+    @pytest.mark.asyncio
     async def test_create_client(self, test_client):
         """Create a new client."""
         response = await test_client.post(

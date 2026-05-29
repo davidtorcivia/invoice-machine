@@ -89,6 +89,18 @@ class ClientUpdate(BaseModel):
     preferred_currency: str | None = Field(None, max_length=3)
 
 
+class PaginatedClients(BaseModel):
+    """Paginated client list response."""
+
+    clients: list[ClientSchema]
+    page: int
+    per_page: int
+    total: int
+    total_pages: int
+    has_next: bool
+    has_prev: bool
+
+
 @router.get("", response_model=list[ClientSchema])
 @limiter.limit("120/minute")
 async def list_clients(
@@ -97,10 +109,45 @@ async def list_clients(
     include_deleted: bool = Query(False, description="Include soft-deleted clients"),
     session: AsyncSession = Depends(get_session),
 ) -> list[Client]:
-    """List all clients."""
+    """List all clients (unpaginated; used for selectors/dropdowns)."""
     return await ClientService.list_clients(
         session, search=search, include_deleted=include_deleted
     )
+
+
+# NOTE: must be declared before "/{client_id}" so it isn't matched as an id.
+@router.get("/paginated", response_model=PaginatedClients)
+@limiter.limit("120/minute")
+async def list_clients_paginated(
+    request: Request,
+    search: str | None = Query(None, description="Search by name or business name"),
+    include_deleted: bool = Query(False, description="Include soft-deleted clients"),
+    sort_by: str = Query("created_at"),
+    sort_dir: str = Query("desc", pattern="^(asc|desc)$"),
+    page: int = Query(1, ge=1),
+    per_page: int = Query(24, ge=1, le=100),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """List clients with server-side search, sorting, and pagination."""
+    clients, total = await ClientService.list_clients_paginated(
+        session,
+        search=search,
+        include_deleted=include_deleted,
+        sort_by=sort_by,
+        sort_dir=sort_dir,
+        page=page,
+        per_page=per_page,
+    )
+    total_pages = (total + per_page - 1) // per_page if total else 0
+    return {
+        "clients": clients,
+        "page": page,
+        "per_page": per_page,
+        "total": total,
+        "total_pages": total_pages,
+        "has_next": page < total_pages,
+        "has_prev": page > 1,
+    }
 
 
 @router.post("", response_model=ClientSchema, status_code=201)
