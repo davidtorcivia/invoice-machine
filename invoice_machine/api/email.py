@@ -10,7 +10,7 @@ from invoice_machine.crypto import encrypt_credential
 from invoice_machine.database import BusinessProfile, get_session
 from invoice_machine.email import EmailService
 from invoice_machine.rate_limit import limiter
-from invoice_machine.services import InvoiceService
+from invoice_machine.service.email import send_invoice_email as send_invoice_email_service
 
 router = APIRouter(tags=["email"])
 
@@ -127,36 +127,23 @@ async def send_invoice_email(
     data: SendEmailRequest,
     session: AsyncSession = Depends(get_session),
 ) -> dict:
-    """Send invoice via email."""
-    # Get invoice
-    invoice = await InvoiceService.get_invoice(session, invoice_id)
-    if not invoice:
-        raise HTTPException(status_code=404, detail="Invoice not found")
+    """Send invoice via email.
 
-    # Get profile for SMTP settings
-    profile = await BusinessProfile.get_or_create(session)
-
-    if not profile.smtp_enabled:
-        raise HTTPException(
-            status_code=400, detail="SMTP is not enabled. Configure SMTP settings first."
-        )
-
-    # Check PDF exists
-    if not invoice.pdf_path:
-        raise HTTPException(
-            status_code=400, detail="Invoice PDF not generated. Generate PDF first."
-        )
-
-    # Send email
-    email_service = EmailService(profile)
-    result = await email_service.send_invoice(
-        invoice,
+    Delegates to the shared service so REST and MCP behave identically: the PDF is
+    (re)generated when missing or stale, and a successful send transitions a draft
+    to ``sent``.
+    """
+    result = await send_invoice_email_service(
+        session,
+        invoice_id,
         recipient_email=data.recipient_email,
         subject=data.subject,
         body=data.body,
     )
 
-    if not result["success"]:
+    if not result.get("success"):
+        if result.get("not_found"):
+            raise HTTPException(status_code=404, detail="Invoice not found")
         raise HTTPException(status_code=400, detail=result.get("error", "Failed to send email"))
 
     return result

@@ -30,47 +30,16 @@ async def send_invoice_email(
     Returns:
         Success status and details
     """
-    from invoice_machine.email import EmailService
-    from invoice_machine.pdf.generator import generate_pdf
+    from invoice_machine.service.email import send_invoice_email as send_invoice_email_service
 
     async with get_session() as session:
-        # Get business profile for SMTP settings
-        profile = await BusinessProfile.get_or_create(session)
-
-        if not profile.smtp_enabled:
-            return {
-                "success": False,
-                "error": "SMTP is not enabled. Configure SMTP settings in business profile first.",
-            }
-
-        # Get invoice
-        invoice = await InvoiceService.get_invoice(session, invoice_id)
-        if not invoice:
-            return {"success": False, "error": f"Invoice {invoice_id} not found"}
-
-        # Generate PDF if needed
-        if invoice.needs_pdf_regeneration:
-            pdf_path = await generate_pdf(session, invoice)
-            invoice.pdf_path = pdf_path
-            invoice.pdf_generated_at = utc_now()
-            await session.commit()
-
-        # Send email
-        email_service = EmailService(profile)
-        result = await email_service.send_invoice(
-            invoice,
+        return await send_invoice_email_service(
+            session,
+            invoice_id,
             recipient_email=recipient_email,
             subject=subject,
             body=body,
         )
-
-        # Update invoice status if sent successfully
-        if result.get("success") and invoice.status == "draft":
-            invoice.status = "sent"
-            await session.commit()
-            result["status_updated"] = "sent"
-
-        return result
 
 
 @mcp.tool()
