@@ -63,3 +63,46 @@ def test_alembic_head_has_all_model_columns():
             conn.close()
 
         assert not missing, "Schema drift between models and Alembic head:\n" + "\n".join(missing)
+
+
+def test_alembic_head_keeps_fts_triggers():
+    """The line-item FTS sync triggers must survive `alembic upgrade head`.
+
+    Migration 013 rebuilds invoice_items via batch_alter, which silently drops the
+    triggers created in 008; 013 must recreate them or new line items stop being
+    indexed for search.
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        db_file = Path(tmp) / "fts.db"
+        env = dict(os.environ)
+        env["DATABASE_URL"] = f"sqlite+aiosqlite:///{db_file}"
+        env["ENVIRONMENT"] = "development"
+
+        result = subprocess.run(
+            [sys.executable, "-c", _UPGRADE_SNIPPET],
+            cwd=str(PROJECT_ROOT),
+            env=env,
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0, (
+            f"`alembic upgrade head` failed:\nSTDOUT:\n{result.stdout}\nSTDERR:\n{result.stderr}"
+        )
+
+        conn = sqlite3.connect(str(db_file))
+        try:
+            triggers = {
+                row[0]
+                for row in conn.execute(
+                    "SELECT name FROM sqlite_master WHERE type='trigger' "
+                    "AND name LIKE 'invoice_items_fts_%'"
+                )
+            }
+        finally:
+            conn.close()
+
+        assert {
+            "invoice_items_fts_insert",
+            "invoice_items_fts_delete",
+            "invoice_items_fts_update",
+        } <= triggers, f"FTS triggers missing after migration: {triggers}"

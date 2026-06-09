@@ -188,7 +188,7 @@ To enable tax:
 
 Set up recurring invoices for retainers, subscriptions, or regular services:
 
-1. Go to Clients > Select a client > Recurring Schedules
+1. Go to the **Recurring** page in the sidebar and click **New Schedule** (pick the client there)
 2. Create a schedule with:
    - Name (e.g., "Monthly Retainer")
    - Frequency (daily, weekly, monthly, quarterly, yearly)
@@ -363,14 +363,15 @@ invoice-machine/
 │   ├── pdf/             # PDF generation
 │   ├── alembic/         # Database migrations
 │   ├── database.py      # SQLAlchemy models
-│   ├── services.py      # Business logic
+│   ├── service/         # Business logic (invoices, clients, recurring, analytics, backups, search)
+│   ├── services.py      # Compatibility facade re-exporting service/*
 │   ├── email.py         # SMTP email service
 │   ├── config.py        # Configuration management
 │   └── main.py          # FastAPI app
 ├── frontend/            # SvelteKit frontend
 ├── tests/               # Test suite
-│   ├── test_services.py # Service tests
-│   ├── test_api.py      # API tests
+│   ├── api/             # API endpoint tests
+│   ├── test_money.py    # Money/quantization tests
 │   ├── test_new_features.py  # Feature tests
 │   └── test_security.py # Security tests
 ├── data/                # Runtime data (gitignored)

@@ -40,6 +40,22 @@ class SearchService:
             )
             existing_fts_tables = {row[0] for row in fts_tables_check.fetchall()}
 
+            # The invoice_items FTS sync triggers can be silently dropped when
+            # SQLite rebuilds invoice_items (e.g. a batch_alter migration). Row
+            # counts can still match right afterwards, so also require the triggers
+            # to exist before declaring the index up to date.
+            fts_triggers_check = await session.execute(
+                text(
+                    "SELECT name FROM sqlite_master WHERE type='trigger' AND name LIKE 'invoice_items_fts_%'"
+                )
+            )
+            item_fts_triggers = {row[0] for row in fts_triggers_check.fetchall()}
+            item_triggers_present = {
+                "invoice_items_fts_insert",
+                "invoice_items_fts_delete",
+                "invoice_items_fts_update",
+            } <= item_fts_triggers
+
             invoices_count = (await session.execute(text("SELECT COUNT(*) FROM invoices"))).scalar()
             clients_count = (await session.execute(text("SELECT COUNT(*) FROM clients"))).scalar()
             line_items_count = (
@@ -54,6 +70,7 @@ class SearchService:
             if (
                 not force
                 and {"invoices_fts", "clients_fts", "invoice_items_fts"} <= existing_fts_tables
+                and item_triggers_present
             ):
                 try:
                     invoices_fts_count = (

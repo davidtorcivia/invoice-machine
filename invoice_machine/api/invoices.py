@@ -5,13 +5,12 @@ from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, ConfigDict, Field
-from slowapi import Limiter
-from slowapi.util import get_remote_address
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from invoice_machine.api.schemas import LineItemCreate
 from invoice_machine.database import Invoice, get_session
 from invoice_machine.presenters import serialize_invoice, serialize_invoice_item
+from invoice_machine.rate_limit import limiter
 from invoice_machine.services import InvoiceService
 from invoice_machine.utils import (
     INVOICE_NUMBER_REGEX,
@@ -21,7 +20,6 @@ from invoice_machine.utils import (
 )
 
 router = APIRouter(prefix="/api/invoices", tags=["invoices"])
-limiter = Limiter(key_func=get_remote_address)
 
 
 class InvoiceItemSchema(BaseModel):
@@ -49,6 +47,7 @@ class InvoiceSchema(BaseModel):
     client_address: str | None = None
     client_email: str | None = None
     status: str
+    paid_at: datetime | None = None
     document_type: str = "invoice"
     client_reference: str | None = None
     show_payment_instructions: bool = True
@@ -92,8 +91,10 @@ class InvoiceCreate(BaseModel):
     invoice_number_override: str | None = Field(
         None, max_length=50, pattern=INVOICE_NUMBER_REGEX
     )
-    # Tax settings
-    tax_enabled: int | None = Field(0, ge=0, le=1)
+    # Tax settings. Default None (not 0) so an omitted value inherits the client's
+    # or business profile's tax setting; 0 would force tax OFF and silently produce
+    # tax-free invoices for callers (e.g. the bot API) that don't send the field.
+    tax_enabled: int | None = Field(None, ge=0, le=1)
     tax_rate: Decimal | None = Field(None, ge=0, le=100)
     tax_name: str | None = Field(None, max_length=50)
     items: list[LineItemCreate] | None = Field(None, max_length=100)
@@ -122,7 +123,9 @@ class InvoiceItemUpdate(BaseModel):
     description: str | None = Field(None, max_length=2000)
     quantity: Decimal | None = Field(None, gt=0, le=10000)
     unit_type: str | None = Field(None, pattern="^(qty|hours)$")
-    unit_price: Decimal | str | None = None
+    # Decimal (not str) so non-numeric input is rejected at the schema with 422
+    # instead of raising an uncaught decimal.InvalidOperation (500) in the service.
+    unit_price: Decimal | None = Field(None, ge=0)
     sort_order: int | None = Field(None, ge=0)
 
 
@@ -375,10 +378,12 @@ async def restore_invoice(
 async def add_invoice_item(
     invoice_id: int,
     description: str = Query(..., description="Item description"),
-    quantity: int = Query(1, ge=1, description="Quantity"),
+    # Decimal (not int) so fractional quantities like 1.5 / 0.25 hours can be
+    # added to an existing invoice, matching invoice-create and item-update.
+    quantity: Decimal = Query(Decimal("1"), gt=0, le=10000, description="Quantity"),
     unit_type: str = Query("qty", pattern="^(qty|hours)$", description="Unit type"),
-    unit_price: Decimal | str = Query(..., description="Unit price"),
-    sort_order: int = Query(0, description="Sort order"),
+    unit_price: Decimal = Query(..., ge=0, description="Unit price"),
+    sort_order: int = Query(0, ge=0, description="Sort order"),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
     """Add line item to invoice."""
@@ -412,7 +417,7 @@ async def update_invoice_item(
             session, item_id, invoice_id=invoice_id, **updates.model_dump(exclude_unset=True)
         )
     except ValueError as e:
-        raise HTTPException(status_code=403, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e))
     if not item:
         raise HTTPException(status_code=404, detail="Item not found")
     return {

@@ -3,13 +3,20 @@
 
   export let invoices = [];
 
-  // Use the client's dominant currency for labels (clients are typically
-  // single-currency); per-currency reporting lives in the analytics endpoints.
-  $: currency = invoices.find((invoice) => invoice.currency_code)?.currency_code || 'USD';
-  $: totalBilled = invoices.reduce((sum, invoice) => sum + parseFloat(invoice.total || 0), 0);
-  $: totalPaid = invoices.filter((invoice) => invoice.status === 'paid').reduce((sum, invoice) => sum + parseFloat(invoice.total || 0), 0);
-  $: totalOutstanding = invoices
-    .filter((invoice) => invoice.status !== 'paid' && invoice.status !== 'cancelled')
+  // Quotes are not billed amounts, and money is never summed across currencies.
+  // Restrict to invoice documents in the client's dominant currency; per-currency
+  // reporting lives in the analytics endpoints.
+  $: invoiceDocs = invoices.filter((invoice) => (invoice.document_type || 'invoice') === 'invoice');
+  $: currency = invoiceDocs.find((invoice) => invoice.currency_code)?.currency_code || 'USD';
+  $: scoped = invoiceDocs.filter((invoice) => (invoice.currency_code || 'USD') === currency);
+  // "Billed" = issued invoices (sent/paid/overdue), matching the backend; drafts
+  // and cancelled invoices are excluded.
+  $: totalBilled = scoped
+    .filter((invoice) => ['sent', 'paid', 'overdue'].includes(invoice.status))
+    .reduce((sum, invoice) => sum + parseFloat(invoice.total || 0), 0);
+  $: totalPaid = scoped.filter((invoice) => invoice.status === 'paid').reduce((sum, invoice) => sum + parseFloat(invoice.total || 0), 0);
+  $: totalOutstanding = scoped
+    .filter((invoice) => invoice.status === 'sent' || invoice.status === 'overdue')
     .reduce((sum, invoice) => sum + parseFloat(invoice.total || 0), 0);
 </script>
 
@@ -28,7 +35,7 @@
   </div>
   <div class="stat-card">
     <div class="stat-label">Invoices</div>
-    <div class="stat-value">{invoices.length}</div>
+    <div class="stat-value">{invoiceDocs.length}</div>
   </div>
 </div>
 

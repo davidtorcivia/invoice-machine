@@ -43,6 +43,7 @@
     <textarea
       class="textarea"
       rows="3"
+      aria-label="Notes"
       {placeholder}
       bind:value={notes}
     ></textarea>

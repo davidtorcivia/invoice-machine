@@ -17,5 +17,19 @@ class LineItemCreate(BaseModel):
     @field_validator("unit_price", mode="before")
     @classmethod
     def coerce_unit_price(cls, v):
-        """Accept both numeric and string input, always store as string."""
-        return str(v)
+        """Accept numeric or string input; reject non-numeric/negative values.
+
+        Stored as a string so the service layer's ``Decimal(str(...))`` round-trips
+        exactly. Without this, garbage like ``"abc"`` reached the service and raised
+        an uncaught ``decimal.InvalidOperation`` (HTTP 500), or a negative price was
+        persisted into a recurring schedule's stored line items.
+        """
+        try:
+            amount = Decimal(str(v))
+        except (ArithmeticError, ValueError, TypeError):
+            raise ValueError("Unit price must be a number") from None
+        if not amount.is_finite():
+            raise ValueError("Unit price must be a finite number")
+        if amount < 0:
+            raise ValueError("Unit price cannot be negative")
+        return str(amount)

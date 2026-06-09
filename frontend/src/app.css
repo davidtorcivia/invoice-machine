@@ -278,9 +278,32 @@ a.btn:hover {
   color: var(--color-text-inverse);
 }
 
+/* Ghost button that reads as destructive (delete/disable links). Promoted here
+   so every component gets it — several relied on a scoped copy that, under
+   Svelte style scoping, never applied to markup in other components. */
+.btn-danger-text {
+  color: var(--color-danger);
+}
+
+.btn-danger-text:hover:not(:disabled) {
+  background: var(--color-danger-light);
+}
+
 .btn-sm {
   padding: var(--space-1) var(--space-3);
   font-size: 0.8125rem;
+}
+
+/* Small inline spinner for button busy states (Test/Save). */
+.spinner-sm {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: var(--radius-full);
+  animation: spin 0.6s linear infinite;
+  vertical-align: -2px;
 }
 
 .btn-lg {

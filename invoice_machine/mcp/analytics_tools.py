@@ -11,6 +11,7 @@ from datetime import date
 from decimal import Decimal
 
 from invoice_machine.service import analytics as analytics_service
+from invoice_machine.service.common import BILLED_STATUSES, format_quantity
 from invoice_machine.services import (
     ClientService,
     InvoiceService,
@@ -124,7 +125,7 @@ async def get_client_invoice_context(
             else (client.preferred_currency or "USD")
         )
         scoped = [inv for inv in all_invoices if inv.currency_code == dominant_currency]
-        billable = [inv for inv in scoped if inv.status in ("sent", "paid", "overdue")]
+        billable = [inv for inv in scoped if inv.status in BILLED_STATUSES]
         total_billed = sum((inv.total for inv in billable), Decimal("0"))
         paid_invoices = [inv for inv in scoped if inv.status == "paid"]
         total_paid = sum((inv.total for inv in paid_invoices), Decimal("0"))
@@ -153,7 +154,7 @@ async def get_client_invoice_context(
                     "items": [
                         {
                             "description": item.description,
-                            "quantity": item.quantity,
+                            "quantity": format_quantity(item.quantity),
                             "unit_type": getattr(item, "unit_type", "qty"),
                             "unit_price": str(item.unit_price),
                             "total": str(item.total),

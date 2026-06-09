@@ -154,8 +154,10 @@ class TestRecurringInvoices:
     ):
         """Initial monthly scheduling keeps day 31 when the target month supports it."""
 
+        # Day 31 hasn't passed yet in July (31 days), so the first invoice is this
+        # month — the current period is not skipped.
         monkeypatch.setattr(
-            "invoice_machine.service.recurring.utc_now", _fixed_utc_now(2025, 6, 10)
+            "invoice_machine.service.recurring.utc_now", _fixed_utc_now(2025, 7, 10)
         )
 
         schedule = await RecurringService.create_schedule(
@@ -255,7 +257,9 @@ class TestRecurringInvoices:
             db_session, schedule.id, schedule_day=20
         )
 
-        assert updated.next_invoice_date == date(2025, 2, 20)
+        # Day 20 hasn't passed yet (today is the 10th), so the recalculated date is
+        # this month's 20th — the current period is not skipped.
+        assert updated.next_invoice_date == date(2025, 1, 20)
 
     @pytest.mark.asyncio
     async def test_trigger_schedule(self, db_session, business_profile, test_client):

@@ -7,17 +7,15 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field, field_validator
-from slowapi import Limiter
-from slowapi.util import get_remote_address
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from invoice_machine.config import get_settings
 from invoice_machine.database import BusinessProfile, get_session
+from invoice_machine.rate_limit import limiter
 from invoice_machine.utils import utc_now
 
 router = APIRouter(prefix="/api/profile", tags=["profile"])
 settings = get_settings()
-limiter = Limiter(key_func=get_remote_address)
 
 
 class BusinessProfileSchema(BaseModel):
@@ -103,12 +101,13 @@ def sanitize_filename(filename: str) -> str:
 
 # Image magic bytes for validation
 # Note: SVG is excluded due to XSS security risks (can contain embedded JavaScript)
+# WebP is intentionally absent here: a bare ``RIFF`` prefix also matches AVI/WAV
+# containers, so it is validated separately by its full RIFF....WEBP signature.
 IMAGE_SIGNATURES = {
     b"\x89PNG\r\n\x1a\n": "png",        # PNG
     b"\xff\xd8\xff": "jpeg",             # JPEG
     b"GIF87a": "gif",                    # GIF87a
     b"GIF89a": "gif",                    # GIF89a
-    b"RIFF": "webp",                     # WebP (starts with RIFF...WEBP)
 }
 
 
@@ -127,7 +126,7 @@ def validate_image_content(content: bytes) -> bool:
         if content[:len(signature)] == signature:
             return True
 
-    # Special check for WebP (RIFF....WEBP format)
+    # WebP requires the full RIFF....WEBP container, not just a RIFF prefix.
     if content[:4] == b"RIFF" and len(content) >= 12 and content[8:12] == b"WEBP":
         return True
 

@@ -2,7 +2,7 @@
   import { createEventDispatcher } from 'svelte';
   import Icon from '$lib/components/Icons.svelte';
   import { formatDate, formatCurrency } from '$lib/stores';
-  import { statusConfig } from '$lib/invoices/list';
+  import { statusConfig, getEffectiveStatus } from '$lib/invoices/list';
 
   export let invoices = [];
 
@@ -32,13 +32,14 @@
         </thead>
         <tbody>
           {#each invoices as invoice}
+            {@const effectiveStatus = getEffectiveStatus(invoice)}
             <tr on:click={() => dispatch('openinvoice', invoice.id)} class="clickable-row">
               <td><span class="invoice-number font-mono">#{invoice.invoice_number}</span></td>
               <td class="text-secondary">{formatDate(invoice.issue_date)}</td>
               <td class="text-secondary">{invoice.due_date ? formatDate(invoice.due_date) : '---'}</td>
               <td>
-                <span class="badge {statusConfig[invoice.status]?.class || 'badge-draft'}">
-                  {statusConfig[invoice.status]?.label || invoice.status}
+                <span class="badge {statusConfig[effectiveStatus]?.class || 'badge-draft'}">
+                  {statusConfig[effectiveStatus]?.label || effectiveStatus}
                 </span>
               </td>
               <td class="text-right"><span class="invoice-total">{formatCurrency(invoice.total, invoice.currency_code)}</span></td>

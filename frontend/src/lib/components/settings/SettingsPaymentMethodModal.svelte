@@ -21,7 +21,7 @@
     <div class="modal" role="dialog" aria-modal="true" tabindex="-1">
       <div class="modal-header">
         <h2 class="modal-title">{editingMethod ? 'Edit Payment Method' : 'Add Payment Method'}</h2>
-        <button class="btn btn-ghost btn-icon btn-sm" on:click={closePaymentMethodModal}>
+        <button class="btn btn-ghost btn-icon btn-sm" aria-label="Close" on:click={closePaymentMethodModal}>
           <Icon name="x" size="md" />
         </button>
       </div>

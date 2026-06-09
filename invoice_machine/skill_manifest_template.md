@@ -161,9 +161,15 @@ GET /api/invoices?status=draft&client_id=1&from_date=2025-01-01&to_date=2025-12-
 
 ### List invoices (paginated)
 ```
-GET /api/invoices/paginated?page=1&per_page=25&status=sent
+GET /api/invoices/paginated?page=1&per_page=25&status=sent&document_type=invoice
 ```
-Returns `{"items": [...], "total": 42, "page": 1, "per_page": 25, "pages": 2}`.
+Returns `{"items": [...], "pagination": {"page": 1, "per_page": 25, "total": 42, "total_pages": 2, "has_next": true, "has_prev": false}}`.
+
+### List clients (paginated)
+```
+GET /api/clients/paginated?page=1&per_page=25&search=acme
+```
+Returns `{"clients": [...], "page": 1, "per_page": 25, "total": 42, "total_pages": 2, "has_next": true, "has_prev": false}`.
 
 ### Create invoice or quote
 ```

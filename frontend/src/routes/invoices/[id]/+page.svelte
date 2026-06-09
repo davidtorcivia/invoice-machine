@@ -17,6 +17,7 @@
   let invoice = null;
   let items = [];
   let loading = true;
+  let loadError = false;
   let generatingPdf = false;
   let showDeleteModal = false;
   let deleting = false;
@@ -35,11 +36,13 @@
 
   async function loadInvoice() {
     loading = true;
+    loadError = false;
     try {
       const data = await invoicesApi.get(invoiceId);
       invoice = data;
       items = data.items || [];
     } catch (error) {
+      loadError = true;
       toast.error('Failed to load invoice');
     } finally {
       loading = false;
@@ -208,6 +211,15 @@
         <InvoiceSidebarDetailsCard {invoice} {documentLabel} {isQuote} />
       </div>
     </div>
+  {:else}
+    <div class="error-state">
+      <p class="error-title">This {documentLabel.toLowerCase()} could not be loaded.</p>
+      <p class="error-hint">It may have been deleted, or the connection failed.</p>
+      <div class="error-actions">
+        <button class="btn btn-secondary" on:click={loadInvoice}>Retry</button>
+        <button class="btn btn-primary" on:click={() => goto('/invoices')}>Back to Invoices</button>
+      </div>
+    </div>
   {/if}
 </div>
 
@@ -259,6 +271,29 @@
     display: flex;
     justify-content: center;
     padding: var(--space-12);
+  }
+
+  .error-state {
+    text-align: center;
+    padding: var(--space-12);
+  }
+
+  .error-title {
+    font-size: 1.125rem;
+    font-weight: 600;
+    color: var(--color-text);
+    margin: 0 0 var(--space-2);
+  }
+
+  .error-hint {
+    color: var(--color-text-secondary);
+    margin: 0 0 var(--space-6);
+  }
+
+  .error-actions {
+    display: flex;
+    gap: var(--space-3);
+    justify-content: center;
   }
 
   .spinner {

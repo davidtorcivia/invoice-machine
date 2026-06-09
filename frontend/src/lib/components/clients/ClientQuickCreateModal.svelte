@@ -20,7 +20,7 @@
     <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title" tabindex="-1">
       <div class="modal-header">
         <h2 id="modal-title" class="modal-title">New Client</h2>
-        <button class="btn btn-ghost btn-icon btn-sm" on:click={close}>
+        <button class="btn btn-ghost btn-icon btn-sm" aria-label="Close" on:click={close}>
           <Icon name="x" size="md" />
         </button>
       </div>

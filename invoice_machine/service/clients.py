@@ -6,7 +6,7 @@ from sqlalchemy import and_, asc, case, desc, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from invoice_machine.database import BusinessProfile, Client, Invoice
-from invoice_machine.service.common import quantize_money
+from invoice_machine.service.common import BILLED_STATUSES, quantize_money
 from invoice_machine.utils import utc_now
 
 
@@ -35,7 +35,12 @@ class ClientService:
                 Client.business_name,
                 Client.email,
                 Invoice.currency_code.label("currency"),
-                func.coalesce(func.sum(Invoice.total), 0).label("total_invoiced"),
+                func.coalesce(
+                    func.sum(
+                        case((Invoice.status.in_(BILLED_STATUSES), Invoice.total), else_=0)
+                    ),
+                    0,
+                ).label("total_invoiced"),
                 func.coalesce(
                     func.sum(case((Invoice.status == "paid", Invoice.total), else_=0)), 0
                 ).label("total_paid"),

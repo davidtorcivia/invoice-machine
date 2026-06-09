@@ -202,7 +202,13 @@ class Client(Base):
         "Invoice",
         back_populates="client",
         foreign_keys="Invoice.client_id",
-        lazy="selectin",
+        # No code reads client.invoices; the back-reference exists only for the
+        # Invoice.client side. "selectin" here made every client query eagerly
+        # load all of that client's invoices (and, via Invoice.items, their line
+        # items) — a hidden full-table load on hot dropdown/list endpoints.
+        # "raise" keeps the mapping but turns any accidental access into a loud
+        # error instead of a silent N+1.
+        lazy="raise",
     )
 
     __table_args__ = (

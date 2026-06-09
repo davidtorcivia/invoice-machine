@@ -126,7 +126,7 @@
 <ConfirmModal
   show={showEmptyModal}
   title="Empty Trash"
-  message="Are you sure you want to permanently delete all items older than 90 days? This action cannot be undone."
+  message={`Permanently delete all ${items.length} item${items.length === 1 ? '' : 's'} in the trash now? This cannot be undone.`}
   confirmText={emptying ? 'Emptying...' : 'Empty Trash'}
   cancelText="Cancel"
   variant="danger"

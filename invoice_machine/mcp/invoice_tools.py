@@ -7,6 +7,7 @@ from decimal import Decimal
 
 from invoice_machine.presenters import dump_json_list, serialize_invoice, serialize_invoice_item
 from invoice_machine.services import InvoiceService
+from invoice_machine.utils import utc_now
 
 from .context import get_session, mcp
 
@@ -14,6 +15,7 @@ from .context import get_session, mcp
 @mcp.tool()
 async def list_invoices(
     status: str | None = None,
+    document_type: str | None = None,
     client_id: int | None = None,
     from_date: str | None = None,
     to_date: str | None = None,
@@ -25,6 +27,7 @@ async def list_invoices(
 
     Args:
         status: Filter by status (draft, sent, paid, overdue, cancelled)
+        document_type: Filter by type ("invoice" or "quote")
         client_id: Filter by client ID
         from_date: Filter from this date (ISO format, e.g. 2025-01-15)
         to_date: Filter to this date (ISO format)
@@ -41,6 +44,7 @@ async def list_invoices(
         invoices = await InvoiceService.list_invoices(
             session,
             status=status,
+            document_type=document_type,
             client_id=client_id,
             from_date=from_date_parsed,
             to_date=to_date_parsed,
@@ -127,7 +131,7 @@ async def create_invoice(
         Created invoice/quote with generated number
     """
     async with get_session() as session:
-        issue_date_parsed = date.fromisoformat(issue_date) if issue_date else date.today()
+        issue_date_parsed = date.fromisoformat(issue_date) if issue_date else utc_now().date()
         due_date_parsed = date.fromisoformat(due_date) if due_date else None
 
         # Convert tax_rate to Decimal if provided
@@ -172,6 +176,9 @@ async def update_invoice(
     client_reference: str | None = None,
     show_payment_instructions: bool | None = None,
     selected_payment_methods: list[str] | None = None,
+    tax_enabled: bool | None = None,
+    tax_rate: float | None = None,
+    tax_name: str | None = None,
 ) -> dict | None:
     """
     Update invoice or quote fields.
@@ -188,6 +195,9 @@ async def update_invoice(
         client_reference: Client's PO number or reference
         show_payment_instructions: Whether to show payment details on PDF
         selected_payment_methods: List of payment method IDs to show on PDF
+        tax_enabled: Whether to apply tax (recalculates totals)
+        tax_rate: Tax rate percentage (recalculates totals)
+        tax_name: Tax name like "VAT" or "Sales Tax"
 
     Returns:
         Updated invoice/quote or null if not found
@@ -214,6 +224,12 @@ async def update_invoice(
             update_kwargs["show_payment_instructions"] = show_payment_instructions
         if selected_payment_methods is not None:
             update_kwargs["selected_payment_methods"] = dump_json_list(selected_payment_methods)
+        if tax_enabled is not None:
+            update_kwargs["tax_enabled"] = 1 if tax_enabled else 0
+        if tax_rate is not None:
+            update_kwargs["tax_rate"] = Decimal(str(tax_rate))
+        if tax_name is not None:
+            update_kwargs["tax_name"] = tax_name
 
         invoice = await InvoiceService.update_invoice(
             session,
@@ -271,7 +287,7 @@ async def restore_invoice(invoice_id: int) -> bool:
 async def add_invoice_item(
     invoice_id: int,
     description: str,
-    quantity: int = 1,
+    quantity: float | str = 1,
     unit_price: float | str = 0,
     unit_type: str = "qty",
 ) -> dict:
@@ -281,7 +297,7 @@ async def add_invoice_item(
     Args:
         invoice_id: The invoice's ID
         description: Item description
-        quantity: Quantity or hours (default: 1)
+        quantity: Quantity or hours, fractional allowed (e.g. 1.5, 0.25) (default: 1)
         unit_price: Unit price or hourly rate
         unit_type: "qty" for quantity or "hours" for time-based billing (default: qty)
 
@@ -305,7 +321,7 @@ async def add_invoice_item(
 async def update_invoice_item(
     item_id: int,
     description: str | None = None,
-    quantity: int | None = None,
+    quantity: float | str | None = None,
     unit_price: float | str | None = None,
     unit_type: str | None = None,
 ) -> dict | None:
@@ -315,7 +331,7 @@ async def update_invoice_item(
     Args:
         item_id: The item's ID
         description: New description
-        quantity: New quantity or hours
+        quantity: New quantity or hours, fractional allowed (e.g. 1.5, 0.25)
         unit_price: New unit price or hourly rate
         unit_type: "qty" for quantity or "hours" for time-based billing
 

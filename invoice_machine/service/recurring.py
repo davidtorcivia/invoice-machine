@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from invoice_machine.database import RecurringSchedule
 from invoice_machine.service.common import (
     _replace_with_valid_day,
+    normalize_line_items,
     validate_recurring_schedule,
 )
 from invoice_machine.utils import utc_now
@@ -51,29 +52,14 @@ class RecurringService:
         )
 
         if next_invoice_date is None:
-            today = utc_now().date()
-            if frequency == "daily":
-                next_invoice_date = today + timedelta(days=1)
-            elif frequency == "weekly":
-                days_ahead = schedule_day - today.weekday()
-                if days_ahead <= 0:
-                    days_ahead += 7
-                next_invoice_date = today + timedelta(days=days_ahead)
-            elif frequency == "monthly":
-                next_invoice_date = _replace_with_valid_day(
-                    today.replace(day=1) + relativedelta(months=1),
-                    schedule_day,
-                )
-            elif frequency == "quarterly":
-                next_invoice_date = _replace_with_valid_day(
-                    today.replace(day=1) + relativedelta(months=3),
-                    schedule_day,
-                )
-            else:
-                next_invoice_date = _replace_with_valid_day(
-                    today.replace(day=1) + relativedelta(years=1),
-                    schedule_day,
-                )
+            next_invoice_date = RecurringService.initial_next_date(
+                utc_now().date(), frequency, schedule_day
+            )
+
+        # Validate items now so a bad description/quantity/price is rejected at
+        # save time rather than failing on every later generation run.
+        if line_items is not None:
+            line_items = normalize_line_items(line_items)
 
         schedule = RecurringSchedule(
             client_id=client_id,
@@ -131,7 +117,9 @@ class RecurringService:
             return None
 
         if "line_items" in kwargs and kwargs["line_items"] is not None:
-            kwargs["line_items"] = json.dumps(kwargs["line_items"], default=str)
+            kwargs["line_items"] = json.dumps(
+                normalize_line_items(kwargs["line_items"]), default=str
+            )
 
         new_frequency = kwargs.get("frequency", schedule.frequency)
         new_schedule_day = kwargs.get("schedule_day", schedule.schedule_day)
@@ -149,7 +137,7 @@ class RecurringService:
             ("frequency" in kwargs or "schedule_day" in kwargs)
             and "next_invoice_date" not in kwargs
         ):
-            kwargs["next_invoice_date"] = RecurringService.calculate_next_date(
+            kwargs["next_invoice_date"] = RecurringService.initial_next_date(
                 utc_now().date(), new_frequency, new_schedule_day
             )
 
@@ -198,6 +186,21 @@ class RecurringService:
         return True
 
     @staticmethod
+    def initial_next_date(today: date, frequency: str, schedule_day: int) -> date:
+        """Compute the first invoice date for a new or rescheduled schedule.
+
+        Uses the current period when its scheduled day hasn't passed yet, otherwise
+        the next period — so a monthly schedule created on the 5th with schedule_day
+        20 bills *this* month, not next. (daily/weekly already pick the soonest
+        upcoming occurrence in ``calculate_next_date``.)
+        """
+        if frequency in {"monthly", "quarterly", "yearly"}:
+            candidate = _replace_with_valid_day(today, schedule_day)
+            if candidate >= today:
+                return candidate
+        return RecurringService.calculate_next_date(today, frequency, schedule_day)
+
+    @staticmethod
     def calculate_next_date(current_date: date, frequency: str, schedule_day: int) -> date:
         """Calculate the next invoice date based on frequency."""
         if frequency == "daily":
@@ -238,6 +241,11 @@ class RecurringService:
 
         results = []
         for schedule in due_schedules:
+            # Capture identity before the try: a rollback in the except expires
+            # every ORM object, so reading schedule.id/.name afterwards would raise
+            # MissingGreenlet (a lazy reload) and abort the whole run.
+            schedule_id = schedule.id
+            schedule_name = schedule.name
             line_items = json.loads(schedule.line_items) if schedule.line_items else []
             generated = 0
             try:
@@ -267,8 +275,8 @@ class RecurringService:
                     generated += 1
 
                     results.append({
-                        "schedule_id": schedule.id,
-                        "schedule_name": schedule.name,
+                        "schedule_id": schedule_id,
+                        "schedule_name": schedule_name,
                         "invoice_id": invoice.id,
                         "invoice_number": invoice.invoice_number,
                         "issue_date": period_date.isoformat(),
@@ -279,22 +287,22 @@ class RecurringService:
                     logger.warning(
                         "Recurring schedule %s (%s) hit the %s-invoice catch-up cap; "
                         "remaining periods will generate on the next run.",
-                        schedule.id,
-                        schedule.name,
+                        schedule_id,
+                        schedule_name,
                         _MAX_CATCHUP_PER_SCHEDULE,
                     )
             except Exception as exc:
                 await session.rollback()
                 logger.error(
                     "Recurring schedule %s failed after generating %s invoice(s): %s",
-                    schedule.id,
+                    schedule_id,
                     generated,
                     exc,
                     exc_info=True,
                 )
                 results.append({
-                    "schedule_id": schedule.id,
-                    "schedule_name": schedule.name,
+                    "schedule_id": schedule_id,
+                    "schedule_name": schedule_name,
                     "invoices_generated": generated,
                     "success": False,
                     "error": str(exc),

@@ -77,7 +77,7 @@
 
 <style>
   .card {
-    background: var(--color-surface);
+    background: var(--color-bg-elevated);
     border: 1px solid var(--color-border);
     border-radius: var(--radius-lg);
     margin-bottom: var(--space-6);
@@ -141,7 +141,7 @@
   }
 
   .tab.active {
-    background: var(--color-surface);
+    background: var(--color-bg-elevated);
     color: var(--color-text);
     box-shadow: var(--shadow-sm);
   }

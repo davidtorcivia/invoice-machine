@@ -54,13 +54,28 @@ def format_money(amount: Decimal | str | float, currency_code: str = "USD") -> s
     return f"{amount:,.2f} {currency_code}"
 
 
+def _pdf_url_fetcher(url: str):
+    """Restrict WeasyPrint to inline ``data:`` URIs during rendering.
+
+    The template embeds the logo as a base64 ``data:`` URI and needs no network or
+    filesystem access. Refusing everything else neutralizes any CSS/HTML injection
+    (e.g. a crafted ``accent_color``) that tries ``url(file://...)`` or
+    ``url(http://...)`` to read local files or reach internal services (SSRF).
+    """
+    if url.startswith("data:"):
+        from weasyprint.urls import default_url_fetcher
+
+        return default_url_fetcher(url)
+    raise ValueError(f"Blocked non-data resource during PDF render: {url[:64]}")
+
+
 def _generate_pdf_sync(html: str, pdf_path: Path) -> None:
     """
     Synchronous PDF generation using WeasyPrint.
 
     This is called in a thread pool to avoid blocking the async event loop.
     """
-    HTML(string=html).write_pdf(pdf_path)
+    HTML(string=html, url_fetcher=_pdf_url_fetcher).write_pdf(pdf_path)
 
 
 def get_logo_base64(business: BusinessProfile) -> str | None:

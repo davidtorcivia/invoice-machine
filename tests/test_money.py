@@ -71,18 +71,21 @@ async def test_client_stats_do_not_mix_currencies(db_session, test_client):
     """A client's USD and EUR invoices are reported per-currency, never summed."""
     from invoice_machine.services import ClientService
 
-    await InvoiceService.create_invoice(
+    usd_invoice = await InvoiceService.create_invoice(
         db_session,
         client_id=test_client.id,
         currency_code="USD",
         items=[{"description": "usd", "quantity": 1, "unit_price": "1000"}],
     )
-    await InvoiceService.create_invoice(
+    eur_invoice = await InvoiceService.create_invoice(
         db_session,
         client_id=test_client.id,
         currency_code="EUR",
         items=[{"description": "eur", "quantity": 1, "unit_price": "500"}],
     )
+    # "Invoiced" totals count billed invoices (sent/paid/overdue), not drafts.
+    await InvoiceService.update_invoice(db_session, usd_invoice.id, status="sent")
+    await InvoiceService.update_invoice(db_session, eur_invoice.id, status="sent")
 
     stats = await ClientService.get_client_invoice_stats(db_session, client_id=test_client.id)
     assert len(stats) == 1

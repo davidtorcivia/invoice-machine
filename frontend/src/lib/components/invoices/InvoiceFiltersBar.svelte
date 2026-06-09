@@ -8,6 +8,7 @@
   export let selectedSortOption = '';
   export let filterStatus = '';
   export let filterClient = '';
+  export let filterDocumentType = '';
   export let filterYear = '';
   export let filterFromDate = '';
   export let filterToDate = '';
@@ -31,6 +32,15 @@
         <option value="paid">Paid</option>
         <option value="overdue">Overdue</option>
         <option value="cancelled">Cancelled</option>
+      </select>
+    </div>
+
+    <div class="filter-group">
+      <label for="type-filter" class="filter-label">Type</label>
+      <select id="type-filter" class="select" bind:value={filterDocumentType} on:change={() => dispatch('filterchange')}>
+        <option value="">All Types</option>
+        <option value="invoice">Invoices</option>
+        <option value="quote">Quotes</option>
       </select>
     </div>
 

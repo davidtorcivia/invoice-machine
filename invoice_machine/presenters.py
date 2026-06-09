@@ -199,6 +199,7 @@ def serialize_invoice(
         "client_email": invoice.client_email,
         "client_reference": getattr(invoice, "client_reference", None),
         "status": invoice.status,
+        "paid_at": _maybe_iso(getattr(invoice, "paid_at", None), json_ready),
         "issue_date": _maybe_iso(invoice.issue_date, json_ready),
         "due_date": _maybe_iso(invoice.due_date, json_ready),
         "payment_terms_days": invoice.payment_terms_days,

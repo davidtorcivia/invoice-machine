@@ -68,30 +68,21 @@ async def _session_cleanup_job() -> None:
 
 async def _scheduled_backup_job() -> None:
     """Create scheduled backups and prune old ones."""
-    import json
-
+    # Reuse the API's builder so the scheduler decrypts S3 credentials the same
+    # way the manual-backup endpoint does — building s3_config inline here skipped
+    # decryption, so every nightly S3 upload failed with bad credentials.
+    from invoice_machine.api.backup import get_backup_service
     from invoice_machine.database import BusinessProfile, async_session_maker
-    from invoice_machine.services import BackupService
 
     async with async_session_maker() as session:
         profile = await BusinessProfile.get(session)
         if not profile or not profile.backup_enabled:
             return
 
-        s3_config = None
-        if profile.backup_s3_enabled and profile.backup_s3_config:
-            try:
-                s3_config = json.loads(profile.backup_s3_config)
-                s3_config["enabled"] = True
-            except json.JSONDecodeError:
-                s3_config = None
-
-        backup_service = BackupService(
-            retention_days=profile.backup_retention_days or 30,
-            s3_config=s3_config,
-        )
-        backup_service.create_backup(compress=True)
-        backup_service.cleanup_old_backups()
+        backup_service = await get_backup_service(session)
+        # Snapshot + gzip + S3 upload are blocking; keep them off the event loop.
+        await asyncio.to_thread(backup_service.create_backup, compress=True)
+        await asyncio.to_thread(backup_service.cleanup_old_backups)
         logger.info("Scheduled backup completed successfully")
 
 

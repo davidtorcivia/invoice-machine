@@ -181,22 +181,6 @@ def configure_http_middleware(app: FastAPI) -> None:
     app.add_middleware(RequestSizeLimitMiddleware)
 
     @app.middleware("http")
-    async def restore_guard_middleware(request: Request, call_next):
-        app_state = app.state
-
-        if getattr(app_state, "restore_in_progress", False) and request.url.path != "/health":
-            return JSONResponse(
-                {"detail": "Service temporarily unavailable during backup restore"},
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            )
-
-        app_state.active_requests = getattr(app_state, "active_requests", 0) + 1
-        try:
-            return await call_next(request)
-        finally:
-            app_state.active_requests = max(0, getattr(app_state, "active_requests", 0) - 1)
-
-    @app.middleware("http")
     async def auth_middleware(request: Request, call_next):
         path = request.url.path
 
@@ -248,3 +232,23 @@ def configure_http_middleware(app: FastAPI) -> None:
                     )
 
         return await call_next(request)
+
+    # Registered last so it sits OUTSIDE auth_middleware: a request must be turned
+    # away (503) during a restore before auth_middleware can open a DB connection
+    # mid-swap, and active_requests must count every in-flight request (including
+    # those still in auth) so the restore drain can actually see them.
+    @app.middleware("http")
+    async def restore_guard_middleware(request: Request, call_next):
+        app_state = app.state
+
+        if getattr(app_state, "restore_in_progress", False) and request.url.path != "/health":
+            return JSONResponse(
+                {"detail": "Service temporarily unavailable during backup restore"},
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+
+        app_state.active_requests = getattr(app_state, "active_requests", 0) + 1
+        try:
+            return await call_next(request)
+        finally:
+            app_state.active_requests = max(0, getattr(app_state, "active_requests", 0) - 1)

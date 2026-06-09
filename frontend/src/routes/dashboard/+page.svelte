@@ -27,14 +27,16 @@
       const [dashboardData, invoicesData, clientsData] = await Promise.all([
         analyticsApi.getDashboardSummary(),
         invoicesApi.list({ document_type: 'invoice', limit: 10 }),
-        clientsApi.list()
+        // Only the count is needed here — ask for one row and read the total,
+        // instead of materializing the entire client list.
+        clientsApi.listPaginated({ per_page: 1 })
       ]);
 
       stats = {
         totalOutstanding: parseFloat(dashboardData.total_outstanding) || 0,
         paidThisMonth: parseFloat(dashboardData.paid_this_month) || 0,
         draftCount: dashboardData.draft_count || 0,
-        clientCount: clientsData.length,
+        clientCount: clientsData.total ?? (clientsData.clients?.length || 0),
         currency: dashboardData.currency || 'USD'
       };
       recentInvoices = invoicesData;

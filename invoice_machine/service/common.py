@@ -21,6 +21,11 @@ def is_auto_invoice_number(number: str | None) -> bool:
 # DECIMAL(10,2) scale, so quantization must happen in Python before persisting.
 CENTS = Decimal("0.01")
 
+# Statuses that count as actually billed. Excludes "draft" (not yet issued) and
+# "cancelled" (voided) so neither inflates invoiced/revenue/LTV totals. Shared by
+# the REST analytics service and the MCP client-context tool so they agree.
+BILLED_STATUSES = ("sent", "paid", "overdue")
+
 
 def quantize_money(amount: Decimal | float | int | str) -> Decimal:
     """Round a monetary amount to 2 decimal places (ROUND_HALF_UP)."""
@@ -51,6 +56,45 @@ def format_quantity(value: Decimal | float | int | str) -> str:
     """Render a quantity without trailing zeros ("2", "1.5", "0.25")."""
     text = f"{Decimal(str(value)):.3f}".rstrip("0").rstrip(".")
     return text or "0"
+
+
+VALID_UNIT_TYPES = {"qty", "hours"}
+
+
+def normalize_line_items(items: list[dict] | None) -> list[dict]:
+    """Validate and normalize raw line-item dicts.
+
+    Coerces quantity/unit_price (tolerant of str/float from MCP or stored JSON),
+    rejects negative prices and unknown unit types, and computes the quantized
+    line total. Used by both invoice creation and recurring-schedule saves so a
+    bad item fails fast at the API boundary instead of poisoning later generation.
+    """
+    normalized: list[dict] = []
+    for index, item_data in enumerate(items or []):
+        quantity = quantize_quantity(item_data.get("quantity", 1))
+        raw_price = item_data.get("unit_price", 0)
+        try:
+            unit_price = Decimal(str(raw_price))
+        except (ArithmeticError, ValueError, TypeError):
+            raise ValueError("Unit price must be a number") from None
+        if not unit_price.is_finite():
+            raise ValueError("Unit price must be a finite number")
+        if unit_price < 0:
+            raise ValueError("Unit price cannot be negative")
+        unit_type = item_data.get("unit_type", "qty")
+        if unit_type not in VALID_UNIT_TYPES:
+            raise ValueError(f"Invalid unit type. Must be one of: {sorted(VALID_UNIT_TYPES)}")
+        normalized.append(
+            {
+                "description": item_data.get("description", ""),
+                "quantity": quantity,
+                "unit_type": unit_type,
+                "unit_price": unit_price,
+                "total": line_item_total(unit_price, quantity),
+                "sort_order": item_data.get("sort_order", index),
+            }
+        )
+    return normalized
 
 
 async def generate_invoice_number(

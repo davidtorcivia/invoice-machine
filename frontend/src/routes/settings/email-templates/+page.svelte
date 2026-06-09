@@ -122,7 +122,7 @@
         <p class="page-subtitle">Customize the default email subject and body for invoice emails</p>
       </div>
       <a href="/settings" class="btn btn-ghost">
-        <Icon name="chevron-left" size="sm" />
+        <Icon name="chevronLeft" size="sm" />
         Back to Settings
       </a>
     </div>

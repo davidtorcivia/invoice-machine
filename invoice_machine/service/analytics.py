@@ -17,7 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from invoice_machine.database import BusinessProfile, Invoice
 from invoice_machine.service.clients import ClientService
-from invoice_machine.service.common import format_currency, quantize_money
+from invoice_machine.service.common import BILLED_STATUSES, format_currency, quantize_money
 from invoice_machine.utils import utc_now
 
 
@@ -180,7 +180,12 @@ async def revenue_summary(
             select(
                 Invoice.currency_code.label("currency"),
                 func.count(Invoice.id).label("invoice_count"),
-                func.coalesce(func.sum(Invoice.total), 0).label("total_invoiced"),
+                func.coalesce(
+                    func.sum(
+                        case((Invoice.status.in_(BILLED_STATUSES), Invoice.total), else_=0)
+                    ),
+                    0,
+                ).label("total_invoiced"),
                 func.coalesce(
                     func.sum(case((Invoice.status == "paid", Invoice.total), else_=0)), 0
                 ).label("total_paid"),
@@ -252,7 +257,12 @@ async def revenue_summary(
             select(
                 period_expr.label("period"),
                 func.count(Invoice.id).label("count"),
-                func.coalesce(func.sum(Invoice.total), 0).label("invoiced"),
+                func.coalesce(
+                    func.sum(
+                        case((Invoice.status.in_(BILLED_STATUSES), Invoice.total), else_=0)
+                    ),
+                    0,
+                ).label("invoiced"),
                 func.coalesce(
                     func.sum(case((Invoice.status == "paid", Invoice.total), else_=0)), 0
                 ).label("paid"),

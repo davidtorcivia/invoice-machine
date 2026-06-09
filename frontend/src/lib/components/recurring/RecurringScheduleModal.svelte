@@ -40,7 +40,7 @@
     <div class="modal" role="dialog" aria-modal="true" tabindex="-1">
       <div class="modal-header">
         <h2>{editingSchedule ? 'Edit Schedule' : 'New Recurring Schedule'}</h2>
-        <button class="btn btn-ghost btn-icon" on:click={closeModal}>
+        <button class="btn btn-ghost btn-icon" aria-label="Close" on:click={closeModal}>
           <Icon name="x" size="md" />
         </button>
       </div>
@@ -192,6 +192,7 @@
           bind:taxEnabled={formData.tax_enabled}
           bind:taxRate={formData.tax_rate}
           bind:taxName={formData.tax_name}
+          currencyCode={formData.currency_code}
           addButtonText="Add Line Item"
         />
 

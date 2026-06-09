@@ -16,7 +16,7 @@
 </script>
 
 <div class="collapsible" class:open>
-  <button class="collapsible-header" on:click={toggle} type="button">
+  <button class="collapsible-header" on:click={toggle} type="button" aria-expanded={open}>
     <div class="collapsible-title">
       {#if icon}
         <Icon name={icon} size="sm" />

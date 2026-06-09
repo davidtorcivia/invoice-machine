@@ -483,7 +483,7 @@ class TestAnalyticsEndpoints:
     @pytest.mark.asyncio
     async def test_revenue_does_not_sum_across_currencies(self, test_client):
         """USD and EUR invoices are reported per-currency, never summed as one."""
-        await test_client.post(
+        usd = await test_client.post(
             "/api/invoices",
             json={
                 "document_type": "invoice",
@@ -491,7 +491,7 @@ class TestAnalyticsEndpoints:
                 "items": [{"description": "usd", "quantity": 1, "unit_price": 1000}],
             },
         )
-        await test_client.post(
+        eur = await test_client.post(
             "/api/invoices",
             json={
                 "document_type": "invoice",
@@ -499,6 +499,9 @@ class TestAnalyticsEndpoints:
                 "items": [{"description": "eur", "quantity": 1, "unit_price": 500}],
             },
         )
+        # "Invoiced" counts billed invoices (sent/paid/overdue), not drafts.
+        await test_client.put(f"/api/invoices/{usd.json()['id']}", json={"status": "sent"})
+        await test_client.put(f"/api/invoices/{eur.json()['id']}", json={"status": "sent"})
 
         response = await test_client.get("/api/analytics/revenue")
         assert response.status_code == 200

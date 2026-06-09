@@ -24,6 +24,7 @@
   let loading = true;
   let filterStatus = '';
   let filterClient = '';
+  let filterDocumentType = '';
   let filterYear = '';
   let filterFromDate = '';
   let filterToDate = '';
@@ -57,11 +58,22 @@
   $: selectedInvoices = invoices.filter((invoice) => selectedIds.has(invoice.id));
   $: canMarkSent = selectedInvoices.some((invoice) => invoice.status === 'draft');
   $: canMarkPaid = selectedInvoices.some((invoice) => invoice.document_type !== 'quote' && ['sent', 'overdue'].includes(invoice.status));
-  $: hasFilters = Boolean(filterStatus || filterClient || filterYear || filterFromDate || filterToDate);
+  $: hasFilters = Boolean(filterStatus || filterClient || filterDocumentType || filterYear || filterFromDate || filterToDate);
 
   onMount(async () => {
-    await loadData();
+    // Clients populate the filter dropdown and never change as you page/sort/filter
+    // invoices, so fetch them once here instead of on every loadData().
+    await Promise.all([loadClients(), loadData()]);
   });
+
+  async function loadClients() {
+    try {
+      clients = await clientsApi.list();
+    } catch (error) {
+      // Non-fatal: the client filter just stays empty.
+      console.error('Failed to load clients', error);
+    }
+  }
 
   async function loadData() {
     loading = true;
@@ -75,6 +87,7 @@
       };
       if (filterStatus) params.status = filterStatus;
       if (filterClient) params.client_id = filterClient;
+      if (filterDocumentType) params.document_type = filterDocumentType;
 
       if (filterYear) {
         params.from_date = `${filterYear}-01-01`;
@@ -84,15 +97,11 @@
         if (filterToDate) params.to_date = filterToDate;
       }
 
-      const [invoicesData, clientsData] = await Promise.all([
-        invoicesApi.listPaginated(params),
-        clientsApi.list()
-      ]);
+      const invoicesData = await invoicesApi.listPaginated(params);
 
       invoices = invoicesData.items || [];
       pagination = invoicesData.pagination || pagination;
       currentPage = pagination.page || currentPage;
-      clients = clientsData;
     } catch (error) {
       toast.error('Failed to load invoices');
     } finally {
@@ -147,6 +156,7 @@
   function clearAllFilters() {
     filterStatus = '';
     filterClient = '';
+    filterDocumentType = '';
     filterYear = '';
     filterFromDate = '';
     filterToDate = '';
@@ -274,6 +284,7 @@
     {selectedSortOption}
     bind:filterStatus
     bind:filterClient
+    bind:filterDocumentType
     bind:filterYear
     bind:filterFromDate
     bind:filterToDate
@@ -422,7 +433,7 @@
   }
 
   .empty-state-icon {
-    color: var(--color-text-muted);
+    color: var(--color-text-tertiary);
     margin-bottom: var(--space-4);
   }
 

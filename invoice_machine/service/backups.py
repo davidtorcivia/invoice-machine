@@ -225,7 +225,10 @@ class BackupService:
 
         deleted = 0
         for obj in response.get("Contents", []):
-            if obj["LastModified"].replace(tzinfo=None) < cutoff:
+            # boto3 returns a tz-aware LastModified; cutoff (from utc_now()) is also
+            # tz-aware. Compare aware-to-aware — stripping the tzinfo here raised a
+            # TypeError that silently aborted every S3 cleanup.
+            if obj["LastModified"] < cutoff:
                 s3_client.delete_object(Bucket=bucket, Key=obj["Key"])
                 deleted += 1
 

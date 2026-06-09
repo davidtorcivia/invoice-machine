@@ -220,9 +220,10 @@ async def list_backups(
     """List all available backups."""
     backup_service = await get_backup_service(session)
 
-    # Get local backups
+    # Get local backups. Filesystem stat + (for S3) a network round-trip are
+    # blocking; run them off the event loop.
     backups = []
-    for b in backup_service.list_backups():
+    for b in await asyncio.to_thread(backup_service.list_backups):
         backups.append(BackupSchema(
             filename=b["filename"],
             size_bytes=b["size_bytes"],
@@ -233,7 +234,7 @@ async def list_backups(
 
     # Get S3 backups if requested
     if include_s3:
-        for b in backup_service.list_s3_backups():
+        for b in await asyncio.to_thread(backup_service.list_s3_backups):
             # Check if already in local list
             if not any(lb.filename == b["filename"] for lb in backups):
                 backups.append(BackupSchema(
@@ -260,7 +261,8 @@ async def create_backup(
     backup_service = await get_backup_service(session)
 
     try:
-        result = backup_service.create_backup(compress=compress)
+        # Snapshot + gzip + optional S3 upload are blocking; keep them off the loop.
+        result = await asyncio.to_thread(backup_service.create_backup, compress=compress)
         return BackupResult(**result)
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail="Database not found")
@@ -310,9 +312,9 @@ async def restore_backup(
 
             # Download from S3 if requested
             if download_from_s3:
-                backup_service.download_from_s3(filename)
+                await asyncio.to_thread(backup_service.download_from_s3, filename)
 
-            result = backup_service.restore_backup(filename)
+            result = await asyncio.to_thread(backup_service.restore_backup, filename)
             return RestoreResult(**result)
         except FileNotFoundError:
             raise HTTPException(status_code=404, detail="Backup file not found")
@@ -327,8 +329,12 @@ async def restore_backup(
             logger.error(f"Restore failed: {e}", exc_info=True)
             raise HTTPException(status_code=500, detail="Restore failed. Check server logs for details.")
         finally:
-            await init_db()
-            restore_state.restore_in_progress = False
+            # Always clear the flag, even if re-opening the DB fails — otherwise
+            # the restore guard would 503 every request until a container restart.
+            try:
+                await init_db()
+            finally:
+                restore_state.restore_in_progress = False
 
 
 @router.get("/download/{filename}")
@@ -380,7 +386,7 @@ async def cleanup_old_backups(
     """Delete backups older than retention period."""
     backup_service = await get_backup_service(session)
 
-    deleted = backup_service.cleanup_old_backups()
+    deleted = await asyncio.to_thread(backup_service.cleanup_old_backups)
     return {"success": True, "deleted_count": deleted}
 
 
@@ -418,7 +424,7 @@ async def test_s3_connection(
 
         # Test by listing bucket (will fail if credentials are wrong)
         bucket = s3_config.get("bucket")
-        s3_client.head_bucket(Bucket=bucket)
+        await asyncio.to_thread(s3_client.head_bucket, Bucket=bucket)
 
         return {"success": True, "message": f"Successfully connected to bucket: {bucket}"}
     except ImportError:

@@ -28,7 +28,7 @@
           <Icon name="send" size="md" />
           Send {documentLabel} via Email
         </h2>
-        <button class="btn btn-ghost btn-sm" on:click={() => dispatch('cancel')}>
+        <button class="btn btn-ghost btn-sm" aria-label="Close" on:click={() => dispatch('cancel')}>
           <Icon name="x" size="sm" />
         </button>
       </div>
@@ -63,7 +63,7 @@
           </div>
 
           <p class="form-hint">
-            <Icon name="file" size="sm" />
+            <Icon name="invoice" size="sm" />
             The PDF will be attached automatically.
           </p>
         </div>

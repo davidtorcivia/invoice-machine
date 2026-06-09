@@ -20,7 +20,7 @@
         <div class="trash-item-info">
           <div class="trash-item-name">{getTrashItemName(item)}</div>
           <div class="trash-item-meta">
-            <span class="trash-item-type badge badge-secondary">{item.type}</span>
+            <span class="trash-item-type badge badge-draft">{item.type}</span>
             <span class="trash-item-date">Deleted {formatDate(item.deleted_at)}</span>
             <span class="trash-item-countdown" class:urgent={item.days_until_purge <= 7}>
               {item.days_until_purge} days until deletion
@@ -131,7 +131,7 @@
   }
 
   .empty-state-icon {
-    color: var(--color-text-muted);
+    color: var(--color-text-tertiary);
     margin-bottom: var(--space-4);
   }
 

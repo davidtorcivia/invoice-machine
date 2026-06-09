@@ -1,6 +1,22 @@
 <script>
   import CollapsibleSection from '$lib/components/CollapsibleSection.svelte';
   import Icon from '$lib/components/Icons.svelte';
+  import ConfirmModal from '$lib/components/ConfirmModal.svelte';
+
+  // Regenerating a key immediately invalidates the existing one, breaking every
+  // configured integration — confirm first, like the other destructive actions.
+  let showRegenerateMcpModal = false;
+  let showRegenerateBotModal = false;
+
+  function confirmRegenerateMcp() {
+    showRegenerateMcpModal = false;
+    generateMcpKey();
+  }
+
+  function confirmRegenerateBot() {
+    showRegenerateBotModal = false;
+    generateBotKey();
+  }
 
   export let mcpOpen = false;
   export let botOpen = false;
@@ -67,7 +83,7 @@
     </div>
 
     <div class="mcp-actions">
-      <button type="button" class="btn btn-secondary" on:click={generateMcpKey} disabled={generatingMcpKey}>
+      <button type="button" class="btn btn-secondary" on:click={() => (showRegenerateMcpModal = true)} disabled={generatingMcpKey}>
         <Icon name="refresh" size="sm" />
         Regenerate Key
       </button>
@@ -151,7 +167,7 @@
     </div>
 
     <div class="mcp-actions">
-      <button type="button" class="btn btn-secondary" on:click={generateBotKey} disabled={generatingBotKey}>
+      <button type="button" class="btn btn-secondary" on:click={() => (showRegenerateBotModal = true)} disabled={generatingBotKey}>
         <Icon name="refresh" size="sm" />
         Regenerate Key
       </button>
@@ -190,6 +206,32 @@
     </details>
   </div>
 </CollapsibleSection>
+
+<ConfirmModal
+  show={showRegenerateMcpModal}
+  title="Regenerate MCP Key"
+  message="Regenerating will immediately invalidate the current MCP key. Any Claude Desktop connection using the old key will stop working until reconfigured. Continue?"
+  confirmText="Regenerate"
+  cancelText="Cancel"
+  variant="danger"
+  icon="refresh"
+  loading={generatingMcpKey}
+  onConfirm={confirmRegenerateMcp}
+  onCancel={() => (showRegenerateMcpModal = false)}
+/>
+
+<ConfirmModal
+  show={showRegenerateBotModal}
+  title="Regenerate Bot API Key"
+  message="Regenerating will immediately invalidate the current bot API key. Any bot or agent using the old key will stop working until reconfigured. Continue?"
+  confirmText="Regenerate"
+  cancelText="Cancel"
+  variant="danger"
+  icon="refresh"
+  loading={generatingBotKey}
+  onConfirm={confirmRegenerateBot}
+  onCancel={() => (showRegenerateBotModal = false)}
+/>
 
 <style>
   .mcp-status {

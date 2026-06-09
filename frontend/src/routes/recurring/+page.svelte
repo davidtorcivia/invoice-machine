@@ -279,7 +279,7 @@
   }
 
   .empty-icon {
-    color: var(--color-text-muted);
+    color: var(--color-text-tertiary);
     margin-bottom: var(--space-4);
   }
 

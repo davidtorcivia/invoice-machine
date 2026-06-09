@@ -97,7 +97,7 @@
   }
 
   .payment-method-option:hover {
-    border-color: var(--color-border-emphasis);
+    border-color: var(--color-border-dark);
     background: var(--color-bg-hover);
   }
 

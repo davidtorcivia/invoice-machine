@@ -15,6 +15,7 @@ from datetime import timedelta
 from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.concurrency import run_in_threadpool
 
 from invoice_machine.config import get_settings
 from invoice_machine.database import Session as DbSession
@@ -315,10 +316,11 @@ async def setup(
     if password_error:
         raise HTTPException(status_code=400, detail=password_error)
 
-    # Create user
+    # Create user. PBKDF2 (600k iterations) is ~hundreds of ms of pure CPU; run it
+    # off the event loop so it can't stall other in-flight requests.
     user = User(
         username=username,
-        password_hash=hash_password(data.password),
+        password_hash=await run_in_threadpool(hash_password, data.password),
     )
     db_session.add(user)
     await db_session.commit()
@@ -344,7 +346,10 @@ async def login(
     # Always run a password verification (against a dummy hash if the user does
     # not exist) so response timing can't be used to enumerate usernames.
     password_hash = user.password_hash if user else _DUMMY_PASSWORD_HASH
-    if not verify_password(data.password, password_hash) or not user:
+    # PBKDF2 verification is CPU-heavy; offload so a login attempt (every one pays
+    # the full cost via the dummy-hash path) doesn't block the event loop.
+    password_ok = await run_in_threadpool(verify_password, data.password, password_hash)
+    if not password_ok or not user:
         # Use generic error message to prevent username enumeration
         raise HTTPException(status_code=401, detail="Invalid username or password")
 

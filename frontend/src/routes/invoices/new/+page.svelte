@@ -1,6 +1,7 @@
 <script>
   import { onMount } from 'svelte';
   import { goto, beforeNavigate } from '$app/navigation';
+  import { page } from '$app/stores';
   import { clientsApi, invoicesApi, profileApi } from '$lib/api';
   import { buildClientPayload, createClientDraft } from '$lib/clients/config';
   import { parseJsonArray, stringifyJsonArray } from '$lib/json';
@@ -94,6 +95,11 @@
     loading = true;
     try {
       clients = await clientsApi.list();
+      // Preselect a client when arriving from a client page (?client=<id>).
+      const requested = $page.url.searchParams.get('client');
+      if (requested && clients.some((c) => c.id === parseInt(requested))) {
+        clientId = requested;
+      }
     } catch (error) {
       toast.error('Failed to load clients');
     } finally {

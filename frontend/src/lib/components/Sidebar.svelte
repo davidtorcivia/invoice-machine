@@ -9,9 +9,12 @@
   let searchQuery = '';
   let searchResults = null;
   let searching = false;
+  let searchError = false;
   let showResults = false;
   let searchInput;
   let searchContainer;
+  let searchDebounce;
+  let searchSeq = 0;
 
   const navItems = [
     { path: '/dashboard', label: 'Dashboard', icon: 'home' },
@@ -60,29 +63,41 @@
   }
 
   async function handleSearch() {
-    if (!searchQuery.trim()) {
+    const query = searchQuery.trim();
+    if (!query) {
       searchResults = null;
       showResults = false;
       return;
     }
 
+    // Sequence token: ignore a slow earlier response that resolves after a newer
+    // query, so stale results can't overwrite fresh ones.
+    const seq = ++searchSeq;
     searching = true;
+    searchError = false;
     showResults = true;
     try {
-      searchResults = await searchApi.search(searchQuery.trim(), { limit: 10 });
+      const results = await searchApi.search(query, { limit: 10 });
+      if (seq !== searchSeq) return;
+      searchResults = results;
     } catch (error) {
+      if (seq !== searchSeq) return;
       console.error('Search failed:', error);
-      searchResults = { invoices: [], clients: [] };
+      searchResults = null;
+      searchError = true;
     } finally {
-      searching = false;
+      if (seq === searchSeq) searching = false;
     }
   }
 
   function handleSearchInput() {
+    clearTimeout(searchDebounce);
     if (searchQuery.trim().length >= 2) {
-      handleSearch();
+      searchDebounce = setTimeout(handleSearch, 250);
     } else {
+      searchSeq++; // cancel any in-flight request's result
       searchResults = null;
+      searchError = false;
       showResults = false;
       searching = false;
     }
@@ -90,6 +105,7 @@
 
   function handleSearchKeydown(e) {
     if (e.key === 'Enter') {
+      clearTimeout(searchDebounce);
       handleSearch();
     } else if (e.key === 'Escape') {
       closeSearch();
@@ -101,9 +117,12 @@
   }
 
   function closeSearch() {
+    clearTimeout(searchDebounce);
+    searchSeq++;
     showResults = false;
     searchQuery = '';
     searchResults = null;
+    searchError = false;
   }
 
   function handleWindowPointerDown(event) {
@@ -196,6 +215,8 @@
         </div>
         {#if searching}
           <div class="search-loading">Searching...</div>
+        {:else if searchError}
+          <div class="search-empty">Search failed. Please try again.</div>
         {:else if searchResults}
           {#if visibleSearchGroups.length === 0}
             <div class="search-empty">No results found</div>

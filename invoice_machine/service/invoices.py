@@ -13,6 +13,7 @@ from invoice_machine.service.common import (
     generate_invoice_number,
     is_auto_invoice_number,
     line_item_total,
+    normalize_line_items,
     quantize_quantity,
     recalculate_invoice_totals,
     snapshot_client_info,
@@ -192,26 +193,7 @@ class InvoiceService:
         # Validate/normalize line items up front so a failure doesn't leave a
         # half-built invoice, and so string/float quantities (e.g. from MCP) are
         # coerced rather than crashing mid-build.
-        valid_unit_types = {"qty", "hours"}
-        normalized_items: list[dict] = []
-        for index, item_data in enumerate(items or []):
-            quantity = _coerce_quantity(item_data.get("quantity", 1))
-            unit_price = Decimal(str(item_data.get("unit_price", 0)))
-            if unit_price < 0:
-                raise ValueError("Unit price cannot be negative")
-            unit_type = item_data.get("unit_type", "qty")
-            if unit_type not in valid_unit_types:
-                raise ValueError(f"Invalid unit type. Must be one of: {sorted(valid_unit_types)}")
-            normalized_items.append(
-                {
-                    "description": item_data.get("description", ""),
-                    "quantity": quantity,
-                    "unit_type": unit_type,
-                    "unit_price": unit_price,
-                    "total": line_item_total(unit_price, quantity),
-                    "sort_order": item_data.get("sort_order", index),
-                }
-            )
+        normalized_items = normalize_line_items(items)
 
         calculated_due_date = calculate_due_date(
             invoice_date, payment_terms_days, due_date, client, business
@@ -301,7 +283,7 @@ class InvoiceService:
             return None
 
         business = await BusinessProfile.get_or_create(session)
-        client = await session.get(Client, invoice.client_id) if invoice.client_id else None
+        original_client_id = invoice.client_id
 
         # Only these fields may be set via **kwargs. Computed money fields
         # (subtotal/tax_amount/total) and identity fields are intentionally
@@ -333,6 +315,11 @@ class InvoiceService:
             if key == "document_type" and value != invoice.document_type:
                 doc_type_changed = True
             setattr(invoice, key, value)
+
+        # Load the client *after* kwargs so a client_id reassignment resolves the
+        # new client (for due-date terms and the snapshot below).
+        client = await session.get(Client, invoice.client_id) if invoice.client_id else None
+        client_changed = invoice.client_id != original_client_id
 
         date_changed = bool(issue_date and issue_date != invoice.issue_date)
         if date_changed:
@@ -369,7 +356,10 @@ class InvoiceService:
         if tax_fields_changed:
             await recalculate_invoice_totals(session, invoice)
 
-        if client:
+        # Re-snapshot only when the client was reassigned; otherwise the invoice
+        # keeps the details captured at creation, so editing a client record (or
+        # merely marking an old invoice paid) never rewrites historical documents.
+        if client and client_changed:
             await snapshot_client_info(session, client, invoice)
 
         invoice.updated_at = utc_now()

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from decimal import Decimal
 
 from invoice_machine.database import BusinessProfile
@@ -107,8 +108,23 @@ async def update_business_profile(
         updates = {
             k: v
             for k, v in locals().items()
-            if v is not None and k not in ("session", "json", "Decimal")
+            if v is not None and k not in ("session", "json", "Decimal", "re")
         }
+
+        # accent_color is interpolated into the PDF stylesheet; enforce the same
+        # strict hex pattern the REST endpoint uses so a crafted value can't break
+        # out of the CSS context (the MCP path is otherwise unvalidated).
+        if "accent_color" in updates and not re.fullmatch(
+            r"#[0-9a-fA-F]{6}", updates["accent_color"]
+        ):
+            raise ValueError("accent_color must be a hex color like #0891b2")
+
+        if "theme_preference" in updates and updates["theme_preference"] not in (
+            "system",
+            "light",
+            "dark",
+        ):
+            raise ValueError("theme_preference must be one of: system, light, dark")
 
         if "smtp_password" in updates:
             from invoice_machine.crypto import encrypt_credential
