@@ -1,6 +1,7 @@
 <script>
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
+  import { page } from '$app/stores';
   import { clientsApi } from '$lib/api';
   import { clientSortOptions } from '$lib/clients/config';
   import { toast } from '$lib/stores';
@@ -30,8 +31,31 @@
   $: pageEnd = pagination.total === 0 ? 0 : Math.min(pagination.total, pageStart + clients.length - 1);
 
   onMount(async () => {
+    hydrateFromUrl();
     await loadClients();
   });
+
+  function hydrateFromUrl() {
+    const p = $page.url.searchParams;
+    searchQuery = p.get('search') || '';
+    sortBy = p.get('sort_by') || 'created_at';
+    sortDir = p.get('sort_dir') || 'desc';
+    currentPage = Number(p.get('page')) || 1;
+  }
+
+  function syncUrl() {
+    const p = new URLSearchParams();
+    if (searchQuery) p.set('search', searchQuery);
+    if (sortBy !== 'created_at') p.set('sort_by', sortBy);
+    if (sortDir !== 'desc') p.set('sort_dir', sortDir);
+    if (currentPage > 1) p.set('page', String(currentPage));
+    const qs = p.toString();
+    goto(qs ? `?${qs}` : $page.url.pathname, {
+      replaceState: true,
+      keepFocus: true,
+      noScroll: true
+    });
+  }
 
   async function loadClients() {
     loading = true;
@@ -42,6 +66,7 @@
       clients = result.clients;
       pagination = result;
       currentPage = result.page || currentPage;
+      syncUrl();
     } catch (error) {
       toast.error('Failed to load clients');
     } finally {

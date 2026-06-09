@@ -1,6 +1,7 @@
 <script>
   import { onMount } from 'svelte';
   import { emailApi, invoicesApi } from '$lib/api';
+  import { createUnsavedGuard } from '$lib/unsavedGuard';
   import { toast } from '$lib/stores';
   import Header from '$lib/components/Header.svelte';
   import Icon from '$lib/components/Icons.svelte';
@@ -21,6 +22,10 @@
   let invoices = [];
   let previewTimeout;
 
+  // Warn before leaving with unsaved template edits; re-baseline after each save
+  // (the page stays put rather than navigating away).
+  const guard = createUnsavedGuard(() => JSON.stringify({ subjectTemplate, bodyTemplate }));
+
   onMount(async () => {
     await Promise.all([loadTemplates(), loadInvoices()]);
   });
@@ -34,6 +39,7 @@
       defaultBody = data.default_body || '';
       subjectTemplate = data.email_subject_template ?? defaultSubject;
       bodyTemplate = data.email_body_template ?? defaultBody;
+      guard.snapshot();
     } catch (error) {
       toast.error('Failed to load email templates');
     } finally {
@@ -62,6 +68,7 @@
         email_body_template: bodyTemplate || null
       });
       toast.success('Email templates saved');
+      guard.snapshot();
     } catch (error) {
       toast.error('Failed to save templates');
     } finally {

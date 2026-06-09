@@ -18,6 +18,7 @@ A self-hosted invoicing application for freelancers and small businesses. Create
 - **Analytics** for revenue tracking and client insights
 - MCP integration for Claude Desktop (separate key from REST bot API)
 - Bot API key for conventional `/api/*` automation with hosted `SKILL.md`
+- Fully self-hosted assets (fonts bundled locally) — no third-party CDN calls, works offline
 - SQLite storage, runs anywhere
 
 ## Quick Start
@@ -462,6 +463,7 @@ Invoice Machine includes several security features:
 ### Container Security
 - Docker container runs as non-root user (UID 1000)
 - Minimal attack surface with production-only dependencies
+- No third-party CDN/font calls at runtime — the UI ships all assets locally, so no client browsing data leaks to external services and the app works fully offline
 
 ### Production Recommendations
 

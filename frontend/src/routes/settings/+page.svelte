@@ -1,5 +1,6 @@
 <script>
   import { onMount } from 'svelte';
+  import { beforeNavigate } from '$app/navigation';
   import { profileApi, backupsApi, emailApi } from '$lib/api';
   import { parseJsonArray, stringifyJsonArray } from '$lib/json';
   import {
@@ -77,6 +78,34 @@
 
   $: mcpEndpointUrl = apiAccess.appBaseUrl || (typeof window !== 'undefined' ? window.location.origin : '');
 
+  // Unsaved-changes guard. The page has three independent deferred-save forms
+  // (business profile incl. payment methods + app URL, SMTP, backup), so each is
+  // tracked separately and re-baselined after its own save — that way saving one
+  // never suppresses an unsaved warning for another, and a single prompt covers
+  // any dirty form. Immediate actions (logo, API keys) are not tracked.
+  let allowLeaveSettings = false;
+  let profileSnapshot = '';
+  let smtpSnapshot = '';
+  let backupSnapshot = '';
+
+  const profileState = () =>
+    JSON.stringify({ profileForm, paymentMethods, appBaseUrl: apiAccess.appBaseUrl });
+  const smtpState = () => JSON.stringify(smtpForm);
+  const backupState = () => JSON.stringify(backupForm);
+
+  $: settingsDirty =
+    (profileSnapshot !== '' && profileState() !== profileSnapshot) ||
+    (smtpSnapshot !== '' && smtpState() !== smtpSnapshot) ||
+    (backupSnapshot !== '' && backupState() !== backupSnapshot);
+
+  beforeNavigate((nav) => {
+    if (settingsDirty && !allowLeaveSettings && !saving && !savingSmtp) {
+      if (!confirm('You have unsaved changes. Leave without saving?')) {
+        nav.cancel();
+      }
+    }
+  });
+
   onMount(async () => {
     await loadProfile();
     await loadBackupSettings();
@@ -92,6 +121,8 @@
       paymentMethods = parseJsonArray(profile.payment_methods);
       logoPreview = profile.logo_path ? `/api/profile/logo/${profile.logo_path}` : null;
       await loadSmtpSettings();
+      profileSnapshot = profileState();
+      smtpSnapshot = smtpState();
     } catch (error) {
       toast.error('Failed to load profile');
     } finally {
@@ -113,6 +144,7 @@
       await emailApi.updateSmtpSettings(buildSmtpPayload(smtpForm));
       toast.success('SMTP settings saved');
       smtpForm = { ...smtpForm, passwordSet: !!smtpForm.password || smtpForm.passwordSet, password: '' };
+      smtpSnapshot = smtpState();
     } catch (error) {
       toast.error(error.message || 'Failed to save SMTP settings');
     } finally {
@@ -143,6 +175,7 @@
     try {
       await profileApi.update(buildProfilePayload(profileForm, stringifyJsonArray(paymentMethods), apiAccess.appBaseUrl));
       toast.success('Settings saved successfully');
+      profileSnapshot = profileState();
     } catch (error) {
       toast.error('Failed to save settings');
     } finally {
@@ -338,6 +371,8 @@
       backupForm = mapBackupSettingsToForm(await backupsApi.getSettings());
     } catch (error) {
       // Use defaults.
+    } finally {
+      backupSnapshot = backupState();
     }
   }
 
@@ -356,6 +391,7 @@
     try {
       await backupsApi.updateSettings(buildBackupPayload(backupForm));
       toast.success('Backup settings saved');
+      backupSnapshot = backupState();
     } catch (error) {
       toast.error('Failed to save backup settings');
     }

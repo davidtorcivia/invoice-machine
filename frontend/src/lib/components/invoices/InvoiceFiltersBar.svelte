@@ -7,8 +7,10 @@
   export let yearOptions = [];
   export let selectedSortOption = '';
   export let filterStatus = '';
+  /** @type {string|number} */
   export let filterClient = '';
   export let filterDocumentType = '';
+  /** @type {string|number} */
   export let filterYear = '';
   export let filterFromDate = '';
   export let filterToDate = '';

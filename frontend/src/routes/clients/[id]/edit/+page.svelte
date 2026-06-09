@@ -7,6 +7,7 @@
   import { countries } from '$lib/data/countries';
   import { currencies } from '$lib/data/currencies';
   import { applyClientToDraft, buildClientPayload, createClientDraft } from '$lib/clients/config';
+  import { createUnsavedGuard } from '$lib/unsavedGuard';
   import Header from '$lib/components/Header.svelte';
   import Icon from '$lib/components/Icons.svelte';
   import ConfirmModal from '$lib/components/ConfirmModal.svelte';
@@ -23,6 +24,8 @@
   let showDiscardModal = false;
   let draft = createClientDraft();
 
+  const guard = createUnsavedGuard(() => JSON.stringify(draft));
+
   onMount(async () => {
     await loadClient();
   });
@@ -33,6 +36,7 @@
       const data = await clientsApi.get(clientId);
       client = data;
       draft = applyClientToDraft(data);
+      guard.snapshot();
     } catch (error) {
       toast.error('Failed to load client');
       goto('/clients');
@@ -51,6 +55,7 @@
     try {
       await clientsApi.update(clientId, buildClientPayload(draft, true));
       toast.success('Client updated successfully');
+      guard.allowLeave();
       goto(`/clients/${clientId}`);
     } catch (error) {
       toast.error('Failed to update client');
@@ -65,6 +70,7 @@
 
   function confirmDiscard() {
     showDiscardModal = false;
+    guard.allowLeave();
     goto(`/clients/${clientId}`);
   }
 </script>

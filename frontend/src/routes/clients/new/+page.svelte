@@ -1,6 +1,7 @@
 <script>
   import { goto } from '$app/navigation';
   import { clientsApi } from '$lib/api';
+  import { createUnsavedGuard } from '$lib/unsavedGuard';
   import { toast } from '$lib/stores';
   import { countries } from '$lib/data/countries';
   import { currencies } from '$lib/data/currencies';
@@ -17,6 +18,11 @@
   let showDiscardModal = false;
   let draft = createClientDraft();
 
+  // Warn before leaving with unsaved edits (a stray sidebar click otherwise
+  // silently discards the form).
+  const guard = createUnsavedGuard(() => JSON.stringify(draft));
+  guard.snapshot();
+
   async function saveClient() {
     if (!draft.name.trim() && !draft.business_name.trim()) {
       toast.error('Please enter a contact name or business name');
@@ -27,6 +33,7 @@
     try {
       const client = await clientsApi.create(buildClientPayload(draft));
       toast.success('Client created successfully');
+      guard.allowLeave();
       goto(`/clients/${client.id}`);
     } catch (error) {
       toast.error('Failed to create client');
@@ -41,6 +48,7 @@
 
   function confirmDiscard() {
     showDiscardModal = false;
+    guard.allowLeave();
     goto('/clients');
   }
 </script>

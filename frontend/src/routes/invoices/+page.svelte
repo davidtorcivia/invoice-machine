@@ -1,6 +1,7 @@
 <script>
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
+  import { page } from '$app/stores';
   import { invoicesApi, clientsApi } from '$lib/api';
   import { toast } from '$lib/stores';
   import Header from '$lib/components/Header.svelte';
@@ -23,8 +24,12 @@
   let clients = [];
   let loading = true;
   let filterStatus = '';
+  // string|number: empty string when unset, or the numeric id/year the <select>
+  // binds from its option values.
+  /** @type {string|number} */
   let filterClient = '';
   let filterDocumentType = '';
+  /** @type {string|number} */
   let filterYear = '';
   let filterFromDate = '';
   let filterToDate = '';
@@ -61,10 +66,46 @@
   $: hasFilters = Boolean(filterStatus || filterClient || filterDocumentType || filterYear || filterFromDate || filterToDate);
 
   onMount(async () => {
+    // Restore any filter/sort/page state encoded in the URL so back-navigation
+    // and bookmarks land on the same view.
+    hydrateFromUrl();
     // Clients populate the filter dropdown and never change as you page/sort/filter
     // invoices, so fetch them once here instead of on every loadData().
     await Promise.all([loadClients(), loadData()]);
   });
+
+  function hydrateFromUrl() {
+    const p = $page.url.searchParams;
+    filterStatus = p.get('status') || '';
+    // Numeric so it matches the <option value={client.id}> / {year} types.
+    filterClient = p.get('client') ? Number(p.get('client')) : '';
+    filterDocumentType = p.get('type') || '';
+    filterYear = p.get('year') ? Number(p.get('year')) : '';
+    filterFromDate = p.get('from') || '';
+    filterToDate = p.get('to') || '';
+    sortBy = p.get('sort_by') || 'issue_date';
+    sortDir = p.get('sort_dir') || 'desc';
+    currentPage = Number(p.get('page')) || 1;
+  }
+
+  function syncUrl() {
+    const p = new URLSearchParams();
+    if (filterStatus) p.set('status', filterStatus);
+    if (filterClient) p.set('client', String(filterClient));
+    if (filterDocumentType) p.set('type', filterDocumentType);
+    if (filterYear) p.set('year', String(filterYear));
+    if (filterFromDate) p.set('from', filterFromDate);
+    if (filterToDate) p.set('to', filterToDate);
+    if (sortBy !== 'issue_date') p.set('sort_by', sortBy);
+    if (sortDir !== 'desc') p.set('sort_dir', sortDir);
+    if (currentPage > 1) p.set('page', String(currentPage));
+    const qs = p.toString();
+    goto(qs ? `?${qs}` : $page.url.pathname, {
+      replaceState: true,
+      keepFocus: true,
+      noScroll: true
+    });
+  }
 
   async function loadClients() {
     try {
@@ -102,6 +143,8 @@
       invoices = invoicesData.items || [];
       pagination = invoicesData.pagination || pagination;
       currentPage = pagination.page || currentPage;
+      // Reflect the loaded view in the URL (page may be clamped by the server).
+      syncUrl();
     } catch (error) {
       toast.error('Failed to load invoices');
     } finally {
