@@ -13,9 +13,7 @@
   export let smtpUseTls = true;
   export let smtpPasswordSet = false;
   export let testingSmtp = false;
-  export let savingSmtp = false;
   export let testSmtpConnection;
-  export let saveSmtpSettings;
 </script>
 
 <CollapsibleSection title="Email Settings (SMTP)" subtitle="Send invoices via email" icon="send" bind:open={open}>
@@ -127,20 +125,7 @@
           Test Connection
         {/if}
       </button>
-
-      <button
-        type="button"
-        class="btn btn-primary"
-        on:click={saveSmtpSettings}
-        disabled={savingSmtp}
-      >
-        {#if savingSmtp}
-          <span class="spinner-sm"></span>
-          Saving...
-        {:else}
-          Save SMTP Settings
-        {/if}
-      </button>
+      <p class="form-hint">Saves your SMTP settings before testing.</p>
     </div>
 
     <div class="template-link">
@@ -186,8 +171,13 @@
 
   .form-actions {
     display: flex;
+    align-items: center;
     gap: var(--space-3);
     flex-wrap: wrap;
+  }
+
+  .form-actions .form-hint {
+    margin-top: 0;
   }
 
   .template-link {

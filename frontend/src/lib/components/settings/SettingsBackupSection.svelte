@@ -16,7 +16,6 @@
   export let backupS3Prefix = 'invoice-machine-backups';
   export let testingS3 = false;
   export let testS3Connection;
-  export let saveBackupSettings;
   export let loadingBackups = false;
   export let backups = [];
   export let restoringBackup = null;
@@ -148,15 +147,9 @@
         >
           {testingS3 ? 'Testing...' : 'Test S3 Connection'}
         </button>
+        <p class="form-hint">Saves your backup settings before testing.</p>
       </div>
     {/if}
-  </div>
-
-  <div class="backup-actions mt-4">
-    <button type="button" class="btn btn-secondary" on:click={saveBackupSettings}>
-      <Icon name="check" size="sm" />
-      Save Backup Settings
-    </button>
   </div>
 
   <div class="backup-list mt-4">
@@ -256,11 +249,6 @@
 
   .mb-3 {
     margin-bottom: var(--space-3);
-  }
-
-  .backup-actions {
-    display: flex;
-    gap: var(--space-2);
   }
 
   .backup-list {

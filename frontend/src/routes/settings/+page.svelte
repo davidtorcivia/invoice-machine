@@ -39,7 +39,6 @@
 
   let profile = null;
   let loading = true;
-  let saving = false;
   let openSections = { ...DEFAULT_SETTINGS_SECTIONS };
   let profileForm = createProfileForm();
   let smtpForm = createSmtpForm();
@@ -68,7 +67,6 @@
   let deletingBackup = false;
 
   let testingSmtp = false;
-  let savingSmtp = false;
   let showDeleteMcpModal = false;
   let deletingMcpKey = false;
   let showDeleteBotModal = false;
@@ -78,12 +76,14 @@
 
   $: mcpEndpointUrl = apiAccess.appBaseUrl || (typeof window !== 'undefined' ? window.location.origin : '');
 
-  // Unsaved-changes guard. The page has three independent deferred-save forms
-  // (business profile incl. payment methods + app URL, SMTP, backup), so each is
-  // tracked separately and re-baselined after its own save — that way saving one
-  // never suppresses an unsaved warning for another, and a single prompt covers
-  // any dirty form. Immediate actions (logo, API keys) are not tracked.
-  let allowLeaveSettings = false;
+  // Deferred-save state. The page has three independent deferred-save forms
+  // (business profile incl. payment methods + app URL, SMTP, backup). Each is
+  // tracked against its own post-load snapshot and re-baselined after its own
+  // save; the sticky save bar appears when any form is dirty and saves all
+  // dirty forms at once. Immediate actions (logo, API keys) are not tracked.
+  // The dirty expressions must reference the form variables directly — Svelte
+  // does not trace dependencies through helper-function bodies.
+  let savingAll = false;
   let profileSnapshot = '';
   let smtpSnapshot = '';
   let backupSnapshot = '';
@@ -93,13 +93,20 @@
   const smtpState = () => JSON.stringify(smtpForm);
   const backupState = () => JSON.stringify(backupForm);
 
-  $: settingsDirty =
-    (profileSnapshot !== '' && profileState() !== profileSnapshot) ||
-    (smtpSnapshot !== '' && smtpState() !== smtpSnapshot) ||
-    (backupSnapshot !== '' && backupState() !== backupSnapshot);
+  $: profileDirty =
+    profileSnapshot !== '' &&
+    JSON.stringify({ profileForm, paymentMethods, appBaseUrl: apiAccess.appBaseUrl }) !== profileSnapshot;
+  $: smtpDirty = smtpSnapshot !== '' && JSON.stringify(smtpForm) !== smtpSnapshot;
+  $: backupDirty = backupSnapshot !== '' && JSON.stringify(backupForm) !== backupSnapshot;
+  $: settingsDirty = profileDirty || smtpDirty || backupDirty;
+  $: dirtySectionLabels = [
+    profileDirty && 'Business profile',
+    smtpDirty && 'Email (SMTP)',
+    backupDirty && 'Backup'
+  ].filter(Boolean);
 
   beforeNavigate((nav) => {
-    if (settingsDirty && !allowLeaveSettings && !saving && !savingSmtp) {
+    if (settingsDirty && !savingAll) {
       if (!confirm('You have unsaved changes. Leave without saving?')) {
         nav.cancel();
       }
@@ -138,48 +145,64 @@
     }
   }
 
-  async function saveSmtpSettings() {
-    savingSmtp = true;
-    try {
-      await emailApi.updateSmtpSettings(buildSmtpPayload(smtpForm));
-      toast.success('SMTP settings saved');
-      smtpForm = { ...smtpForm, passwordSet: !!smtpForm.password || smtpForm.passwordSet, password: '' };
-      smtpSnapshot = smtpState();
-    } catch (error) {
-      toast.error(error.message || 'Failed to save SMTP settings');
-    } finally {
-      savingSmtp = false;
+  // persist* helpers save one form and re-baseline its snapshot; they throw on
+  // failure so callers (saveAll, the test-connection flows) control the toasts.
+  async function persistProfile() {
+    await profileApi.update(buildProfilePayload(profileForm, stringifyJsonArray(paymentMethods), apiAccess.appBaseUrl));
+    profileSnapshot = profileState();
+  }
+
+  async function persistSmtp() {
+    await emailApi.updateSmtpSettings(buildSmtpPayload(smtpForm));
+    smtpForm = { ...smtpForm, passwordSet: !!smtpForm.password || smtpForm.passwordSet, password: '' };
+    smtpSnapshot = smtpState();
+  }
+
+  async function persistBackup() {
+    await backupsApi.updateSettings(buildBackupPayload(backupForm));
+    backupSnapshot = backupState();
+  }
+
+  async function saveAll() {
+    if (profileDirty && !profileForm.name.trim()) {
+      toast.error('Please enter your name');
+      return;
     }
+
+    savingAll = true;
+    try {
+      if (profileDirty) await persistProfile();
+      if (smtpDirty) await persistSmtp();
+      if (backupDirty) await persistBackup();
+      toast.success('Settings saved');
+    } catch (error) {
+      toast.error(error.message || 'Failed to save settings');
+    } finally {
+      savingAll = false;
+    }
+  }
+
+  function discardChanges() {
+    if (profileSnapshot) {
+      const snap = JSON.parse(profileSnapshot);
+      profileForm = snap.profileForm;
+      paymentMethods = snap.paymentMethods;
+      apiAccess = { ...apiAccess, appBaseUrl: snap.appBaseUrl };
+    }
+    if (smtpSnapshot) smtpForm = JSON.parse(smtpSnapshot);
+    if (backupSnapshot) backupForm = JSON.parse(backupSnapshot);
   }
 
   async function testSmtpConnection() {
     testingSmtp = true;
     try {
-      await saveSmtpSettings();
+      if (smtpDirty) await persistSmtp();
       const result = await emailApi.testSmtp();
       toast.success(result.message || 'SMTP connection successful');
     } catch (error) {
       toast.error(error.message || 'SMTP connection failed');
     } finally {
       testingSmtp = false;
-    }
-  }
-
-  async function saveProfile() {
-    if (!profileForm.name.trim()) {
-      toast.error('Please enter your name');
-      return;
-    }
-
-    saving = true;
-    try {
-      await profileApi.update(buildProfilePayload(profileForm, stringifyJsonArray(paymentMethods), apiAccess.appBaseUrl));
-      toast.success('Settings saved successfully');
-      profileSnapshot = profileState();
-    } catch (error) {
-      toast.error('Failed to save settings');
-    } finally {
-      saving = false;
     }
   }
 
@@ -387,16 +410,6 @@
     }
   }
 
-  async function saveBackupSettings() {
-    try {
-      await backupsApi.updateSettings(buildBackupPayload(backupForm));
-      toast.success('Backup settings saved');
-      backupSnapshot = backupState();
-    } catch (error) {
-      toast.error('Failed to save backup settings');
-    }
-  }
-
   async function createBackup() {
     creatingBackup = true;
     try {
@@ -458,7 +471,7 @@
   async function testS3Connection() {
     testingS3 = true;
     try {
-      await saveBackupSettings();
+      if (backupDirty) await persistBackup();
       const result = await backupsApi.testS3();
       toast.success(result.message);
     } catch (error) {
@@ -543,9 +556,7 @@
         bind:smtpUseTls={smtpForm.useTls}
         smtpPasswordSet={smtpForm.passwordSet}
         {testingSmtp}
-        {savingSmtp}
         {testSmtpConnection}
-        {saveSmtpSettings}
       />
 
       <SettingsApiAccessSection
@@ -582,7 +593,6 @@
         bind:backupS3Prefix={backupForm.s3Prefix}
         {testingS3}
         {testS3Connection}
-        {saveBackupSettings}
         {loadingBackups}
         {backups}
         {restoringBackup}
@@ -593,17 +603,30 @@
         downloadBackupHref={backupsApi.download}
       />
 
-      <div class="form-actions">
-        <p class="form-hint save-scope-hint">
-          Saves your business profile, branding, defaults and payment methods.
-          The Email (SMTP) and Backup sections each have their own Save button.
-        </p>
-        <button type="button" class="btn btn-primary" on:click={saveProfile} disabled={saving}>
-          <Icon name="check" size="sm" />
-          {saving ? 'Saving...' : 'Save Business Profile'}
-        </button>
-      </div>
     </div>
+
+    {#if settingsDirty}
+      <div class="save-bar" role="status">
+        <span class="save-bar-text">
+          Unsaved changes
+          <span class="save-bar-sections">{dirtySectionLabels.join(' · ')}</span>
+        </span>
+        <div class="save-bar-actions">
+          <button type="button" class="btn btn-secondary" on:click={discardChanges} disabled={savingAll}>
+            Discard
+          </button>
+          <button type="button" class="btn btn-primary" on:click={saveAll} disabled={savingAll}>
+            {#if savingAll}
+              <span class="spinner-sm"></span>
+              Saving...
+            {:else}
+              <Icon name="check" size="sm" />
+              Save Changes
+            {/if}
+          </button>
+        </div>
+      </div>
+    {/if}
   {/if}
 </div>
 
@@ -704,9 +727,54 @@
     gap: var(--space-6);
   }
 
-  .form-actions {
+  .save-bar {
+    position: sticky;
+    bottom: var(--space-4);
+    z-index: 10;
     display: flex;
-    justify-content: flex-end;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-4);
+    margin-top: var(--space-6);
+    padding: var(--space-3) var(--space-4);
+    background: var(--color-bg-elevated);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-lg);
+    animation: save-bar-in 0.15s ease;
+  }
+
+  @keyframes save-bar-in {
+    from {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .save-bar-text {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--color-text);
+    min-width: 0;
+  }
+
+  .save-bar-sections {
+    font-size: 0.75rem;
+    font-weight: 400;
+    color: var(--color-text-tertiary);
+  }
+
+  .save-bar-actions {
+    display: flex;
+    gap: var(--space-2);
+    flex-shrink: 0;
   }
 
   @media (min-width: 1400px) {
@@ -719,6 +787,10 @@
     .page-content {
       padding: var(--space-4);
     }
+
+    .save-bar {
+      bottom: var(--space-3);
+    }
   }
 
   @media (max-width: 480px) {
@@ -726,8 +798,14 @@
       padding: var(--space-3);
     }
 
-    .form-actions .btn {
-      width: 100%;
+    .save-bar {
+      flex-direction: column;
+      align-items: stretch;
+      text-align: center;
+    }
+
+    .save-bar-actions .btn {
+      flex: 1;
     }
   }
 </style>

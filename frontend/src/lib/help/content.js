@@ -7,7 +7,8 @@ export const helpSections = [
 <ol>
   <li>Go to <strong>Settings</strong> to configure your business profile</li>
   <li>Add your business name, address, and upload your logo</li>
-  <li>Set your default payment terms and payment instructions</li>
+  <li>Set your default payment terms, currency, and payment instructions</li>
+  <li>Click <strong>Save Changes</strong> in the bar that appears at the bottom of the screen</li>
   <li>Start creating invoices!</li>
 </ol>`
   },
@@ -30,6 +31,11 @@ export const helpSections = [
   <li>Fill in the details as you would for an invoice</li>
   <li>Quotes are numbered separately using the format Q-YYYYMMDD-N</li>
 </ol>
+<p>When a quote is accepted, open it and click <strong>Convert to Invoice</strong> — it gets a fresh invoice number and joins your normal invoice workflow.</p>
+<h3>Currency</h3>
+<p>Each invoice can use its own currency. The default comes from Settings, and each client can have a preferred currency that is applied automatically.</p>
+<h3>Reference / PO Number</h3>
+<p>Use the client reference field to record a purchase order or job number with the invoice.</p>
 <h3>Hours vs Quantity</h3>
 <p>Each line item can be set to either "Qty" or "Hours" using the Type dropdown. This changes the column header in the PDF to reflect the appropriate unit.</p>
 <h3>Payment Methods</h3>
@@ -54,6 +60,22 @@ export const helpSections = [
   <li>Quotes use: <code>Q-YYYYMMDD-N</code></li>
 </ul>
 <p class="note"><strong>Note:</strong> Changing an invoice's issue date will regenerate its number based on the new date.</p>`
+  },
+  {
+    key: 'invoiceWorkflow',
+    title: 'Invoice Statuses & Workflow',
+    icon: 'check',
+    content: `<p>Invoices move through a status lifecycle: <strong>Draft</strong> &rarr; <strong>Sent</strong> &rarr; <strong>Paid</strong>, with <strong>Overdue</strong> and <strong>Cancelled</strong> as needed. Quotes use Draft, Sent, and Cancelled.</p>
+<h3>Changing Status</h3>
+<ul>
+  <li>Open an invoice and use the status selector at the top, or the <strong>Mark as Sent</strong> / <strong>Mark as Paid</strong> shortcut buttons</li>
+  <li>Marking an invoice paid records the payment date, which is used in reports</li>
+  <li>Sent invoices past their due date are automatically marked <strong>Overdue</strong> once a day</li>
+</ul>
+<h3>Bulk Actions</h3>
+<p>On the Invoices list, select multiple invoices with the checkboxes to <strong>Mark Sent</strong>, <strong>Mark Paid</strong>, or <strong>Delete</strong> them in one step.</p>
+<h3>Filtering & Pagination</h3>
+<p>The Invoices list can be filtered by status, client, document type (invoice/quote), and date. Filters and the current page are reflected in the URL, so you can bookmark or share a filtered view. The Clients list is paginated the same way.</p>`
   },
   {
     key: 'managingClients',
@@ -81,12 +103,14 @@ export const helpSections = [
     key: 'settings',
     title: 'Settings Overview',
     icon: 'settings',
-    content: `<h3>Business Profile</h3>
+    content: `<h3>Saving Changes</h3>
+<p>When you edit any setting, a <strong>Save Changes</strong> bar appears at the bottom of the screen showing which sections have unsaved changes. Click <strong>Save Changes</strong> to save everything at once, or <strong>Discard</strong> to revert. Logo uploads and API key actions apply immediately and don't need saving.</p>
+<h3>Business Profile</h3>
 <p>Configure your company name, address, phone, email, and tax ID (EIN). This information appears on all invoices.</p>
 <h3>Logo</h3>
-<p>Upload your company logo. Supported formats: PNG, JPG, GIF, WebP. Maximum size: 5MB. Click the trash icon to remove your logo.</p>
-<h3>Default Payment Terms</h3>
-<p>Set the default number of days until an invoice is due. This is automatically applied to new invoices but can be changed per invoice.</p>
+<p>Upload your company logo. Supported formats: PNG/JPEG, GIF, WebP. Maximum size: 5MB. Click the trash icon to remove your logo.</p>
+<h3>Invoice Defaults</h3>
+<p>Set the default payment terms (days until due), default currency, default notes, and payment instructions. These are applied to new invoices but can be changed per invoice.</p>
 <h3>Payment Methods</h3>
 <p>Add multiple payment options (Bank Transfer, Venmo, Zelle, PayPal, etc.) with their specific instructions. When creating invoices, you can select which payment methods to show on the PDF.</p>
 <h3>Accent Color</h3>
@@ -141,10 +165,12 @@ export const helpSections = [
     content: `<p>Send invoices directly to clients via SMTP email.</p>
 <h3>Configuration</h3>
 <ol>
-  <li>Go to <strong>Settings</strong> &gt; <strong>Email Configuration</strong></li>
+  <li>Go to <strong>Settings</strong> &gt; <strong>Email Settings (SMTP)</strong></li>
   <li>Configure your SMTP server host, port, credentials, and sender identity</li>
-  <li>Click <strong>Test Connection</strong> to verify settings</li>
+  <li>Click <strong>Test Connection</strong> to verify settings (this also saves them)</li>
 </ol>
+<h3>Email Templates</h3>
+<p>Click <strong>Configure Email Templates</strong> in the SMTP section to customize the default subject and body used for invoice emails, with placeholders for details like the invoice number and client name.</p>
 <h3>Sending Invoices</h3>
 <p>On any invoice, click <strong>Send Email</strong> to deliver the PDF to the client. Works with any SMTP provider (Gmail, SendGrid, Mailgun, etc.).</p>`
   },
@@ -210,7 +236,14 @@ export const helpSections = [
   <li><code>logos/</code> - Your uploaded logo files</li>
   <li><code>pdfs/</code> - Generated PDF files</li>
 </ul>
-<p>To backup your data, copy the entire <code>data/</code> directory, or use the built-in backup feature in Settings.</p>`
+<h3>Backups</h3>
+<p>Manage backups in <strong>Settings</strong> &gt; <strong>Backup &amp; Restore</strong>:</p>
+<ul>
+  <li><strong>Automatic backups</strong> run daily; old backups are pruned after the configured retention period</li>
+  <li><strong>Create Backup</strong> takes a manual backup at any time</li>
+  <li>Optionally upload backups to <strong>S3-compatible storage</strong> (AWS S3, Backblaze B2, MinIO, etc.)</li>
+  <li>Each backup can be <strong>downloaded</strong>, <strong>restored</strong>, or deleted from the list; restoring creates a pre-restore backup automatically</li>
+</ul>`
   },
   {
     key: 'mcpIntegration',
