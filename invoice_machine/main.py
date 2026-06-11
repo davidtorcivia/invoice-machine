@@ -63,8 +63,14 @@ app.include_router(email_templates.router)
 app.include_router(search.router)
 app.include_router(analytics.router)
 
+# Streamable HTTP is the primary MCP transport. It must be an exact "/mcp"
+# route on the main app (not a route inside the mount below) because hitting a
+# mount root triggers a 307 redirect that not all MCP clients follow.
+app.add_route("/mcp", mcp.mcp_streamable_http_handler, methods=["POST", "GET", "DELETE"])
+
 mcp_asgi_app = Starlette(
     routes=[
+        # Legacy SSE transport, kept for existing client configs.
         Route("/sse", endpoint=mcp.mcp_sse_handler),
         Route("/messages/", endpoint=mcp.mcp_messages_handler, methods=["POST"]),
         Route("/status", endpoint=mcp.mcp_status_handler),

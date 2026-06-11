@@ -630,16 +630,20 @@ class TestEmailTemplateMCPTools:
     async def _bind_mcp_to_test_db(self, session_maker):
         """Route MCP direct calls to the current test database session maker."""
         import invoice_machine.database
-        import invoice_machine.mcp.server as mcp_server
+        import invoice_machine.mcp.context as mcp_context
 
         original_maker = invoice_machine.database.async_session_maker
         invoice_machine.database.async_session_maker = session_maker
-        mcp_server._schema_initialized = False
+        # Schema already built via create_all; mark initialized so get_session()
+        # doesn't run real migrations (and open a never-closed connection)
+        # against the production database. The flag lives in mcp.context.
+        original_initialized = mcp_context._schema_initialized
+        mcp_context._schema_initialized = True
         try:
             yield
         finally:
             invoice_machine.database.async_session_maker = original_maker
-            mcp_server._schema_initialized = False
+            mcp_context._schema_initialized = original_initialized
 
     @pytest.mark.asyncio
     async def test_mcp_get_templates_structure(self, db_session, business_profile):

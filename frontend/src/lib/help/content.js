@@ -249,18 +249,20 @@ export const helpSections = [
     key: 'mcpIntegration',
     title: 'Claude Desktop (MCP) Integration',
     icon: 'settings',
-    content: `<p>Invoice Machine supports the Model Context Protocol (MCP), allowing you to manage invoices through natural language with Claude Desktop.</p>
+    content: `<p>Invoice Machine supports the Model Context Protocol (MCP), allowing you to manage invoices through natural language with Claude Desktop or claude.ai.</p>
 <h3>Remote Setup (Recommended)</h3>
 <ol>
   <li>Go to <strong>Settings</strong> in Invoice Machine</li>
   <li>Scroll to <strong>MCP Integration</strong> and click <strong>Generate API Key</strong></li>
   <li>Copy the configuration shown and add it to your Claude Desktop config file</li>
 </ol>
+<p>The server uses the MCP <strong>Streamable HTTP</strong> transport at <code>/mcp</code>. Each call is an independent request, so the connection survives proxy timeouts and server restarts. Clients that support remote MCP servers directly (such as claude.ai custom connectors) can use the endpoint URL with the Bearer token — no <code>mcp-remote</code> needed.</p>
 <p><strong>Config file location:</strong></p>
 <ul>
   <li><strong>macOS:</strong> <code>~/Library/Application Support/Claude/claude_desktop_config.json</code></li>
   <li><strong>Windows:</strong> <code>%APPDATA%\\Claude\\claude_desktop_config.json</code></li>
-</ul>`
+</ul>
+<p>The older SSE endpoint at <code>/mcp/sse</code> still works for existing configs, but the <code>/mcp</code> endpoint is more reliable and recommended.</p>`
   },
   {
     key: 'botApiIntegration',

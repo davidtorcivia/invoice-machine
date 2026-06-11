@@ -240,7 +240,7 @@ Invoice Machine works with Claude Desktop through MCP. You can create invoices, 
       "command": "npx",
       "args": [
         "mcp-remote",
-        "https://your-server.com/mcp/sse",
+        "https://your-server.com/mcp",
         "--header",
         "Authorization: Bearer YOUR_MCP_API_KEY"
       ]
@@ -252,6 +252,8 @@ Invoice Machine works with Claude Desktop through MCP. You can create invoices, 
 Replace `your-server.com` with your actual domain and `YOUR_MCP_API_KEY` with the key from Settings.
 
 The MCP endpoint runs on the same port as the web app. Works with Cloudflare Tunnel or any reverse proxy.
+
+The `/mcp` endpoint uses the Streamable HTTP transport (stateless), so connections survive proxy idle timeouts and app restarts. Clients that support remote MCP servers natively can use the URL directly with the same Bearer token, without `mcp-remote`. The legacy SSE transport remains available at `/mcp/sse`.
 
 ### Key Scope
 

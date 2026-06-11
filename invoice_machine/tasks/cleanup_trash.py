@@ -8,8 +8,8 @@ import asyncio
 import logging
 from datetime import timedelta
 
+import invoice_machine.database as db
 from invoice_machine.config import get_settings
-from invoice_machine.database import async_session_maker
 from invoice_machine.services import purge_trashed_records
 from invoice_machine.utils import utc_now
 
@@ -21,7 +21,7 @@ async def cleanup_trash():
     settings = get_settings()
     purge_threshold = timedelta(days=settings.trash_retention_days)
 
-    async with async_session_maker() as session:
+    async with db.async_session_maker() as session:
         cutoff = utc_now() - purge_threshold
 
         result = await purge_trashed_records(session, deleted_before=cutoff)

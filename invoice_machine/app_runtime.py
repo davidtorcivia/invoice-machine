@@ -9,6 +9,7 @@ from datetime import timedelta
 
 from fastapi import FastAPI
 
+from invoice_machine.api.mcp import streamable_http_lifespan
 from invoice_machine.config import get_settings
 from invoice_machine.database import close_db
 from invoice_machine.runtime_schema import ensure_database_schema
@@ -202,7 +203,9 @@ async def lifespan(app: FastAPI):
         ]
     logger.info("Invoice Machine ready! Listening on port %s", settings.port)
 
-    yield
+    # MCP Streamable HTTP needs a running session manager for the app's lifetime.
+    async with streamable_http_lifespan():
+        yield
 
     for task in tasks:
         task.cancel()

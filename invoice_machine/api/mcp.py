@@ -1,17 +1,25 @@
-"""MCP SSE endpoints for remote access via Claude Desktop."""
+"""MCP remote-access endpoints (Streamable HTTP + legacy SSE)."""
 
+
+from contextlib import asynccontextmanager
 
 from starlette.requests import Request
 from starlette.responses import Response as StarletteResponse
 
+import invoice_machine.database as db
 from invoice_machine.crypto import verify_api_key
-from invoice_machine.database import BusinessProfile, async_session_maker
+from invoice_machine.database import BusinessProfile
 from invoice_machine.rate_limit import bearer_auth_throttle, get_client_ip
 
 
 async def get_mcp_api_key_hash() -> str | None:
-    """Get the MCP API key hash from the database."""
-    async with async_session_maker() as session:
+    """Get the MCP API key hash from the database.
+
+    Resolves async_session_maker at call time (not import time) so the test
+    suite's session-maker swap takes effect; an early-bound reference would
+    silently read the real production database from tests.
+    """
+    async with db.async_session_maker() as session:
         profile = await BusinessProfile.get(session)
         return profile.mcp_api_key if profile else None
 
@@ -45,6 +53,62 @@ async def verify_mcp_auth(request: Request) -> bool:
     if not result:
         bearer_auth_throttle.record_failure(client_ip)
     return result
+
+
+# Streamable HTTP session manager - created by streamable_http_lifespan().
+# None whenever the lifespan isn't running (startup/shutdown), so the handler
+# can answer 503 instead of crashing.
+_http_session_manager = None
+
+
+@asynccontextmanager
+async def streamable_http_lifespan():
+    """Run the Streamable HTTP session manager for the app's lifetime.
+
+    A StreamableHTTPSessionManager cannot be reused after its run() context
+    exits, so a fresh instance is created on every entry (the app lifespan runs
+    once per process in production, but repeatedly across tests).
+    """
+    global _http_session_manager
+
+    from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
+
+    from invoice_machine.mcp.server import mcp
+
+    manager = StreamableHTTPSessionManager(
+        app=mcp._mcp_server,
+        # Stateless + JSON responses: every MCP call is an independent POST
+        # with no server-side session and no long-lived stream, so proxies
+        # (Cloudflare) dropping idle connections can't strand the client the
+        # way the SSE transport's per-connection sessions could.
+        json_response=True,
+        stateless=True,
+    )
+    _http_session_manager = manager
+    try:
+        async with manager.run():
+            yield
+    finally:
+        _http_session_manager = None
+
+
+class MCPStreamableHTTPHandler:
+    """ASGI app for the Streamable HTTP endpoint (modern MCP transport)."""
+
+    async def __call__(self, scope, receive, send):
+        request = Request(scope, receive, send)
+
+        if not await verify_mcp_auth(request):
+            response = StarletteResponse("MCP API key required", status_code=401)
+            await response(scope, receive, send)
+            return
+
+        if _http_session_manager is None:
+            response = StarletteResponse("MCP server not ready", status_code=503)
+            await response(scope, receive, send)
+            return
+
+        await _http_session_manager.handle_request(scope, receive, send)
 
 
 # Global SSE transport - initialized lazily
@@ -116,7 +180,9 @@ class MCPStatusHandler:
         api_key_hash = await get_mcp_api_key_hash()
         body = json.dumps({
             "enabled": bool(api_key_hash),
-            "endpoint": "/mcp/sse",
+            "endpoint": "/mcp",
+            "transport": "streamable-http",
+            "legacy_sse_endpoint": "/mcp/sse",
         })
 
         response = StarletteResponse(
@@ -128,6 +194,7 @@ class MCPStatusHandler:
 
 
 # Instantiate the ASGI handlers
+mcp_streamable_http_handler = MCPStreamableHTTPHandler()
 mcp_sse_handler = MCPSseHandler()
 mcp_messages_handler = MCPMessagesHandler()
 mcp_status_handler = MCPStatusHandler()

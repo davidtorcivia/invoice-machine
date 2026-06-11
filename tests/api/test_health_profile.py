@@ -58,6 +58,97 @@ class TestHealthEndpoint:
         assert response.status_code == 405
 
 
+class TestMcpStreamableHttp:
+    """Tests for the Streamable HTTP MCP transport at /mcp."""
+
+    HEADERS = {
+        "Content-Type": "application/json",
+        "Accept": "application/json, text/event-stream",
+    }
+
+    @staticmethod
+    def _rpc(method: str, request_id: int = 1, **params):
+        return {"jsonrpc": "2.0", "id": request_id, "method": method, "params": params}
+
+    @pytest.mark.asyncio
+    async def test_requires_bearer_auth(self, test_client):
+        """POST /mcp without a valid key is rejected before reaching the transport."""
+        from invoice_machine.api.mcp import streamable_http_lifespan
+
+        await test_client.post("/api/profile/mcp-key")  # key configured, but not sent
+
+        mcp_client = AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
+        try:
+            async with streamable_http_lifespan():
+                response = await mcp_client.post(
+                    "/mcp", headers=self.HEADERS, json=self._rpc("initialize")
+                )
+        finally:
+            await mcp_client.aclose()
+
+        assert response.status_code == 401
+
+    @pytest.mark.asyncio
+    async def test_returns_503_when_session_manager_not_running(self, test_client):
+        """Outside the app lifespan the endpoint fails closed instead of crashing."""
+        key_response = await test_client.post("/api/profile/mcp-key")
+        mcp_key = key_response.json()["mcp_api_key"]
+
+        mcp_client = AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
+        try:
+            response = await mcp_client.post(
+                "/mcp",
+                headers={**self.HEADERS, "Authorization": f"Bearer {mcp_key}"},
+                json=self._rpc("initialize"),
+            )
+        finally:
+            await mcp_client.aclose()
+
+        assert response.status_code == 503
+
+    @pytest.mark.asyncio
+    async def test_stateless_tool_calls_work_without_session(self, test_client):
+        """Each request stands alone: initialize and a bare tools/list both succeed.
+
+        This is the property that fixes the Cloudflare drop bug — no server-side
+        session means nothing to lose when a connection dies.
+        """
+        from invoice_machine.api.mcp import streamable_http_lifespan
+
+        key_response = await test_client.post("/api/profile/mcp-key")
+        mcp_key = key_response.json()["mcp_api_key"]
+        headers = {**self.HEADERS, "Authorization": f"Bearer {mcp_key}"}
+
+        mcp_client = AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
+        try:
+            async with streamable_http_lifespan():
+                init_response = await mcp_client.post(
+                    "/mcp",
+                    headers=headers,
+                    json=self._rpc(
+                        "initialize",
+                        protocolVersion="2025-03-26",
+                        capabilities={},
+                        clientInfo={"name": "test", "version": "0"},
+                    ),
+                )
+                # No session header carried over: stateless mode must still serve this.
+                list_response = await mcp_client.post(
+                    "/mcp", headers=headers, json=self._rpc("tools/list", request_id=2)
+                )
+        finally:
+            await mcp_client.aclose()
+
+        assert init_response.status_code == 200
+        assert (
+            init_response.json()["result"]["serverInfo"]["name"] == "invoice-machine"
+        )
+
+        assert list_response.status_code == 200
+        tool_names = {t["name"] for t in list_response.json()["result"]["tools"]}
+        assert "get_business_profile" in tool_names
+
+
 class TestProfileEndpoints:
     """Tests for business profile endpoints."""
 

@@ -17,9 +17,10 @@ from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.concurrency import run_in_threadpool
 
+import invoice_machine.database as db
 from invoice_machine.config import get_settings
 from invoice_machine.database import Session as DbSession
-from invoice_machine.database import User, async_session_maker, get_session
+from invoice_machine.database import User, get_session
 from invoice_machine.rate_limit import limiter
 from invoice_machine.utils import utc_now
 
@@ -172,7 +173,7 @@ async def get_session_user_id(token: str) -> int | None:
     Returns:
         The user_id if session is valid, None otherwise
     """
-    async with async_session_maker() as db_session:
+    async with db.async_session_maker() as db_session:
         session = await get_session_data(db_session, token)
         if session and session.user_id:
             return session.user_id
@@ -188,7 +189,7 @@ async def run_session_cleanup() -> int:
     Returns:
         Number of sessions deleted
     """
-    async with async_session_maker() as db_session:
+    async with db.async_session_maker() as db_session:
         count = await cleanup_expired_sessions(db_session)
         await db_session.commit()
         return count

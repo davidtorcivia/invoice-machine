@@ -64,7 +64,7 @@
       </div>
       <div class="mcp-status-info">
         <span class="mcp-status-label">Remote access enabled</span>
-        <span class="mcp-status-endpoint">Endpoint: <code>{mcpEndpointUrl}/mcp/sse</code></span>
+        <span class="mcp-status-endpoint">Endpoint: <code>{mcpEndpointUrl}/mcp</code></span>
       </div>
     </div>
 
@@ -113,18 +113,21 @@
     <details>
       <summary>How to configure Claude Desktop</summary>
       <div class="mcp-help-content">
-        <p>Add this to your Claude Desktop config file:</p>
+        <p>Add this to your Claude Desktop config file (requires Node.js for <code>mcp-remote</code>):</p>
         <pre class="code-block">{`{
   "mcpServers": {
     "invoice-machine": {
-      "transport": "sse",
-      "url": "${mcpEndpointUrl}/mcp/sse",
-      "headers": {
-        "Authorization": "Bearer ${mcpApiKey || 'YOUR_API_KEY'}"
-      }
+      "command": "npx",
+      "args": [
+        "mcp-remote",
+        "${mcpEndpointUrl}/mcp",
+        "--header",
+        "Authorization: Bearer ${mcpApiKey || 'YOUR_API_KEY'}"
+      ]
     }
   }
 }`}</pre>
+        <p class="mt-2">Clients that support remote MCP servers directly (e.g. claude.ai custom connectors) can use the endpoint URL <code>{mcpEndpointUrl}/mcp</code> with the same Bearer token instead.</p>
         <p class="mt-2"><strong>Config file location:</strong></p>
         <ul>
           <li><strong>macOS:</strong> <code>~/Library/Application Support/Claude/claude_desktop_config.json</code></li>
