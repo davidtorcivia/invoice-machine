@@ -134,6 +134,28 @@ class TestExpandTemplate:
         result = expand_template("Invoice {invoice_number}", mock_invoice, mock_profile)
         assert result == "Invoice 20250115-1"
 
+    def test_paid_invoice_omits_payment_link(self, mock_invoice, mock_profile):
+        mock_profile.online_payments_enabled = 1
+        mock_invoice.online_payment_enabled = 1
+        mock_invoice.payment_token = "payment-token"
+        mock_invoice.status = "paid"
+        mock_invoice.deleted_at = None
+
+        result = expand_template("{payment_link_line}", mock_invoice, mock_profile)
+
+        assert result == ""
+
+    def test_sent_invoice_includes_payment_link(self, mock_invoice, mock_profile):
+        mock_profile.online_payments_enabled = 1
+        mock_invoice.online_payment_enabled = 1
+        mock_invoice.payment_token = "payment-token"
+        mock_invoice.status = "sent"
+        mock_invoice.deleted_at = None
+
+        result = expand_template("{payment_link_line}", mock_invoice, mock_profile)
+
+        assert result.endswith("/pay/payment-token")
+
     def test_expand_quote_number(self, mock_invoice, mock_profile):
         """Expand quote number placeholder (same as invoice number)."""
         result = expand_template("Quote {quote_number}", mock_invoice, mock_profile)

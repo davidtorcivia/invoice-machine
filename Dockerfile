@@ -30,7 +30,12 @@ ENV PATH="/opt/venv/bin:$PATH"
 WORKDIR /app
 COPY pyproject.toml README.md ./
 COPY invoice_machine/ ./invoice_machine/
-RUN pip install --no-cache-dir .
+ARG INVOICE_MACHINE_EXTRAS=""
+RUN if [ -n "$INVOICE_MACHINE_EXTRAS" ]; then \
+      pip install --no-cache-dir ".[${INVOICE_MACHINE_EXTRAS}]"; \
+    else \
+      pip install --no-cache-dir .; \
+    fi
 
 # ---------------------------------------------------------------------------
 # Stage 3: slim runtime image (no compilers, no Node, no build cruft).

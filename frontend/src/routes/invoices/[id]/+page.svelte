@@ -10,6 +10,7 @@
   import InvoiceLineItemsSummaryCard from '$lib/components/invoices/InvoiceLineItemsSummaryCard.svelte';
   import InvoiceSidebarDetailsCard from '$lib/components/invoices/InvoiceSidebarDetailsCard.svelte';
   import InvoiceStatusBanner from '$lib/components/invoices/InvoiceStatusBanner.svelte';
+  import InvoicePaymentsCard from '$lib/components/invoices/InvoicePaymentsCard.svelte';
   import SendInvoiceEmailModal from '$lib/components/invoices/SendInvoiceEmailModal.svelte';
 
   $: invoiceId = $page.params.id || '';
@@ -196,6 +197,9 @@
         />
         <InvoiceClientCard {invoice} />
         <InvoiceLineItemsSummaryCard {invoice} {items} />
+        {#if !isQuote}
+          <InvoicePaymentsCard {invoice} on:change={loadInvoice} />
+        {/if}
 
         {#if invoice.notes}
           <div class="card">

@@ -65,7 +65,7 @@ export const helpSections = [
     key: 'invoiceWorkflow',
     title: 'Invoice Statuses & Workflow',
     icon: 'check',
-    content: `<p>Invoices move through a status lifecycle: <strong>Draft</strong> &rarr; <strong>Sent</strong> &rarr; <strong>Paid</strong>, with <strong>Overdue</strong> and <strong>Cancelled</strong> as needed. Quotes use Draft, Sent, and Cancelled.</p>
+    content: `<p>Invoices move through a status lifecycle: <strong>Draft</strong> &rarr; <strong>Sent</strong> &rarr; <strong>Partially paid</strong> &rarr; <strong>Paid</strong>, with <strong>Overdue</strong> and <strong>Cancelled</strong> as needed. Quotes use Draft, Sent, and Cancelled.</p>
 <h3>Changing Status</h3>
 <ul>
   <li>Open an invoice and use the status selector at the top, or the <strong>Mark as Sent</strong> / <strong>Mark as Paid</strong> shortcut buttons</li>
@@ -76,6 +76,16 @@ export const helpSections = [
 <p>On the Invoices list, select multiple invoices with the checkboxes to <strong>Mark Sent</strong>, <strong>Mark Paid</strong>, or <strong>Delete</strong> them in one step.</p>
 <h3>Filtering & Pagination</h3>
 <p>The Invoices list can be filtered by status, client, document type (invoice/quote), and date. Filters and the current page are reflected in the URL, so you can bookmark or share a filtered view. The Clients list is paginated the same way.</p>`
+  },
+  {
+    key: 'paymentsReminders',
+    title: 'Payments & Reminders',
+    icon: 'dollar',
+    content: `<p>Manual payments are built in and do not require Stripe or another provider. Open an invoice to record full or partial payments and see its balance history.</p>
+<h3>Optional online payments</h3>
+<p>Online providers are disabled by default. Community self-hosters can install Stripe support, enter their own credentials under <strong>Settings &gt; Payments &amp; reminders</strong>, and explicitly allow payment links. Invoice Machine continues to work normally with no provider.</p>
+<h3>Payment reminders</h3>
+<p>Reminders use your SMTP configuration and are independent of online payments. Set days relative to the due date (negative values send before it), your IANA timezone, and the local send hour. Sent, failed, and retried deliveries are logged to prevent duplicate reminders.</p>`
   },
   {
     key: 'managingClients',

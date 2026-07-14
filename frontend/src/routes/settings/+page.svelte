@@ -36,6 +36,7 @@
   import SettingsPaymentMethodsSection from '$lib/components/settings/SettingsPaymentMethodsSection.svelte';
   import SettingsSmtpSection from '$lib/components/settings/SettingsSmtpSection.svelte';
   import SettingsTaxSection from '$lib/components/settings/SettingsTaxSection.svelte';
+  import SettingsAutomationSection from '$lib/components/settings/SettingsAutomationSection.svelte';
 
   let profile = null;
   let loading = true;
@@ -536,6 +537,8 @@
         {openEditMethodModal}
         {deletePaymentMethod}
       />
+
+      <SettingsAutomationSection />
 
       <SettingsTaxSection
         bind:open={openSections.taxSettings}

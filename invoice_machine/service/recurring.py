@@ -42,6 +42,9 @@ class RecurringService:
         tax_rate: Decimal | None = None,
         tax_name: str | None = None,
         next_invoice_date: date | None = None,
+        auto_send: bool = False,
+        reminders_enabled: bool = True,
+        online_payment_enabled: bool = False,
     ) -> RecurringSchedule:
         """Create a new recurring schedule."""
         validate_recurring_schedule(
@@ -74,6 +77,9 @@ class RecurringService:
             tax_enabled=tax_enabled,
             tax_rate=tax_rate,
             tax_name=tax_name,
+            auto_send=1 if auto_send else 0,
+            reminders_enabled=1 if reminders_enabled else 0,
+            online_payment_enabled=1 if online_payment_enabled else 0,
             next_invoice_date=next_invoice_date,
         )
         session.add(schedule)
@@ -262,7 +268,15 @@ class RecurringService:
                         tax_enabled=schedule.tax_enabled,
                         tax_rate=schedule.tax_rate,
                         tax_name=schedule.tax_name,
+                        reminders_enabled=bool(schedule.reminders_enabled),
+                        online_payment_enabled=bool(schedule.online_payment_enabled),
                     )
+
+                    email_result = None
+                    if schedule.auto_send:
+                        from invoice_machine.service.email import send_invoice_email
+
+                        email_result = await send_invoice_email(session, invoice.id)
 
                     schedule.last_invoice_id = invoice.id
                     schedule.next_invoice_date = RecurringService.calculate_next_date(
@@ -281,6 +295,7 @@ class RecurringService:
                         "invoice_number": invoice.invoice_number,
                         "issue_date": period_date.isoformat(),
                         "success": True,
+                        "email": email_result,
                     })
 
                 if generated >= _MAX_CATCHUP_PER_SCHEDULE and schedule.next_invoice_date <= today:
@@ -333,7 +348,15 @@ class RecurringService:
                 tax_enabled=schedule.tax_enabled,
                 tax_rate=schedule.tax_rate,
                 tax_name=schedule.tax_name,
+                reminders_enabled=bool(schedule.reminders_enabled),
+                online_payment_enabled=bool(schedule.online_payment_enabled),
             )
+
+            email_result = None
+            if schedule.auto_send:
+                from invoice_machine.service.email import send_invoice_email
+
+                email_result = await send_invoice_email(session, invoice.id)
 
             schedule.last_invoice_id = invoice.id
             schedule.next_invoice_date = RecurringService.calculate_next_date(
@@ -347,6 +370,7 @@ class RecurringService:
                 "invoice_id": invoice.id,
                 "invoice_number": invoice.invoice_number,
                 "next_invoice_date": schedule.next_invoice_date.isoformat(),
+                "email": email_result,
             }
         except Exception as exc:
             return {"success": False, "error": str(exc)}

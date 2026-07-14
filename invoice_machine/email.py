@@ -129,6 +129,8 @@ Please find attached {document_type_lower} {invoice_number} for {line_items}.
 Amount: {total}
 Due Date: {due_date}
 
+{payment_link_line}
+
 Thank you for your business!
 
 Best regards,
@@ -153,6 +155,7 @@ def expand_template(template: str, invoice: "Invoice", profile: "BusinessProfile
     - {your_name} - Business profile name
     - {business_name} - Business name from profile
     - {line_items} - Comma-separated list of line item descriptions
+    - {payment_url}, {payment_link_line} - Optional hosted payment link
 
     Args:
         template: Template string with placeholders
@@ -179,6 +182,18 @@ def expand_template(template: str, invoice: "Invoice", profile: "BusinessProfile
     except Exception:
         line_items_text = "services rendered"
 
+    payment_url = None
+    if (
+        getattr(profile, "online_payments_enabled", 0)
+        and getattr(invoice, "online_payment_enabled", 0)
+        and getattr(invoice, "payment_token", None)
+        and getattr(invoice, "document_type", "invoice") == "invoice"
+        and getattr(invoice, "status", "draft")
+        in {"sent", "overdue", "partially_paid"}
+        and getattr(invoice, "deleted_at", None) is None
+    ):
+        payment_url = f"{settings.app_base_url.rstrip('/')}/pay/{invoice.payment_token}"
+
     replacements = {
         "{invoice_number}": invoice.invoice_number,
         "{quote_number}": invoice.invoice_number,
@@ -195,6 +210,8 @@ def expand_template(template: str, invoice: "Invoice", profile: "BusinessProfile
         "{your_name}": profile.name or profile.business_name or "Invoice Machine",
         "{business_name}": profile.business_name or profile.name or "",
         "{line_items}": line_items_text,
+        "{payment_url}": payment_url or "",
+        "{payment_link_line}": f"Pay securely online: {payment_url}" if payment_url else "",
     }
 
     result = template

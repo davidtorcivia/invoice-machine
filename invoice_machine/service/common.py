@@ -24,7 +24,7 @@ CENTS = Decimal("0.01")
 # Statuses that count as actually billed. Excludes "draft" (not yet issued) and
 # "cancelled" (voided) so neither inflates invoiced/revenue/LTV totals. Shared by
 # the REST analytics service and the MCP client-context tool so they agree.
-BILLED_STATUSES = ("sent", "paid", "overdue")
+BILLED_STATUSES = ("sent", "partially_paid", "paid", "overdue")
 
 
 def quantize_money(amount: Decimal | float | int | str) -> Decimal:

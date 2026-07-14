@@ -19,8 +19,10 @@ from invoice_machine.api import (
     email_templates,
     invoices,
     mcp,
+    payments,
     profile,
     recurring,
+    reminders,
     search,
     trash,
 )
@@ -62,6 +64,9 @@ app.include_router(email.router)
 app.include_router(email_templates.router)
 app.include_router(search.router)
 app.include_router(analytics.router)
+app.include_router(payments.router)
+app.include_router(payments.public_router)
+app.include_router(reminders.router)
 
 # Streamable HTTP is the primary MCP transport. It must be an exact "/mcp"
 # route on the main app (not a route inside the mount below) because hitting a

@@ -116,6 +116,9 @@ async def generate_pdf(session: AsyncSession, invoice: Invoice) -> str:
     """
     # Get business profile
     business = await BusinessProfile.get_or_create(session)
+    from invoice_machine.service.payments import PaymentService
+
+    payment_summary = await PaymentService.payment_summary(session, invoice)
 
     # Get invoice items (sorted)
     from sqlalchemy import select
@@ -177,6 +180,14 @@ async def generate_pdf(session: AsyncSession, invoice: Invoice) -> str:
     # Determine if we should show payment section
     # Show if we have payment instructions (from selected methods or default)
     show_payment_section = bool(payment_instructions and (selected_payment_methods or show_payment_instructions))
+    payment_url = None
+    if (
+        business.online_payments_enabled
+        and getattr(invoice, "online_payment_enabled", 0)
+        and getattr(invoice, "payment_token", None)
+        and payment_summary["outstanding"] > 0
+    ):
+        payment_url = f"{settings.app_base_url.rstrip('/')}/pay/{invoice.payment_token}"
 
     # Render HTML
     html = template.render(
@@ -188,6 +199,9 @@ async def generate_pdf(session: AsyncSession, invoice: Invoice) -> str:
         has_hours=has_hours,
         show_payment_instructions=show_payment_section,
         payment_instructions=payment_instructions,
+        payment_url=payment_url,
+        amount_paid=payment_summary["paid"],
+        amount_outstanding=payment_summary["outstanding"],
     )
 
     # Generate PDF filename

@@ -13,10 +13,8 @@ os.environ.setdefault("CORS_ORIGINS", "http://localhost:3000,http://localhost:80
 os.environ.setdefault("SECURE_COOKIES", "false")
 os.environ.setdefault("APP_BASE_URL", "http://localhost:8080")
 
-import tempfile
 from datetime import date, timedelta
 from decimal import Decimal
-from pathlib import Path
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -32,13 +30,15 @@ _limiter.enabled = False
 
 
 @pytest.fixture(scope="function")
-def temp_db_path():
-    """Create a temporary database file."""
-    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
-        path = f.name
-    yield path
-    # Cleanup
-    Path(path).unlink(missing_ok=True)
+def temp_db_path(tmp_path):
+    """Return a per-test database path managed by pytest.
+
+    Using pytest's temporary directory avoids racing aiosqlite's worker-thread
+    shutdown by unlinking the database immediately on Windows. The engine
+    fixture still disposes every connection before pytest later reclaims the
+    directory.
+    """
+    return str(tmp_path / "invoice-machine-test.db")
 
 
 @pytest.fixture(scope="function")

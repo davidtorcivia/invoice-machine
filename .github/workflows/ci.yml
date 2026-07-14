@@ -34,6 +34,30 @@ jobs:
       - name: Run tests (with coverage gate)
         run: pytest -q --cov --cov-report=term-missing --cov-fail-under=60
 
+  backend-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Windows portability suite
+        # Native WeasyPrint rendering is covered by the Linux job and Docker
+        # image; this job verifies that the rest of the app is usable without
+        # GTK/Pango installed on the host.
+        run: pytest -q --ignore=tests/test_pdf.py
+
   frontend:
     runs-on: ubuntu-latest
     defaults:

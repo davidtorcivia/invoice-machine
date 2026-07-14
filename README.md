@@ -9,6 +9,9 @@ A self-hosted invoicing application for freelancers and small businesses. Create
 - PDF generation with customizable branding and logo
 - **Tax support** with per-invoice, per-client, or global defaults
 - **Recurring invoices** for retainers and subscriptions
+- Manual and partial payment ledger with refund/dispute tracking
+- Optional Stripe-hosted payment links (disabled by default)
+- Provider-independent scheduled payment reminders
 - **SMTP email** to send invoices directly to clients
 - **Full-text search** across invoices and clients
 - Built-in authentication with rate limiting
@@ -212,6 +215,37 @@ Send invoices directly to clients via SMTP:
 4. On any invoice, click "Send Email" to deliver the PDF
 
 Works with any SMTP provider (Gmail, SendGrid, Mailgun, etc.).
+
+### Payments and reminders
+
+Manual payments are built in and require no external account. Record full or partial
+payments on an invoice; balances and revenue reports are calculated from the payment
+ledger rather than a simple paid/unpaid flag.
+
+Online providers are strictly opt-in. A fresh install makes no provider calls and the
+application remains usable offline. To allow Stripe support in a local Python install:
+
+```bash
+pip install ".[stripe]"
+```
+
+For Docker Compose, build the same optional extra and then configure your own keys in
+Settings > Payments & reminders:
+
+```bash
+INVOICE_MACHINE_EXTRAS=stripe docker compose up -d --build
+```
+
+Stripe uses hosted Checkout; card data never passes through Invoice Machine. Configure
+the webhook URL as `https://your-domain.example/api/payments/stripe/webhook`. Secret
+keys and webhook signing secrets are encrypted using `INVOICE_MACHINE_ENCRYPTION_KEY`.
+Payment links must be enabled globally and per invoice.
+
+Email reminders are independent of Stripe. Configure SMTP, choose reminder offsets
+(negative values are before the due date), set the business timezone/send hour, and
+enable reminders. Delivery records prevent duplicate sends after restarts.
+
+See [Payment provider architecture](docs/payment-providers.md) to add another provider.
 
 ### Search
 

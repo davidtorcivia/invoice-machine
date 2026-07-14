@@ -41,6 +41,13 @@
         <span class="detail-value">{schedule.line_items.length} item(s)</span>
       </div>
     {/if}
+    {#if schedule.auto_send || schedule.reminders_enabled || schedule.online_payment_enabled}
+      <div class="automation-tags">
+        {#if schedule.auto_send}<span>Email</span>{/if}
+        {#if schedule.reminders_enabled}<span>Reminders</span>{/if}
+        {#if schedule.online_payment_enabled}<span>Payment link</span>{/if}
+      </div>
+    {/if}
   </div>
 
   <div class="schedule-actions">
@@ -153,6 +160,9 @@
     justify-content: flex-end;
     flex-wrap: wrap;
   }
+
+  .automation-tags { display: flex; flex-wrap: wrap; gap: var(--space-2); justify-content: flex-end; }
+  .automation-tags span { padding: .15rem .45rem; border-radius: var(--radius-full); background: var(--color-info-light); color: var(--color-info); font-size: .7rem; }
 
   .spinner-sm {
     width: 14px;

@@ -9,16 +9,51 @@ the two surfaces cannot drift.
 
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 
 from sqlalchemy import Integer, and_, case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from invoice_machine.database import BusinessProfile, Invoice
+from invoice_machine.database import (
+    BusinessProfile,
+    Invoice,
+    Payment,
+    PaymentAdjustment,
+    PaymentRefund,
+)
 from invoice_machine.service.clients import ClientService
 from invoice_machine.service.common import BILLED_STATUSES, format_currency, quantize_money
 from invoice_machine.utils import utc_now
+
+RECEIVED_PAYMENT_STATUSES = [
+    "succeeded",
+    "partially_refunded",
+    "refunded",
+]
+
+
+def _net_paid_for_invoice():
+    """Correlated current payment total, net of refunds and disputes."""
+    return func.coalesce(
+        select(
+            func.sum(
+                case(
+                    (
+                        Payment.status.in_(RECEIVED_PAYMENT_STATUSES),
+                        Payment.amount
+                        - func.coalesce(Payment.refunded_amount, 0)
+                        - func.coalesce(Payment.disputed_amount, 0),
+                    ),
+                    else_=0,
+                )
+            )
+        )
+        .where(Payment.invoice_id == Invoice.id)
+        .correlate(Invoice)
+        .scalar_subquery(),
+        0,
+    )
 
 
 async def default_currency(session: AsyncSession) -> str:
@@ -50,6 +85,8 @@ async def dashboard_summary(session: AsyncSession) -> dict:
         Invoice.document_type == "invoice",
         Invoice.deleted_at.is_(None),
     )
+    net_paid = _net_paid_for_invoice()
+    balance = func.max(Invoice.total - net_paid, 0)
 
     money_rows = (
         await session.execute(
@@ -57,33 +94,90 @@ async def dashboard_summary(session: AsyncSession) -> dict:
                 Invoice.currency_code.label("currency"),
                 func.coalesce(
                     func.sum(
-                        case((Invoice.status.in_(["sent", "overdue"]), Invoice.total), else_=0)
-                    ),
-                    0,
-                ).label("outstanding"),
-                func.coalesce(
-                    func.sum(
                         case(
-                            (
-                                and_(
-                                    Invoice.status == "paid",
-                                    Invoice.paid_at.is_not(None),
-                                    Invoice.paid_at >= month_start,
-                                    Invoice.paid_at < next_month_start,
-                                ),
-                                Invoice.total,
-                            ),
+                            (Invoice.status.in_(["sent", "overdue", "partially_paid"]), balance),
                             else_=0,
                         )
                     ),
                     0,
-                ).label("paid_this_month"),
+                ).label("outstanding"),
                 func.count(Invoice.id).label("invoice_count"),
             )
             .where(base_filter)
             .group_by(Invoice.currency_code)
         )
     ).all()
+
+    payment_rows = (
+        await session.execute(
+            select(
+                Payment.currency_code.label("currency"),
+                func.coalesce(
+                    func.sum(Payment.amount), 0
+                ).label("paid_this_month"),
+            )
+            .join(Invoice, Invoice.id == Payment.invoice_id)
+            .where(
+                base_filter,
+                Payment.status.in_(RECEIVED_PAYMENT_STATUSES),
+                Payment.occurred_at >= month_start,
+                Payment.occurred_at < next_month_start,
+            )
+            .group_by(Payment.currency_code)
+        )
+    ).all()
+    received_by_currency = {
+        row.currency: quantize_money(row.paid_this_month) for row in payment_rows
+    }
+    refund_rows = (
+        await session.execute(
+            select(
+                PaymentRefund.currency_code.label("currency"),
+                func.coalesce(func.sum(PaymentRefund.amount), 0).label("refunded_this_month"),
+            )
+            .join(Payment, Payment.id == PaymentRefund.payment_id)
+            .join(Invoice, Invoice.id == Payment.invoice_id)
+            .where(
+                base_filter,
+                PaymentRefund.occurred_at >= month_start,
+                PaymentRefund.occurred_at < next_month_start,
+            )
+            .group_by(PaymentRefund.currency_code)
+        )
+    ).all()
+    refunded_by_currency = {
+        row.currency: quantize_money(row.refunded_this_month) for row in refund_rows
+    }
+    adjustment_rows = (
+        await session.execute(
+            select(
+                PaymentAdjustment.currency_code.label("currency"),
+                func.coalesce(func.sum(PaymentAdjustment.amount), 0).label("adjustments"),
+            )
+            .join(Payment, Payment.id == PaymentAdjustment.payment_id)
+            .join(Invoice, Invoice.id == Payment.invoice_id)
+            .where(
+                base_filter,
+                Payment.status.in_(RECEIVED_PAYMENT_STATUSES),
+                PaymentAdjustment.occurred_at >= month_start,
+                PaymentAdjustment.occurred_at < next_month_start,
+            )
+            .group_by(PaymentAdjustment.currency_code)
+        )
+    ).all()
+    adjustments_by_currency = {
+        row.currency: quantize_money(row.adjustments) for row in adjustment_rows
+    }
+    paid_by_currency = {
+        currency: received_by_currency.get(currency, Decimal("0.00"))
+        - refunded_by_currency.get(currency, Decimal("0.00"))
+        + adjustments_by_currency.get(currency, Decimal("0.00"))
+        for currency in (
+            received_by_currency.keys()
+            | refunded_by_currency.keys()
+            | adjustments_by_currency.keys()
+        )
+    }
 
     counts = (
         await session.execute(
@@ -98,11 +192,18 @@ async def dashboard_summary(session: AsyncSession) -> dict:
     per_currency = {
         (row.currency or default_cur): {
             "outstanding": quantize_money(row.outstanding),
-            "paid_this_month": quantize_money(row.paid_this_month),
+            "paid_this_month": paid_by_currency.get(
+                row.currency or default_cur, Decimal("0.00")
+            ),
             "invoice_count": row.invoice_count or 0,
         }
         for row in money_rows
     }
+    for currency, paid in paid_by_currency.items():
+        per_currency.setdefault(
+            currency,
+            {"outstanding": Decimal("0.00"), "invoice_count": 0},
+        )["paid_this_month"] = paid
     primary = pick_primary_currency(per_currency, default_cur)
     prim = per_currency.get(
         primary, {"outstanding": Decimal("0.00"), "paid_this_month": Decimal("0.00")}
@@ -158,8 +259,9 @@ async def revenue_summary(
 ) -> dict:
     """Revenue summary grouped by currency, with period breakdown.
 
-    Period-scoped metrics (invoiced/paid/draft) honor the date range; point-in-
-    time metrics (outstanding/overdue) reflect current state across all invoices.
+    Invoice-scoped metrics (invoiced/draft) use the invoice issue date; paid
+    metrics use the date funds were received. Point-in-time metrics
+    (outstanding/overdue) reflect current state across all invoices.
     Overdue = status "overdue" OR (status "sent" AND past due).
     """
     today = utc_now().date()
@@ -174,6 +276,30 @@ async def revenue_summary(
         Invoice.document_type == "invoice",
         Invoice.deleted_at.is_(None),
     )
+    payment_period_filter = and_(
+        Invoice.document_type == "invoice",
+        Invoice.deleted_at.is_(None),
+        Payment.status.in_(RECEIVED_PAYMENT_STATUSES),
+        Payment.occurred_at >= datetime.combine(from_date_parsed, time.min),
+        Payment.occurred_at < datetime.combine(to_date_parsed + timedelta(days=1), time.min),
+    )
+    refund_period_filter = and_(
+        Invoice.document_type == "invoice",
+        Invoice.deleted_at.is_(None),
+        PaymentRefund.occurred_at >= datetime.combine(from_date_parsed, time.min),
+        PaymentRefund.occurred_at
+        < datetime.combine(to_date_parsed + timedelta(days=1), time.min),
+    )
+    adjustment_period_filter = and_(
+        Invoice.document_type == "invoice",
+        Invoice.deleted_at.is_(None),
+        Payment.status.in_(RECEIVED_PAYMENT_STATUSES),
+        PaymentAdjustment.occurred_at >= datetime.combine(from_date_parsed, time.min),
+        PaymentAdjustment.occurred_at
+        < datetime.combine(to_date_parsed + timedelta(days=1), time.min),
+    )
+    net_paid = _net_paid_for_invoice()
+    balance = func.max(Invoice.total - net_paid, 0)
 
     period_rows = (
         await session.execute(
@@ -187,14 +313,51 @@ async def revenue_summary(
                     0,
                 ).label("total_invoiced"),
                 func.coalesce(
-                    func.sum(case((Invoice.status == "paid", Invoice.total), else_=0)), 0
-                ).label("total_paid"),
-                func.coalesce(
                     func.sum(case((Invoice.status == "draft", Invoice.total), else_=0)), 0
                 ).label("total_draft"),
             )
             .where(period_filter)
             .group_by(Invoice.currency_code)
+        )
+    ).all()
+
+    payment_rows = (
+        await session.execute(
+            select(
+                Payment.currency_code.label("currency"),
+                func.coalesce(
+                    func.sum(Payment.amount), 0
+                ).label("total_paid"),
+            )
+            .join(Invoice, Invoice.id == Payment.invoice_id)
+            .where(payment_period_filter)
+            .group_by(Payment.currency_code)
+        )
+    ).all()
+
+    refund_rows = (
+        await session.execute(
+            select(
+                PaymentRefund.currency_code.label("currency"),
+                func.coalesce(func.sum(PaymentRefund.amount), 0).label("total_refunded"),
+            )
+            .join(Payment, Payment.id == PaymentRefund.payment_id)
+            .join(Invoice, Invoice.id == Payment.invoice_id)
+            .where(refund_period_filter)
+            .group_by(PaymentRefund.currency_code)
+        )
+    ).all()
+
+    adjustment_rows = (
+        await session.execute(
+            select(
+                PaymentAdjustment.currency_code.label("currency"),
+                func.coalesce(func.sum(PaymentAdjustment.amount), 0).label("adjustments"),
+            )
+            .join(Payment, Payment.id == PaymentAdjustment.payment_id)
+            .join(Invoice, Invoice.id == Payment.invoice_id)
+            .where(adjustment_period_filter)
+            .group_by(PaymentAdjustment.currency_code)
         )
     ).all()
 
@@ -209,12 +372,15 @@ async def revenue_summary(
                 Invoice.currency_code.label("currency"),
                 func.coalesce(
                     func.sum(
-                        case((Invoice.status.in_(["sent", "overdue"]), Invoice.total), else_=0)
+                        case(
+                            (Invoice.status.in_(["sent", "overdue", "partially_paid"]), balance),
+                            else_=0,
+                        )
                     ),
                     0,
                 ).label("total_outstanding"),
                 func.coalesce(
-                    func.sum(case((is_effectively_overdue, Invoice.total), else_=0)), 0
+                    func.sum(case((is_effectively_overdue, balance), else_=0)), 0
                 ).label("total_overdue"),
             )
             .where(global_filter)
@@ -230,8 +396,23 @@ async def revenue_summary(
         bucket = per_currency.setdefault(cur, {})
         bucket["invoice_count"] = row.invoice_count or 0
         bucket["invoiced"] = quantize_money(row.total_invoiced)
-        bucket["paid"] = quantize_money(row.total_paid)
         bucket["draft"] = quantize_money(row.total_draft)
+    for row in payment_rows:
+        cur = row.currency or default_cur
+        bucket = per_currency.setdefault(cur, {})
+        bucket["paid"] = quantize_money(row.total_paid)
+    for row in refund_rows:
+        cur = row.currency or default_cur
+        bucket = per_currency.setdefault(cur, {})
+        bucket["paid"] = quantize_money(
+            bucket.get("paid", Decimal("0.00")) - row.total_refunded
+        )
+    for row in adjustment_rows:
+        cur = row.currency or default_cur
+        bucket = per_currency.setdefault(cur, {})
+        bucket["paid"] = quantize_money(
+            bucket.get("paid", Decimal("0.00")) + row.adjustments
+        )
     for row in outstanding_rows:
         cur = row.currency or default_cur
         bucket = per_currency.setdefault(cur, {})
@@ -242,20 +423,43 @@ async def revenue_summary(
     totals = _bucket_totals(per_currency.get(primary, {}), primary)
 
     if group_by == "month":
-        period_expr = func.strftime("%Y-%m", Invoice.issue_date)
+        invoice_period_expr = func.strftime("%Y-%m", Invoice.issue_date)
+        payment_period_expr = func.strftime("%Y-%m", Payment.occurred_at)
+        refund_period_expr = func.strftime("%Y-%m", PaymentRefund.occurred_at)
+        adjustment_period_expr = func.strftime("%Y-%m", PaymentAdjustment.occurred_at)
     elif group_by == "quarter":
-        period_expr = func.printf(
+        invoice_period_expr = func.printf(
             "%d-Q%d",
             func.cast(func.strftime("%Y", Invoice.issue_date), Integer),
             (func.cast(func.strftime("%m", Invoice.issue_date), Integer) - 1) / 3 + 1,
         )
+        payment_period_expr = func.printf(
+            "%d-Q%d",
+            func.cast(func.strftime("%Y", Payment.occurred_at), Integer),
+            (func.cast(func.strftime("%m", Payment.occurred_at), Integer) - 1) / 3 + 1,
+        )
+        refund_period_expr = func.printf(
+            "%d-Q%d",
+            func.cast(func.strftime("%Y", PaymentRefund.occurred_at), Integer),
+            (func.cast(func.strftime("%m", PaymentRefund.occurred_at), Integer) - 1) / 3 + 1,
+        )
+        adjustment_period_expr = func.printf(
+            "%d-Q%d",
+            func.cast(func.strftime("%Y", PaymentAdjustment.occurred_at), Integer),
+            (func.cast(func.strftime("%m", PaymentAdjustment.occurred_at), Integer) - 1)
+            / 3
+            + 1,
+        )
     else:  # year
-        period_expr = func.strftime("%Y", Invoice.issue_date)
+        invoice_period_expr = func.strftime("%Y", Invoice.issue_date)
+        payment_period_expr = func.strftime("%Y", Payment.occurred_at)
+        refund_period_expr = func.strftime("%Y", PaymentRefund.occurred_at)
+        adjustment_period_expr = func.strftime("%Y", PaymentAdjustment.occurred_at)
 
-    breakdown_rows = (
+    invoice_breakdown_rows = (
         await session.execute(
             select(
-                period_expr.label("period"),
+                invoice_period_expr.label("period"),
                 func.count(Invoice.id).label("count"),
                 func.coalesce(
                     func.sum(
@@ -263,26 +467,95 @@ async def revenue_summary(
                     ),
                     0,
                 ).label("invoiced"),
-                func.coalesce(
-                    func.sum(case((Invoice.status == "paid", Invoice.total), else_=0)), 0
-                ).label("paid"),
             )
             .where(and_(period_filter, Invoice.currency_code == primary))
-            .group_by(period_expr)
-            .order_by(period_expr)
+            .group_by(invoice_period_expr)
         )
     ).all()
 
-    breakdown = [
-        {
-            "period": row.period,
-            "invoiced": str(quantize_money(row.invoiced)),
-            "invoiced_formatted": format_currency(quantize_money(row.invoiced), primary),
-            "paid": str(quantize_money(row.paid)),
-            "paid_formatted": format_currency(quantize_money(row.paid), primary),
+    payment_breakdown_rows = (
+        await session.execute(
+            select(
+                payment_period_expr.label("period"),
+                func.coalesce(
+                    func.sum(Payment.amount), 0
+                ).label("paid"),
+            )
+            .join(Invoice, Invoice.id == Payment.invoice_id)
+            .where(and_(payment_period_filter, Payment.currency_code == primary))
+            .group_by(payment_period_expr)
+        )
+    ).all()
+
+    refund_breakdown_rows = (
+        await session.execute(
+            select(
+                refund_period_expr.label("period"),
+                func.coalesce(func.sum(PaymentRefund.amount), 0).label("refunded"),
+            )
+            .join(Payment, Payment.id == PaymentRefund.payment_id)
+            .join(Invoice, Invoice.id == Payment.invoice_id)
+            .where(
+                and_(refund_period_filter, PaymentRefund.currency_code == primary)
+            )
+            .group_by(refund_period_expr)
+        )
+    ).all()
+
+    adjustment_breakdown_rows = (
+        await session.execute(
+            select(
+                adjustment_period_expr.label("period"),
+                func.coalesce(func.sum(PaymentAdjustment.amount), 0).label("adjustments"),
+            )
+            .join(Payment, Payment.id == PaymentAdjustment.payment_id)
+            .join(Invoice, Invoice.id == Payment.invoice_id)
+            .where(
+                and_(
+                    adjustment_period_filter,
+                    PaymentAdjustment.currency_code == primary,
+                )
+            )
+            .group_by(adjustment_period_expr)
+        )
+    ).all()
+
+    breakdown_by_period = {
+        row.period: {
+            "invoiced": quantize_money(row.invoiced),
+            "paid": Decimal("0.00"),
             "count": row.count,
         }
-        for row in breakdown_rows
+        for row in invoice_breakdown_rows
+    }
+    for row in payment_breakdown_rows:
+        breakdown_by_period.setdefault(
+            row.period,
+            {"invoiced": Decimal("0.00"), "paid": Decimal("0.00"), "count": 0},
+        )["paid"] = quantize_money(row.paid)
+    for row in refund_breakdown_rows:
+        values = breakdown_by_period.setdefault(
+            row.period,
+            {"invoiced": Decimal("0.00"), "paid": Decimal("0.00"), "count": 0},
+        )
+        values["paid"] = quantize_money(values["paid"] - row.refunded)
+    for row in adjustment_breakdown_rows:
+        values = breakdown_by_period.setdefault(
+            row.period,
+            {"invoiced": Decimal("0.00"), "paid": Decimal("0.00"), "count": 0},
+        )
+        values["paid"] = quantize_money(values["paid"] + row.adjustments)
+
+    breakdown = [
+        {
+            "period": period,
+            "invoiced": str(values["invoiced"]),
+            "invoiced_formatted": format_currency(values["invoiced"], primary),
+            "paid": str(values["paid"]),
+            "paid_formatted": format_currency(values["paid"], primary),
+            "count": values["count"],
+        }
+        for period, values in sorted(breakdown_by_period.items())
     ]
 
     return {

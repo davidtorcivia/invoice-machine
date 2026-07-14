@@ -15,6 +15,7 @@ export const sortOptions = [
 export const statusConfig = {
   draft: { class: 'badge-draft', label: 'Draft' },
   sent: { class: 'badge-sent', label: 'Sent' },
+  partially_paid: { class: 'badge-partial', label: 'Partially paid' },
   paid: { class: 'badge-paid', label: 'Paid' },
   overdue: { class: 'badge-overdue', label: 'Overdue' },
   cancelled: { class: 'badge-cancelled', label: 'Cancelled' }

@@ -303,6 +303,34 @@ class TestRecurringEndpoints:
         assert "invoice_number" in data
 
     @pytest.mark.asyncio
+    async def test_trigger_carries_optional_automation_flags(self, test_client):
+        client = await test_client.post(
+            "/api/clients", json={"name": "Automation Client"}
+        )
+        schedule = await test_client.post(
+            "/api/recurring",
+            json={
+                "client_id": client.json()["id"],
+                "name": "Automated",
+                "frequency": "monthly",
+                "auto_send": False,
+                "reminders_enabled": False,
+                "online_payment_enabled": True,
+                "line_items": [
+                    {"description": "Service", "quantity": 1, "unit_price": "10.00"}
+                ],
+            },
+        )
+        assert schedule.json()["auto_send"] is False
+        assert schedule.json()["reminders_enabled"] is False
+        assert schedule.json()["online_payment_enabled"] is True
+
+        triggered = await test_client.post(f"/api/recurring/{schedule.json()['id']}/trigger")
+        invoice = await test_client.get(f"/api/invoices/{triggered.json()['invoice_id']}")
+        assert invoice.json()["reminders_enabled"] is False
+        assert invoice.json()["online_payment_enabled"] is True
+
+    @pytest.mark.asyncio
     async def test_delete_schedule(self, test_client):
         """Delete a recurring schedule."""
         # Create client and schedule

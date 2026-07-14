@@ -12,8 +12,10 @@ from . import (  # noqa: F401
     document_tools,
     email_tools,
     invoice_tools,
+    payment_tools,
     profile_tools,
     recurring_tools,
+    reminder_tools,
     search_tools,
 )
 from .context import mcp

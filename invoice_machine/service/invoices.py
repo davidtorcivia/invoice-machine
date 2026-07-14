@@ -1,5 +1,6 @@
 """Invoice-related service operations."""
 
+import secrets
 from datetime import date
 from decimal import Decimal
 
@@ -27,6 +28,16 @@ _NUMBER_ALLOCATION_ATTEMPTS = 6
 def _coerce_quantity(value):
     """Coerce a line-item quantity to a positive Decimal (tolerant of str/float)."""
     return quantize_quantity(value)
+
+
+async def _expire_checkout_if_active(
+    session: AsyncSession, invoice: Invoice
+) -> None:
+    if not invoice.payment_checkout_idempotency_key:
+        return
+    from invoice_machine.service.payments import PaymentService
+
+    await PaymentService.expire_active_checkout(session, invoice)
 
 
 class InvoiceService:
@@ -154,6 +165,8 @@ class InvoiceService:
         client_reference: str | None = None,
         show_payment_instructions: bool = True,
         selected_payment_methods: str | None = None,
+        reminders_enabled: bool | None = None,
+        online_payment_enabled: bool | None = None,
         invoice_number_override: str | None = None,
         tax_enabled: bool | None = None,
         tax_rate: Decimal | None = None,
@@ -231,6 +244,9 @@ class InvoiceService:
                 client_reference=client_reference,
                 show_payment_instructions=1 if show_payment_instructions else 0,
                 selected_payment_methods=selected_payment_methods,
+                reminders_enabled=1 if reminders_enabled is not False else 0,
+                online_payment_enabled=1 if online_payment_enabled else 0,
+                payment_token=secrets.token_urlsafe(48) if online_payment_enabled else None,
                 tax_enabled=1 if use_tax_enabled else 0,
                 tax_rate=use_tax_rate or Decimal("0.00"),
                 tax_name=use_tax_name or "Tax",
@@ -282,6 +298,26 @@ class InvoiceService:
         if not invoice:
             return None
 
+        valid_statuses = ["draft", "sent", "paid", "overdue", "cancelled"]
+        if status is not None and status not in valid_statuses:
+            raise ValueError(f"Invalid status. Must be one of: {valid_statuses}")
+
+        checkout_affecting_fields = {
+            "currency_code",
+            "online_payment_enabled",
+            "tax_enabled",
+            "tax_rate",
+            "document_type",
+            "client_id",
+            "invoice_number",
+        }
+        if (
+            status is not None
+            or issue_date is not None
+            or checkout_affecting_fields.intersection(kwargs)
+        ):
+            await _expire_checkout_if_active(session, invoice)
+
         business = await BusinessProfile.get_or_create(session)
         original_client_id = invoice.client_id
 
@@ -294,6 +330,8 @@ class InvoiceService:
             "client_reference",
             "show_payment_instructions",
             "selected_payment_methods",
+            "reminders_enabled",
+            "online_payment_enabled",
             "tax_enabled",
             "tax_rate",
             "tax_name",
@@ -315,6 +353,9 @@ class InvoiceService:
             if key == "document_type" and value != invoice.document_type:
                 doc_type_changed = True
             setattr(invoice, key, value)
+
+        if invoice.online_payment_enabled and not invoice.payment_token:
+            invoice.payment_token = secrets.token_urlsafe(48)
 
         # Load the client *after* kwargs so a client_id reassignment resolves the
         # new client (for due-date terms and the snapshot below).
@@ -340,13 +381,43 @@ class InvoiceService:
             invoice.due_date = due_date
 
         if status:
-            valid_statuses = ["draft", "sent", "paid", "overdue", "cancelled"]
-            if status not in valid_statuses:
-                raise ValueError(f"Invalid status. Must be one of: {valid_statuses}")
-            # Track when the invoice was paid for cash-basis reporting.
+            # Treat the legacy "mark paid" status action as a ledger payment so
+            # partial balances, reminders, and reports cannot disagree.
             if status == "paid" and invoice.status != "paid":
-                invoice.paid_at = utc_now()
+                from invoice_machine.service.payments import PaymentService
+
+                summary = await PaymentService.payment_summary(session, invoice)
+                if invoice.document_type == "quote":
+                    invoice.paid_at = utc_now()
+                elif summary["outstanding"] > 0:
+                    await PaymentService.record_manual_payment(
+                        session,
+                        invoice.id,
+                        summary["outstanding"],
+                        notes="Marked paid",
+                        commit=False,
+                        allow_unissued=True,
+                    )
+                else:
+                    invoice.paid_at = utc_now()
             elif status != "paid" and invoice.status == "paid":
+                from invoice_machine.service.payments import PaymentService
+
+                summary = await PaymentService.payment_summary(session, invoice)
+                if summary["paid"] > 0:
+                    payments = await PaymentService.list_payments(session, invoice.id)
+                    reversible = payments and all(
+                        payment.provider == "manual"
+                        and payment.notes in {"Marked paid", "Marked paid in bulk"}
+                        for payment in payments
+                    )
+                    if not reversible:
+                        raise ValueError(
+                            "A paid invoice with ledger payments cannot be marked unpaid; record a refund instead"
+                        )
+                    for payment in payments:
+                        await session.delete(payment)
+                    await session.flush()
                 invoice.paid_at = None
             invoice.status = status
 
@@ -373,6 +444,8 @@ class InvoiceService:
         invoice = await InvoiceService.get_invoice(session, invoice_id)
         if not invoice:
             return False
+
+        await _expire_checkout_if_active(session, invoice)
 
         invoice.deleted_at = utc_now()
         invoice.updated_at = utc_now()
@@ -415,6 +488,11 @@ class InvoiceService:
         if unit_type not in valid_unit_types:
             raise ValueError(f"Invalid unit type. Must be one of: {valid_unit_types}")
 
+        invoice = await session.get(Invoice, invoice_id)
+        if not invoice or invoice.deleted_at is not None:
+            raise ValueError("Invoice not found")
+        await _expire_checkout_if_active(session, invoice)
+
         item = InvoiceItem(
             invoice_id=invoice_id,
             description=description,
@@ -427,9 +505,7 @@ class InvoiceService:
         session.add(item)
         await session.flush()
 
-        invoice = await session.get(Invoice, invoice_id)
-        if invoice:
-            await recalculate_invoice_totals(session, invoice)
+        await recalculate_invoice_totals(session, invoice)
 
         await session.commit()
         await session.refresh(item)
@@ -461,6 +537,7 @@ class InvoiceService:
             valid_unit_types = ["qty", "hours"]
             if unit_type not in valid_unit_types:
                 raise ValueError(f"Invalid unit type. Must be one of: {valid_unit_types}")
+        await _expire_checkout_if_active(session, item.invoice)
 
         if description is not None:
             item.description = description
@@ -493,6 +570,7 @@ class InvoiceService:
 
         if invoice_id is not None and item.invoice_id != invoice_id:
             raise ValueError("Item does not belong to the specified invoice")
+        await _expire_checkout_if_active(session, item.invoice)
 
         item_invoice_id = item.invoice_id
         await session.delete(item)
@@ -530,8 +608,8 @@ class InvoiceService:
         """Execute a bulk action on multiple invoices with validation."""
         valid_transitions = {
             "mark_sent": ["draft"],
-            "mark_paid": ["sent", "overdue"],
-            "delete": ["draft", "sent", "paid", "overdue", "cancelled"],
+            "mark_paid": ["sent", "overdue", "partially_paid"],
+            "delete": ["draft", "sent", "partially_paid", "paid", "overdue", "cancelled"],
         }
 
         if action not in valid_transitions:
@@ -568,6 +646,26 @@ class InvoiceService:
         successful = 0
         if valid_ids:
             now = utc_now()
+            if action in {"mark_paid", "delete"}:
+                still_valid = []
+                for invoice_id in valid_ids:
+                    try:
+                        await _expire_checkout_if_active(
+                            session, invoices[invoice_id]
+                        )
+                    except ValueError as exc:
+                        errors.append({"id": invoice_id, "reason": str(exc)})
+                    else:
+                        still_valid.append(invoice_id)
+                valid_ids = still_valid
+            if not valid_ids:
+                return {
+                    "action": action,
+                    "total_requested": len(invoice_ids),
+                    "successful": 0,
+                    "failed": len(errors),
+                    "errors": errors,
+                }
             if action == "mark_sent":
                 await session.execute(
                     update(Invoice)
@@ -575,11 +673,23 @@ class InvoiceService:
                     .values(status="sent", updated_at=now)
                 )
             elif action == "mark_paid":
-                await session.execute(
-                    update(Invoice)
-                    .where(Invoice.id.in_(valid_ids))
-                    .values(status="paid", paid_at=now, updated_at=now)
-                )
+                from invoice_machine.service.payments import PaymentService
+
+                for invoice_id in valid_ids:
+                    invoice = invoices[invoice_id]
+                    summary = await PaymentService.payment_summary(session, invoice)
+                    if summary["outstanding"] > 0:
+                        await PaymentService.record_manual_payment(
+                            session,
+                            invoice_id,
+                            summary["outstanding"],
+                            notes="Marked paid in bulk",
+                            commit=False,
+                        )
+                    else:
+                        invoice.status = "paid"
+                        invoice.paid_at = now
+                        invoice.updated_at = now
             else:
                 await session.execute(
                     update(Invoice)

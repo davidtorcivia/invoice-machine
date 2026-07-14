@@ -49,6 +49,9 @@ class RecurringScheduleSchema(BaseModel):
     tax_enabled: bool | None = None
     tax_rate: str | None = None
     tax_name: str | None = None
+    auto_send: bool
+    reminders_enabled: bool
+    online_payment_enabled: bool
     is_active: bool
     next_invoice_date: date
     last_invoice_id: int | None = None
@@ -73,6 +76,9 @@ class RecurringScheduleCreate(BaseModel):
     tax_rate: Decimal | None = Field(None, ge=0, le=100)
     tax_name: str | None = Field(None, max_length=50)
     next_invoice_date: date | None = None
+    auto_send: bool = False
+    reminders_enabled: bool = True
+    online_payment_enabled: bool = False
 
     @model_validator(mode="after")
     def validate_schedule_day(self) -> "RecurringScheduleCreate":
@@ -95,6 +101,9 @@ class RecurringScheduleUpdate(BaseModel):
     tax_name: str | None = Field(None, max_length=50)
     is_active: bool | None = None
     next_invoice_date: date | None = None
+    auto_send: bool | None = None
+    reminders_enabled: bool | None = None
+    online_payment_enabled: bool | None = None
 
     @model_validator(mode="after")
     def validate_schedule_day(self) -> "RecurringScheduleUpdate":
@@ -150,6 +159,9 @@ async def create_schedule(
             tax_rate=data.tax_rate,
             tax_name=data.tax_name,
             next_invoice_date=data.next_invoice_date,
+            auto_send=data.auto_send,
+            reminders_enabled=data.reminders_enabled,
+            online_payment_enabled=data.online_payment_enabled,
         )
         return _schedule_to_dict(schedule)
     except ValueError as e:
@@ -196,6 +208,10 @@ async def update_schedule(
     # Convert is_active to int
     if "is_active" in update_data and update_data["is_active"] is not None:
         update_data["is_active"] = int(update_data["is_active"])
+
+    for field in ("auto_send", "reminders_enabled", "online_payment_enabled"):
+        if field in update_data and update_data[field] is not None:
+            update_data[field] = int(update_data[field])
 
     try:
         schedule = await RecurringService.update_schedule(session, schedule_id, **update_data)

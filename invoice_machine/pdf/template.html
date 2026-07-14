@@ -506,9 +506,15 @@
                     <td class="totals-value">{{ format_money(invoice.tax_amount, invoice.currency_code) }}</td>
                 </tr>
                 {% endif %}
+                {% if amount_paid > 0 %}
+                <tr>
+                    <td class="totals-label">Payments Received</td>
+                    <td class="totals-value">−{{ format_money(amount_paid, invoice.currency_code) }}</td>
+                </tr>
+                {% endif %}
                 <tr class="total-final">
                     <td class="totals-label">Total Due</td>
-                    <td class="totals-value">{{ format_money(invoice.total, invoice.currency_code) }}</td>
+                    <td class="totals-value">{{ format_money(amount_outstanding, invoice.currency_code) }}</td>
                 </tr>
             </table>
         </div>
@@ -519,6 +525,12 @@
             <div class="info-block payment">
                 <div class="info-title">Payment Details</div>
                 <div class="info-text">{{ payment_instructions }}</div>
+            </div>
+            {% endif %}
+            {% if payment_url %}
+            <div class="info-block payment">
+                <div class="info-title">Pay Online</div>
+                <div class="info-text">{{ payment_url }}</div>
             </div>
             {% endif %}
             {% if invoice.notes or business.default_notes %}

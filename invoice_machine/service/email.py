@@ -30,8 +30,6 @@ async def send_invoice_email(
     so a changed invoice is never emailed with an out-of-date document, and a
     successful send moves a draft to ``sent`` (recorded as ``status_updated``).
     """
-    from invoice_machine.email import EmailService
-    from invoice_machine.pdf.generator import generate_pdf
     from invoice_machine.services import InvoiceService
 
     profile = await BusinessProfile.get_or_create(session)
@@ -44,6 +42,12 @@ async def send_invoice_email(
     invoice = await InvoiceService.get_invoice(session, invoice_id)
     if not invoice:
         return {"success": False, "error": f"Invoice {invoice_id} not found", "not_found": True}
+
+    # Keep optional native PDF dependencies out of error paths that do not need
+    # them. This lets API/MCP clients receive a useful configuration error on
+    # hosts where WeasyPrint's platform libraries are intentionally absent.
+    from invoice_machine.email import EmailService
+    from invoice_machine.pdf.generator import generate_pdf
 
     # Never email a stale or missing PDF.
     if not invoice.pdf_path or invoice.needs_pdf_regeneration:

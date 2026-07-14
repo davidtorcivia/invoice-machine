@@ -187,6 +187,10 @@ def serialize_invoice(
         else invoice.selected_payment_methods
     )
     line_items_count = len(invoice.items)
+    from invoice_machine.service.payments import PaymentService
+
+    payments = list(invoice.__dict__.get("payments", []))
+    payment_summary = PaymentService.summarize(invoice, payments)
 
     data = {
         "id": invoice.id,
@@ -200,6 +204,10 @@ def serialize_invoice(
         "client_reference": getattr(invoice, "client_reference", None),
         "status": invoice.status,
         "paid_at": _maybe_iso(getattr(invoice, "paid_at", None), json_ready),
+        "amount_paid": str(payment_summary["paid"]),
+        "amount_outstanding": str(payment_summary["outstanding"]),
+        "amount_refunded": str(payment_summary["refunded"]),
+        "amount_pending": str(payment_summary["pending"]),
         "issue_date": _maybe_iso(invoice.issue_date, json_ready),
         "due_date": _maybe_iso(invoice.due_date, json_ready),
         "payment_terms_days": invoice.payment_terms_days,
@@ -219,6 +227,9 @@ def serialize_invoice(
         "selected_payment_methods": selected_payment_methods,
         "pdf_path": invoice.pdf_path,
         "pdf_generated_at": _maybe_iso(invoice.pdf_generated_at, json_ready),
+        "online_payment_enabled": bool(getattr(invoice, "online_payment_enabled", 0)),
+        "payment_link_configured": bool(getattr(invoice, "payment_token", None)),
+        "reminders_enabled": bool(getattr(invoice, "reminders_enabled", 1)),
         "created_at": _maybe_iso(invoice.created_at, json_ready),
         "updated_at": _maybe_iso(invoice.updated_at, json_ready),
         "deleted_at": _maybe_iso(invoice.deleted_at, json_ready),
@@ -236,6 +247,29 @@ def serialize_invoice(
         total_amount = Decimal(str(invoice.total))
         data["total_formatted"] = format_currency(total_amount, invoice.currency_code)
     return data
+
+
+def serialize_payment(payment, *, json_ready: bool = False) -> dict:
+    """Serialize a payment without exposing provider credentials."""
+    return {
+        "id": payment.id,
+        "invoice_id": payment.invoice_id,
+        "amount": str(payment.amount),
+        "refunded_amount": str(payment.refunded_amount or 0),
+        "disputed_amount": str(payment.disputed_amount or 0),
+        "dispute_status": payment.dispute_status,
+        "fee_amount": str(payment.fee_amount) if payment.fee_amount is not None else None,
+        "currency_code": payment.currency_code,
+        "provider": payment.provider,
+        "status": payment.status,
+        "provider_payment_id": payment.provider_payment_id,
+        "provider_checkout_id": payment.provider_checkout_id,
+        "provider_charge_id": payment.provider_charge_id,
+        "notes": payment.notes,
+        "occurred_at": _maybe_iso(payment.occurred_at, json_ready),
+        "created_at": _maybe_iso(payment.created_at, json_ready),
+        "updated_at": _maybe_iso(payment.updated_at, json_ready),
+    }
 
 
 def serialize_recurring_schedule(
@@ -263,6 +297,9 @@ def serialize_recurring_schedule(
             else (float(schedule.tax_rate) if schedule.tax_rate is not None else None)
         ),
         "tax_name": schedule.tax_name,
+        "auto_send": bool(schedule.auto_send),
+        "reminders_enabled": bool(schedule.reminders_enabled),
+        "online_payment_enabled": bool(schedule.online_payment_enabled),
         "is_active": bool(schedule.is_active),
         "next_invoice_date": _maybe_iso(schedule.next_invoice_date, json_ready),
         "last_invoice_id": schedule.last_invoice_id,

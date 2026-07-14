@@ -256,6 +256,17 @@
               Configure SMTP in <a href="/settings" class="link">Settings</a> to enable automatic invoice emailing.
             </p>
           {/if}
+
+          <div class="automation-options">
+            <label class="checkbox-label">
+              <input type="checkbox" bind:checked={formData.reminders_enabled} />
+              <span>Allow scheduled payment reminders for generated invoices</span>
+            </label>
+            <label class="checkbox-label">
+              <input type="checkbox" bind:checked={formData.online_payment_enabled} />
+              <span>Enable optional provider payment links on generated invoices</span>
+            </label>
+          </div>
         </div>
       </div>
 
@@ -302,6 +313,8 @@
     height: 18px;
     accent-color: var(--color-primary);
   }
+
+  .automation-options { display: grid; gap: var(--space-3); margin-top: var(--space-4); }
 
   .form-hint {
     font-size: 0.8125rem;

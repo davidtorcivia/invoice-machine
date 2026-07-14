@@ -67,6 +67,9 @@ async def create_recurring_schedule(
     tax_enabled: int | None = None,
     tax_rate: float | None = None,
     tax_name: str | None = None,
+    auto_send: bool = False,
+    reminders_enabled: bool = True,
+    online_payment_enabled: bool = False,
 ) -> dict:
     """
     Create a recurring invoice schedule.
@@ -113,6 +116,9 @@ async def create_recurring_schedule(
             tax_enabled=tax_enabled,
             tax_rate=tax_rate_decimal,
             tax_name=tax_name,
+            auto_send=auto_send,
+            reminders_enabled=reminders_enabled,
+            online_payment_enabled=online_payment_enabled,
         )
 
         return serialize_recurring_schedule(schedule, json_ready=True)
@@ -132,6 +138,9 @@ async def update_recurring_schedule(
     tax_enabled: int | None = None,
     tax_rate: float | None = None,
     tax_name: str | None = None,
+    auto_send: bool | None = None,
+    reminders_enabled: bool | None = None,
+    online_payment_enabled: bool | None = None,
 ) -> dict | None:
     """
     Update a recurring schedule.
@@ -180,6 +189,12 @@ async def update_recurring_schedule(
             updates["tax_rate"] = Decimal(str(tax_rate))
         if tax_name is not None:
             updates["tax_name"] = tax_name
+        if auto_send is not None:
+            updates["auto_send"] = int(auto_send)
+        if reminders_enabled is not None:
+            updates["reminders_enabled"] = int(reminders_enabled)
+        if online_payment_enabled is not None:
+            updates["online_payment_enabled"] = int(online_payment_enabled)
 
         schedule = await RecurringService.update_schedule(session, schedule_id, **updates)
         if not schedule:

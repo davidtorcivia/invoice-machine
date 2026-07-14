@@ -19,6 +19,8 @@
  *   show_payment_instructions: boolean,
  *   selected_payment_methods: string[],
  *   auto_email_enabled: boolean,
+ *   reminders_enabled: boolean,
+ *   online_payment_enabled: boolean,
  *   email_subject_template: string,
  *   email_body_template: string,
  *   use_default_notes: boolean
@@ -42,6 +44,9 @@
  *   show_payment_instructions?: boolean,
  *   selected_payment_methods?: string[],
  *   auto_email_enabled?: boolean,
+ *   auto_send?: boolean,
+ *   reminders_enabled?: boolean,
+ *   online_payment_enabled?: boolean,
  *   email_subject_template?: string,
  *   email_body_template?: string,
  *   use_default_notes?: boolean,
@@ -102,6 +107,8 @@ export function createScheduleFormData() {
     show_payment_instructions: true,
     selected_payment_methods: [],
     auto_email_enabled: false,
+    reminders_enabled: true,
+    online_payment_enabled: false,
     email_subject_template: '',
     email_body_template: '',
     use_default_notes: true
@@ -130,7 +137,9 @@ export function createScheduleFormDataFromSchedule(schedule) {
     tax_name: schedule.tax_name || 'Tax',
     show_payment_instructions: schedule.show_payment_instructions !== false,
     selected_payment_methods: schedule.selected_payment_methods || [],
-    auto_email_enabled: schedule.auto_email_enabled || false,
+    auto_email_enabled: schedule.auto_send || false,
+    reminders_enabled: schedule.reminders_enabled !== false,
+    online_payment_enabled: schedule.online_payment_enabled || false,
     email_subject_template: schedule.email_subject_template || '',
     email_body_template: schedule.email_body_template || '',
     use_default_notes: schedule.use_default_notes !== false
@@ -149,7 +158,10 @@ export function buildSchedulePayload(formData) {
     quarter_month: formData.frequency === 'quarterly' ? Number(formData.quarter_month) : 1,
     payment_terms_days: Number(formData.payment_terms_days),
     tax_rate: formData.tax_enabled && formData.tax_rate ? Number(formData.tax_rate) : null,
-    notes: formData.use_default_notes ? '' : formData.notes
+    notes: formData.use_default_notes ? '' : formData.notes,
+    auto_send: formData.auto_email_enabled,
+    reminders_enabled: formData.reminders_enabled,
+    online_payment_enabled: formData.online_payment_enabled
   };
 }
 

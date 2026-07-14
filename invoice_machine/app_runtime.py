@@ -121,6 +121,18 @@ async def _recurring_invoice_job() -> None:
             )
 
 
+async def _payment_reminder_job() -> None:
+    """Send at most one due payment reminder per eligible invoice."""
+    from invoice_machine.database import async_session_maker
+    from invoice_machine.service.reminders import ReminderService
+
+    async with async_session_maker() as session:
+        results = await ReminderService.process_due_reminders(session)
+        sent = sum(1 for result in results if result.get("status") == "sent")
+        if sent:
+            logger.info("Sent %s invoice payment reminders", sent)
+
+
 async def _rebuild_search_indexes() -> None:
     """Rebuild FTS indexes on startup when required."""
     from invoice_machine.database import async_session_maker
@@ -196,6 +208,7 @@ async def lifespan(app: FastAPI):
         logger.info("Starting background tasks...")
         tasks = [
             asyncio.create_task(_run_hourly_task(app, "Session cleanup", _session_cleanup_job)),
+            asyncio.create_task(_run_hourly_task(app, "Payment reminders", _payment_reminder_job)),
             asyncio.create_task(_run_daily_task(app, 0, "Scheduled backup task", _scheduled_backup_job)),
             asyncio.create_task(_run_daily_task(app, 3, "Trash cleanup task", _trash_cleanup_job)),
             asyncio.create_task(_run_daily_task(app, 1, "Overdue check task", _overdue_check_job)),

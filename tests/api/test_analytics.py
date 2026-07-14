@@ -174,6 +174,87 @@ class TestAnalyticsEndpoints:
         assert "totals" in data
 
     @pytest.mark.asyncio
+    async def test_partial_payment_reduces_outstanding_and_counts_revenue(self, test_client):
+        invoice = await test_client.post(
+            "/api/invoices",
+            json={"items": [{"description": "Work", "quantity": 1, "unit_price": 100}]},
+        )
+        invoice_id = invoice.json()["id"]
+        await test_client.put(f"/api/invoices/{invoice_id}", json={"status": "sent"})
+        await test_client.post(
+            f"/api/payments/invoices/{invoice_id}/manual", json={"amount": 40}
+        )
+
+        dashboard = (await test_client.get("/api/analytics/dashboard")).json()
+        revenue = (await test_client.get("/api/analytics/revenue")).json()
+        assert dashboard["total_outstanding"] == "60.00"
+        assert dashboard["paid_this_month"] == "40.00"
+        assert revenue["totals"]["paid"] == "40.00"
+        assert revenue["totals"]["outstanding"] == "60.00"
+
+    @pytest.mark.asyncio
+    async def test_revenue_paid_total_uses_payment_date(self, test_client):
+        invoice = await test_client.post(
+            "/api/invoices",
+            json={
+                "issue_date": "2025-06-15",
+                "items": [{"description": "Work", "quantity": 1, "unit_price": 100}],
+            },
+        )
+        invoice_id = invoice.json()["id"]
+        await test_client.put(f"/api/invoices/{invoice_id}", json={"status": "sent"})
+        await test_client.post(
+            f"/api/payments/invoices/{invoice_id}/manual",
+            json={"amount": 100, "occurred_at": "2025-07-10T12:00:00Z"},
+        )
+
+        june = await test_client.get(
+            "/api/analytics/revenue?from_date=2025-06-01&to_date=2025-06-30"
+        )
+        july = await test_client.get(
+            "/api/analytics/revenue?from_date=2025-07-01&to_date=2025-07-31"
+        )
+
+        assert june.json()["totals"]["paid"] == "0.00"
+        assert july.json()["totals"]["paid"] == "100.00"
+
+    @pytest.mark.asyncio
+    async def test_revenue_assigns_refund_to_refund_date(self, test_client):
+        invoice = await test_client.post(
+            "/api/invoices",
+            json={
+                "issue_date": "2025-06-15",
+                "items": [{"description": "Work", "quantity": 1, "unit_price": 100}],
+            },
+        )
+        invoice_id = invoice.json()["id"]
+        await test_client.put(f"/api/invoices/{invoice_id}", json={"status": "sent"})
+        payment = await test_client.post(
+            f"/api/payments/invoices/{invoice_id}/manual",
+            json={"amount": 100, "occurred_at": "2025-06-20T12:00:00Z"},
+        )
+        refund = await test_client.post(
+            f"/api/payments/{payment.json()['id']}/refund",
+            json={"amount": 25, "occurred_at": "2025-07-10T12:00:00Z"},
+            headers={"Idempotency-Key": "analytics-refund-date-1"},
+        )
+        assert refund.status_code == 200
+
+        june = (
+            await test_client.get(
+                "/api/analytics/revenue?from_date=2025-06-01&to_date=2025-06-30"
+            )
+        ).json()
+        july = (
+            await test_client.get(
+                "/api/analytics/revenue?from_date=2025-07-01&to_date=2025-07-31"
+            )
+        ).json()
+
+        assert june["totals"]["paid"] == "100.00"
+        assert july["totals"]["paid"] == "-25.00"
+
+    @pytest.mark.asyncio
     async def test_get_revenue_group_by_month(self, test_client):
         """Get revenue analytics grouped by month."""
         response = await test_client.get("/api/analytics/revenue?group_by=month")

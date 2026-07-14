@@ -228,7 +228,7 @@ PUT /api/invoices/{id}
   "tax_name": "VAT"
 }
 ```
-`status`: `draft` | `sent` | `paid` | `overdue` | `cancelled`
+`status`: `draft` | `sent` | `partially_paid` | `paid` | `overdue` | `cancelled`
 Note: Changing `issue_date` regenerates the invoice number.
 
 ### Delete invoice (soft)
@@ -252,6 +252,51 @@ POST /api/invoices/bulk
 }
 ```
 `action`: `mark_sent` | `mark_paid` | `delete`. Max 100 IDs per request.
+
+---
+
+## Payment ledger
+
+Manual payments do not require an online provider.
+
+### List payments and balance
+```
+GET /api/payments/invoices/{invoice_id}
+```
+
+### Record a manual payment
+```
+POST /api/payments/invoices/{invoice_id}/manual
+```
+```json
+{"amount": 250.00, "occurred_at": "2026-07-13T15:00:00Z", "notes": "ACH transfer"}
+```
+
+### Record or initiate a refund
+```
+POST /api/payments/{payment_id}/refund
+```
+```json
+{"amount": 50.00, "notes": "Partial refund"}
+```
+Manual refunds update immediately. Provider refunds are initiated at the provider and
+the signed webhook confirms the ledger change.
+
+### Enable an optional payment link
+```
+PUT /api/payments/invoices/{invoice_id}/online
+```
+```json
+{"enabled": true, "rotate_token": false}
+```
+This requires a provider explicitly configured by the self-hoster. Never assume Stripe
+is present, and do not enable online payments unless the user asks.
+
+### Reminder preview and history
+```
+GET /api/reminders/invoices/{invoice_id}/preview
+GET /api/reminders/invoices/{invoice_id}/deliveries
+```
 
 ---
 

@@ -371,6 +371,36 @@ export const recurringApi = {
   trigger: (id) => post(`/recurring/${id}/trigger`),
 };
 
+// ===== Payments & Reminders =====
+
+export const paymentsApi = {
+  getSettings: () => get('/payments/settings'),
+  updateSettings: (data) => put('/payments/settings', data),
+  testProvider: () => post('/payments/settings/test'),
+  forInvoice: (invoiceId) => get(`/payments/invoices/${invoiceId}`),
+  recordManual: (invoiceId, data) => post(`/payments/invoices/${invoiceId}/manual`, data),
+  createRefundKey: () => crypto.randomUUID(),
+  refund: (paymentId, data, idempotencyKey) => {
+    if (!idempotencyKey) {
+      throw new Error('A persistent refund idempotency key is required');
+    }
+    return request(`/payments/${paymentId}/refund`, {
+      method: 'POST',
+      body: data,
+      headers: { 'Idempotency-Key': idempotencyKey },
+    });
+  },
+  configureOnline: (invoiceId, data) => put(`/payments/invoices/${invoiceId}/online`, data),
+};
+
+export const remindersApi = {
+  getSettings: () => get('/reminders/settings'),
+  updateSettings: (data) => put('/reminders/settings', data),
+  preview: (invoiceId) => get(`/reminders/invoices/${invoiceId}/preview`),
+  deliveries: (invoiceId) => get(`/reminders/invoices/${invoiceId}/deliveries`),
+  process: () => post('/reminders/process'),
+};
+
 // ===== Email/SMTP =====
 
 export const emailApi = {

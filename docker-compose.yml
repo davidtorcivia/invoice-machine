@@ -1,6 +1,9 @@
 services:
   invoice-machine:
-    build: .
+    build:
+      context: .
+      args:
+        INVOICE_MACHINE_EXTRAS: ${INVOICE_MACHINE_EXTRAS:-}
     container_name: invoice-machine
     ports:
       - "${PORT:-8080}:8080"

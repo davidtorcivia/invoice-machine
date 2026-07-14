@@ -13,6 +13,7 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    UniqueConstraint,
     event,
 )
 from sqlalchemy.ext.asyncio import (
@@ -118,6 +119,20 @@ class BusinessProfile(Base):
     # Email template settings (optional - defaults used if not set)
     email_subject_template: Mapped[str | None] = mapped_column(String(500), nullable=True)
     email_body_template: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Optional online-payment provider. Credentials remain encrypted at rest;
+    # no provider is required for normal Invoice Machine operation.
+    online_payments_enabled: Mapped[int] = mapped_column(Integer, default=0)
+    payment_provider: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    stripe_secret_key: Mapped[str | None] = mapped_column(Text, nullable=True)
+    stripe_webhook_secret: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Provider-independent receivables reminders. Off by default so upgrades do
+    # not begin emailing customers without an explicit administrator choice.
+    reminders_enabled: Mapped[int] = mapped_column(Integer, default=0)
+    reminder_offsets: Mapped[str] = mapped_column(Text, default="[-3, 0, 3, 7]")
+    reminder_subject_template: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    reminder_body_template: Mapped[str | None] = mapped_column(Text, nullable=True)
+    business_timezone: Mapped[str] = mapped_column(String(100), default="UTC")
+    reminder_send_hour: Mapped[int] = mapped_column(Integer, default=9)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=utc_now, onupdate=utc_now
@@ -271,6 +286,28 @@ class Invoice(Base):
     pdf_path: Mapped[str | None] = mapped_column(String(500), nullable=True)
     pdf_generated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
+    # Public payment links use an unguessable, revocable token. They remain
+    # inert unless both this flag and the business-level provider are enabled.
+    online_payment_enabled: Mapped[int] = mapped_column(Integer, default=0)
+    payment_token: Mapped[str | None] = mapped_column(String(96), nullable=True, unique=True)
+    payment_checkout_provider: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    payment_checkout_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    payment_checkout_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    payment_checkout_amount: Mapped[Decimal | None] = mapped_column(
+        DECIMAL(12, 2), nullable=True
+    )
+    payment_checkout_currency: Mapped[str | None] = mapped_column(String(3), nullable=True)
+    payment_checkout_idempotency_key: Mapped[str | None] = mapped_column(
+        String(255), nullable=True
+    )
+    payment_checkout_fingerprint: Mapped[str | None] = mapped_column(
+        String(64), nullable=True
+    )
+    payment_checkout_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime, nullable=True
+    )
+    reminders_enabled: Mapped[int] = mapped_column(Integer, default=1)
+
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=utc_now, onupdate=utc_now
@@ -288,6 +325,13 @@ class Invoice(Base):
         back_populates="invoice",
         cascade="all, delete-orphan",
         order_by="InvoiceItem.sort_order",
+        lazy="selectin",
+    )
+    payments: Mapped[list["Payment"]] = relationship(
+        "Payment",
+        back_populates="invoice",
+        cascade="all, delete-orphan",
+        order_by="Payment.occurred_at",
         lazy="selectin",
     )
 
@@ -353,6 +397,205 @@ class InvoiceItem(Base):
     )
 
     __table_args__ = (Index("idx_items_invoice", "invoice_id"),)
+
+
+class Payment(Base):
+    """A received payment or provider transaction associated with an invoice."""
+
+    __tablename__ = "payments"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    invoice_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("invoices.id", ondelete="CASCADE"), nullable=False
+    )
+    amount: Mapped[Decimal] = mapped_column(DECIMAL(12, 2), nullable=False)
+    refunded_amount: Mapped[Decimal] = mapped_column(
+        DECIMAL(12, 2), default=Decimal("0.00"), nullable=False
+    )
+    disputed_amount: Mapped[Decimal] = mapped_column(
+        DECIMAL(12, 2), default=Decimal("0.00"), nullable=False
+    )
+    dispute_status: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    fee_amount: Mapped[Decimal | None] = mapped_column(DECIMAL(12, 2), nullable=True)
+    currency_code: Mapped[str] = mapped_column(String(3), nullable=False)
+    provider: Mapped[str] = mapped_column(String(30), default="manual", nullable=False)
+    status: Mapped[str] = mapped_column(String(30), default="succeeded", nullable=False)
+    provider_payment_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    provider_checkout_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    provider_charge_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=utc_now, onupdate=utc_now, nullable=False
+    )
+
+    invoice: Mapped["Invoice"] = relationship("Invoice", back_populates="payments")
+    refunds: Mapped[list["PaymentRefund"]] = relationship(
+        "PaymentRefund",
+        back_populates="payment",
+        cascade="all, delete-orphan",
+        order_by="PaymentRefund.occurred_at",
+        lazy="selectin",
+    )
+    adjustments: Mapped[list["PaymentAdjustment"]] = relationship(
+        "PaymentAdjustment",
+        back_populates="payment",
+        cascade="all, delete-orphan",
+        order_by="PaymentAdjustment.occurred_at",
+        lazy="selectin",
+    )
+    refund_requests: Mapped[list["ProviderRefundRequest"]] = relationship(
+        "ProviderRefundRequest",
+        back_populates="payment",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+    )
+
+    __table_args__ = (
+        Index("idx_payments_invoice", "invoice_id"),
+        Index("idx_payments_status", "status"),
+        UniqueConstraint(
+            "provider", "provider_payment_id", name="uq_payments_provider_payment"
+        ),
+        UniqueConstraint(
+            "provider", "provider_checkout_id", name="uq_payments_provider_checkout"
+        ),
+    )
+
+
+class PaymentRefund(Base):
+    """A dated cash outflow that reduces a settled payment."""
+
+    __tablename__ = "payment_refunds"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    payment_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("payments.id", ondelete="CASCADE"), nullable=False
+    )
+    amount: Mapped[Decimal] = mapped_column(DECIMAL(12, 2), nullable=False)
+    currency_code: Mapped[str] = mapped_column(String(3), nullable=False)
+    provider: Mapped[str] = mapped_column(String(30), nullable=False)
+    provider_event_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now, nullable=False)
+
+    payment: Mapped["Payment"] = relationship("Payment", back_populates="refunds")
+
+    __table_args__ = (
+        Index("idx_payment_refunds_payment", "payment_id"),
+        Index("idx_payment_refunds_occurred", "occurred_at"),
+        UniqueConstraint(
+            "provider", "provider_event_id", name="uq_payment_refunds_provider_event"
+        ),
+    )
+
+
+class PaymentAdjustment(Base):
+    """A dated signed cash adjustment, such as a dispute or reversal."""
+
+    __tablename__ = "payment_adjustments"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    payment_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("payments.id", ondelete="CASCADE"), nullable=False
+    )
+    amount: Mapped[Decimal] = mapped_column(DECIMAL(12, 2), nullable=False)
+    currency_code: Mapped[str] = mapped_column(String(3), nullable=False)
+    provider: Mapped[str] = mapped_column(String(30), nullable=False)
+    kind: Mapped[str] = mapped_column(String(30), nullable=False)
+    provider_event_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now, nullable=False)
+
+    payment: Mapped["Payment"] = relationship("Payment", back_populates="adjustments")
+
+    __table_args__ = (
+        Index("idx_payment_adjustments_payment", "payment_id"),
+        Index("idx_payment_adjustments_occurred", "occurred_at"),
+        UniqueConstraint(
+            "provider", "provider_event_id", name="uq_payment_adjustments_provider_event"
+        ),
+    )
+
+
+class ProviderRefundRequest(Base):
+    """Durable idempotency state for an externally initiated refund."""
+
+    __tablename__ = "provider_refund_requests"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    payment_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("payments.id", ondelete="CASCADE"), nullable=False
+    )
+    provider: Mapped[str] = mapped_column(String(30), nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(255), nullable=False)
+    amount: Mapped[Decimal] = mapped_column(DECIMAL(12, 2), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False)
+    provider_refund_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    provider_refund_status: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=utc_now, onupdate=utc_now, nullable=False
+    )
+
+    payment: Mapped["Payment"] = relationship("Payment", back_populates="refund_requests")
+
+    __table_args__ = (
+        Index("idx_provider_refund_requests_payment", "payment_id"),
+        UniqueConstraint(
+            "provider", "idempotency_key", name="uq_provider_refund_requests_key"
+        ),
+    )
+
+
+class PaymentEvent(Base):
+    """Processed provider event IDs used for webhook replay protection."""
+
+    __tablename__ = "payment_events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    provider: Mapped[str] = mapped_column(String(30), nullable=False)
+    event_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    event_type: Mapped[str] = mapped_column(String(100), nullable=False)
+    payload_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), default="processed", nullable=False)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    processed_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("provider", "event_id", name="uq_payment_events_provider_event"),
+        Index("idx_payment_events_processed", "processed_at"),
+    )
+
+
+class ReminderDelivery(Base):
+    """Idempotency and audit record for an automated invoice reminder."""
+
+    __tablename__ = "reminder_deliveries"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    invoice_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("invoices.id", ondelete="CASCADE"), nullable=False
+    )
+    due_date: Mapped[date] = mapped_column(Date, nullable=False)
+    offset_days: Mapped[int] = mapped_column(Integer, nullable=False)
+    recipient: Mapped[str] = mapped_column(String(255), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    claimed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "invoice_id", "due_date", "offset_days", name="uq_reminder_invoice_due_offset"
+        ),
+        Index("idx_reminders_invoice", "invoice_id"),
+        Index("idx_reminders_status", "status"),
+    )
 
 
 class Session(Base):
@@ -480,6 +723,9 @@ class RecurringSchedule(Base):
     tax_name: Mapped[str | None] = mapped_column(String(50), nullable=True)
     # Schedule status
     is_active: Mapped[int] = mapped_column(Integer, default=1)
+    auto_send: Mapped[int] = mapped_column(Integer, default=0)
+    reminders_enabled: Mapped[int] = mapped_column(Integer, default=1)
+    online_payment_enabled: Mapped[int] = mapped_column(Integer, default=0)
     next_invoice_date: Mapped[date] = mapped_column(Date, nullable=False)
     last_invoice_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("invoices.id"), nullable=True

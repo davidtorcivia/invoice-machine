@@ -48,6 +48,10 @@ class InvoiceSchema(BaseModel):
     client_email: str | None = None
     status: str
     paid_at: datetime | None = None
+    amount_paid: str = "0.00"
+    amount_outstanding: str = "0.00"
+    amount_refunded: str = "0.00"
+    amount_pending: str = "0.00"
     document_type: str = "invoice"
     client_reference: str | None = None
     show_payment_instructions: bool = True
@@ -65,6 +69,9 @@ class InvoiceSchema(BaseModel):
     notes: str | None = None
     pdf_path: str | None = None
     pdf_generated_at: datetime | None = None
+    online_payment_enabled: bool = False
+    payment_link_configured: bool = False
+    reminders_enabled: bool = True
     created_at: datetime
     updated_at: datetime
     deleted_at: datetime | None = None
@@ -88,6 +95,8 @@ class InvoiceCreate(BaseModel):
     client_reference: str | None = Field(None, max_length=100)
     show_payment_instructions: bool = True
     selected_payment_methods: str | None = Field(None, max_length=1000)
+    reminders_enabled: bool | None = None
+    online_payment_enabled: bool | None = None
     invoice_number_override: str | None = Field(
         None, max_length=50, pattern=INVOICE_NUMBER_REGEX
     )
@@ -111,6 +120,8 @@ class InvoiceUpdate(BaseModel):
     client_reference: str | None = Field(None, max_length=100)
     show_payment_instructions: bool | None = None
     selected_payment_methods: str | None = Field(None, max_length=1000)
+    reminders_enabled: bool | None = None
+    online_payment_enabled: bool | None = None
     # Tax settings
     tax_enabled: int | None = Field(None, ge=0, le=1)
     tax_rate: Decimal | None = Field(None, ge=0, le=100)
@@ -307,6 +318,8 @@ async def create_invoice(
             client_reference=invoice_data.client_reference,
             show_payment_instructions=invoice_data.show_payment_instructions,
             selected_payment_methods=invoice_data.selected_payment_methods,
+            reminders_enabled=invoice_data.reminders_enabled,
+            online_payment_enabled=invoice_data.online_payment_enabled,
             invoice_number_override=invoice_data.invoice_number_override,
             tax_enabled=invoice_data.tax_enabled,
             tax_rate=invoice_data.tax_rate,
@@ -339,11 +352,15 @@ async def update_invoice(
     session: AsyncSession = Depends(get_session),
 ) -> dict:
     """Update invoice."""
-    invoice = await InvoiceService.update_invoice(
-        session,
-        invoice_id,
-        **updates.model_dump(exclude_unset=True),
-    )
+    try:
+        invoice = await InvoiceService.update_invoice(
+            session,
+            invoice_id,
+            **updates.model_dump(exclude_unset=True),
+        )
+    except ValueError as exc:
+        await session.rollback()
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     if not invoice:
         raise HTTPException(status_code=404, detail="Invoice not found")
     return serialize_invoice(invoice)
@@ -355,7 +372,11 @@ async def delete_invoice(
     session: AsyncSession = Depends(get_session),
 ):
     """Delete invoice (soft delete)."""
-    success = await InvoiceService.delete_invoice(session, invoice_id)
+    try:
+        success = await InvoiceService.delete_invoice(session, invoice_id)
+    except ValueError as exc:
+        await session.rollback()
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     if not success:
         raise HTTPException(status_code=404, detail="Invoice not found")
 
