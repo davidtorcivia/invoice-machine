@@ -489,3 +489,87 @@ class TestColumnExistence:
         assert "nonexistent_column" not in columns
 
         conn.close()
+
+
+def test_migration_015_backfills_invoices_settled_before_payment_tracking():
+    """An invoice marked paid before payment tracking must not show a balance.
+
+    014 added amount_paid defaulting to 0, so pre-existing paid invoices reported
+    their whole total as outstanding. 015 records a labelled payment for each and
+    resyncs the cache, keeping amount_paid == SUM(payments) true everywhere.
+    """
+    import os
+    import sqlite3
+    import subprocess
+    import sys
+    import tempfile
+    from pathlib import Path
+
+    project_root = Path(__file__).resolve().parent.parent
+
+    with tempfile.TemporaryDirectory() as tmp:
+        db_file = Path(tmp) / "backfill.db"
+        env = dict(os.environ)
+        env["DATABASE_URL"] = f"sqlite+aiosqlite:///{db_file}"
+        env["ENVIRONMENT"] = "development"
+
+        # Bring the schema to 014 only, then seed as an older release would have.
+        step = (
+            "from alembic.config import Config; from alembic import command; "
+            "command.upgrade(Config('alembic.ini'), '014_payments_reporting')"
+        )
+        result = subprocess.run(
+            [sys.executable, "-c", step], cwd=str(project_root), env=env,
+            capture_output=True, text=True,
+        )
+        assert result.returncode == 0, result.stderr
+
+        conn = sqlite3.connect(str(db_file))
+        conn.execute(
+            "INSERT INTO invoices (invoice_number, status, issue_date, total, "
+            "currency_code, amount_paid, document_type) "
+            "VALUES ('PAID-1', 'paid', '2026-01-15', 600, 'USD', 0, 'invoice')"
+        )
+        conn.execute(
+            "INSERT INTO invoices (invoice_number, status, issue_date, total, "
+            "currency_code, amount_paid, document_type) "
+            "VALUES ('OPEN-1', 'sent', '2026-01-15', 400, 'USD', 0, 'invoice')"
+        )
+        conn.commit()
+        conn.close()
+
+        step = (
+            "from alembic.config import Config; from alembic import command; "
+            "command.upgrade(Config('alembic.ini'), 'head')"
+        )
+        result = subprocess.run(
+            [sys.executable, "-c", step], cwd=str(project_root), env=env,
+            capture_output=True, text=True,
+        )
+        assert result.returncode == 0, result.stderr
+
+        conn = sqlite3.connect(str(db_file))
+        try:
+            paid = conn.execute(
+                "SELECT amount_paid FROM invoices WHERE invoice_number='PAID-1'"
+            ).fetchone()[0]
+            assert paid == 600, "settled invoice should show no outstanding balance"
+
+            open_paid = conn.execute(
+                "SELECT amount_paid FROM invoices WHERE invoice_number='OPEN-1'"
+            ).fetchone()[0]
+            assert open_paid == 0, "unpaid invoice must be left alone"
+
+            drift = conn.execute(
+                "SELECT COUNT(*) FROM invoices i WHERE i.amount_paid != "
+                "COALESCE((SELECT SUM(amount) FROM payments p WHERE p.invoice_id=i.id), 0)"
+            ).fetchone()[0]
+            assert drift == 0, "amount_paid must equal the sum of its payments"
+
+            note = conn.execute(
+                "SELECT notes FROM payments WHERE invoice_id="
+                "(SELECT id FROM invoices WHERE invoice_number='PAID-1')"
+            ).fetchone()[0]
+            assert "Backfilled" in note, "backfilled rows must be labelled as such"
+        finally:
+            conn.close()
