@@ -316,7 +316,7 @@ export const helpSections = [
   <li>Optionally upload backups to <strong>S3-compatible storage</strong> (AWS S3, Backblaze B2, MinIO, etc.)</li>
   <li>Each backup can be <strong>downloaded</strong>, <strong>restored</strong>, or deleted from the list; restoring creates a pre-restore backup automatically and brings the schema up to date, so a backup from an older release comes back usable</li>
 </ul>
-<p class="note"><strong>Note:</strong> backups contain the database only. Your uploaded logo lives in <code>logos/</code> and is not included, so keep a copy of the whole <code>data/</code> directory if you want a complete restore.</p>`
+<p class="note"><strong>Note:</strong> a backup contains your database and your uploaded logo. Generated PDFs are left out because they are rebuilt from the database whenever they are needed.</p>`
   },
   {
     key: 'mcpIntegration',

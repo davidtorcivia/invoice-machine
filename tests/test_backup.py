@@ -9,8 +9,10 @@ These tests verify:
 """
 
 import gzip
+import io
 import json
 import sqlite3
+import tarfile
 import tempfile
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -18,6 +20,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from invoice_machine.config import get_settings
 from invoice_machine.crypto import encrypt_credential
 from invoice_machine.services import BackupService
 
@@ -100,15 +103,19 @@ class TestCreateBackup:
                 result = service.create_backup(compress=True)
 
                 assert result["compressed"] is True
-                assert result["filename"].endswith(".db.gz")
+                assert result["filename"].endswith(".tar.gz")
                 assert Path(result["path"]).exists()
                 assert result["size_bytes"] > 0
                 assert result["uploaded_to_s3"] is False
 
-                # Verify it's actually gzipped
-                with gzip.open(result["path"], "rb") as f:
-                    content = f.read()
-                    assert content.startswith(b"SQLite format 3")
+                # The archive holds a real SQLite database.
+                with tarfile.open(result["path"], "r:gz") as archive:
+                    assert "invoice_machine.db" in archive.getnames()
+                    assert (
+                        archive.extractfile("invoice_machine.db")
+                        .read()
+                        .startswith(b"SQLite format 3")
+                    )
 
     def test_create_backup_uncompressed(self, mock_db_file):
         """Create an uncompressed backup."""
@@ -122,13 +129,17 @@ class TestCreateBackup:
                 result = service.create_backup(compress=False)
 
                 assert result["compressed"] is False
-                assert result["filename"].endswith(".db")
+                assert result["filename"].endswith(".tar")
                 assert not result["filename"].endswith(".db.gz")
                 assert Path(result["path"]).exists()
 
-                # Verify it's a direct copy
-                content = Path(result["path"]).read_bytes()
-                assert content.startswith(b"SQLite format 3")
+                # An uncompressed archive still carries a real database.
+                with tarfile.open(result["path"], "r") as archive:
+                    assert (
+                        archive.extractfile("invoice_machine.db")
+                        .read()
+                        .startswith(b"SQLite format 3")
+                    )
 
     def test_create_backup_db_not_found(self):
         """Raise error when database doesn't exist."""
@@ -198,8 +209,10 @@ class TestCreateBackup:
                 # Should be in format YYYYMMDD_HHMMSS
                 import re
 
-                pattern = r"invoice_machine_backup_\d{8}_\d{6}\.db"
-                assert re.match(pattern, result["filename"].replace(".gz", ""))
+                pattern = r"invoice_machine_backup_\d{8}_\d{6}$"
+                assert re.match(
+                    pattern, result["filename"].replace(".tar.gz", "").replace(".tar", "")
+                )
 
 
 class TestListBackups:
@@ -606,3 +619,124 @@ class TestS3ConfigResolution:
         assert service.s3_config is not None
         assert service.s3_config["enabled"] is True
         assert service.s3_config["access_key_id"] == "AKIA-test"
+
+
+class TestLogoBackupAndRestore:
+    """Logos are the only user files the app cannot regenerate.
+
+    Backups used to hold the database alone, so a restore resurrected rows
+    pointing at a logo file that no longer existed and every PDF thereafter
+    rendered unbranded.
+    """
+
+    def _service(self, tmp_path, monkeypatch):
+        data_dir = tmp_path / "data"
+        logo_dir = data_dir / "logos"
+        logo_dir.mkdir(parents=True)
+        # A real database: create_backup uses SQLite's online backup API.
+        connection = sqlite3.connect(data_dir / "invoice_machine.db")
+        connection.execute("CREATE TABLE invoices (id INTEGER PRIMARY KEY)")
+        connection.commit()
+        connection.close()
+
+        settings = get_settings()
+        monkeypatch.setattr(settings, "data_dir", data_dir)
+        monkeypatch.setattr(settings, "logo_dir", logo_dir)
+        return BackupService(backup_dir=tmp_path / "backups"), data_dir, logo_dir
+
+    def test_backup_includes_logos(self, tmp_path, monkeypatch):
+        service, _, logo_dir = self._service(tmp_path, monkeypatch)
+        (logo_dir / "logo-abc.png").write_bytes(b"\x89PNG\r\n\x1a\nlogo-bytes")
+
+        result = service.create_backup(compress=True)
+
+        with tarfile.open(result["path"], "r:gz") as archive:
+            names = archive.getnames()
+        assert "invoice_machine.db" in names
+        assert "logos/logo-abc.png" in names
+
+    def test_restore_brings_the_logo_back(self, tmp_path, monkeypatch):
+        service, data_dir, logo_dir = self._service(tmp_path, monkeypatch)
+        original = b"\x89PNG\r\n\x1a\noriginal-logo"
+        (logo_dir / "logo-abc.png").write_bytes(original)
+
+        result = service.create_backup(compress=True)
+
+        # Lose the logo, as a fresh machine or a wiped volume would.
+        (logo_dir / "logo-abc.png").unlink()
+        assert not (logo_dir / "logo-abc.png").exists()
+
+        restored = service.restore_backup(result["filename"], validate=False)
+
+        assert restored["logos_restored"] == 1
+        assert (logo_dir / "logo-abc.png").read_bytes() == original
+
+    def test_restore_leaves_unrelated_logos_alone(self, tmp_path, monkeypatch):
+        """Restoring must not delete files the archive simply does not mention."""
+        service, _, logo_dir = self._service(tmp_path, monkeypatch)
+        (logo_dir / "in-backup.png").write_bytes(b"\x89PNG\r\n\x1a\na")
+        result = service.create_backup(compress=True)
+
+        (logo_dir / "added-later.png").write_bytes(b"\x89PNG\r\n\x1a\nb")
+        service.restore_backup(result["filename"], validate=False)
+
+        assert (logo_dir / "added-later.png").exists()
+
+    def test_old_database_only_backups_still_restore(self, tmp_path, monkeypatch):
+        """Backups written before this change must keep working."""
+        service, data_dir, _ = self._service(tmp_path, monkeypatch)
+        legacy = service.backup_dir / "invoice_machine_backup_20260101_120000.db"
+        legacy.parent.mkdir(parents=True, exist_ok=True)
+        legacy.write_bytes(b"SQLite format 3\x00" + b"\x00" * 300)
+
+        result = service.restore_backup(legacy.name, validate=False)
+
+        assert result["logos_restored"] == 0
+        assert (data_dir / "invoice_machine.db").read_bytes().startswith(b"SQLite format 3")
+
+    def test_old_gzipped_backups_still_restore(self, tmp_path, monkeypatch):
+        service, data_dir, _ = self._service(tmp_path, monkeypatch)
+        legacy = service.backup_dir / "invoice_machine_backup_20260101_120000.db.gz"
+        legacy.parent.mkdir(parents=True, exist_ok=True)
+        with gzip.open(legacy, "wb") as handle:
+            handle.write(b"SQLite format 3\x00" + b"\x00" * 300)
+
+        result = service.restore_backup(legacy.name, validate=False)
+
+        assert result["logos_restored"] == 0
+        assert (data_dir / "invoice_machine.db").read_bytes().startswith(b"SQLite format 3")
+
+    def test_listing_shows_both_formats(self, tmp_path, monkeypatch):
+        service, _, _ = self._service(tmp_path, monkeypatch)
+        service.backup_dir.mkdir(parents=True, exist_ok=True)
+        (service.backup_dir / "invoice_machine_backup_20260101_120000.db.gz").write_bytes(b"x")
+        service.create_backup(compress=True)
+
+        names = {entry["filename"] for entry in service.list_backups()}
+        assert any(n.endswith(".tar.gz") for n in names)
+        assert any(n.endswith(".db.gz") for n in names)
+        # A file matching two globs must not be listed twice.
+        assert len(names) == len(service.list_backups())
+
+    def test_crafted_archive_cannot_escape_the_logo_directory(self, tmp_path, monkeypatch):
+        """A hostile archive must not write outside logos/ or over the database."""
+        service, data_dir, logo_dir = self._service(tmp_path, monkeypatch)
+        service.backup_dir.mkdir(parents=True, exist_ok=True)
+        archive_path = service.backup_dir / "invoice_machine_backup_20260101_120000.tar.gz"
+
+        outside = tmp_path / "escaped.txt"
+        with tarfile.open(archive_path, "w:gz") as archive:
+            db = tarfile.TarInfo("invoice_machine.db")
+            payload = b"SQLite format 3\x00" + b"\x00" * 100
+            db.size = len(payload)
+            archive.addfile(db, io.BytesIO(payload))
+
+            for hostile in ("logos/../../escaped.txt", "logos/../invoice_machine.db"):
+                info = tarfile.TarInfo(hostile)
+                info.size = 4
+                archive.addfile(info, io.BytesIO(b"evil"))
+
+        service.restore_backup(archive_path.name, validate=False)
+
+        assert not outside.exists(), "archive escaped the logo directory"
+        assert (data_dir / "invoice_machine.db").read_bytes().startswith(b"SQLite format 3")

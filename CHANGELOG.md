@@ -25,6 +25,9 @@ Notable changes to Invoice Machine. Format based on
   single-currency roll-up that reports what it could not convert.
 - `CONTRIBUTING.md`, `SECURITY.md`, issue and pull request templates,
   Dependabot, and an `.editorconfig`.
+- A dependency-free browser smoke test (`npm run test:smoke`) that drives the
+  running app and fails on any console error, plus API typedefs kept honest by
+  a contract test against the serializers.
 
 ### Changed
 
@@ -34,6 +37,8 @@ Notable changes to Invoice Machine. Format based on
 - The in-app help was rewritten for the features above and corrected in two
   places where it described behaviour the app no longer had.
 - The README was rewritten and shortened.
+- Backups are now a tar archive containing the database and your uploaded
+  logos. Database-only backups from earlier versions still restore.
 
 ### Fixed
 
@@ -65,6 +70,13 @@ Notable changes to Invoice Machine. Format based on
   SQL wildcards in the user's query.
 - Sixteen endpoints had no rate limit, including the PDF route that can trigger
   a full render.
+- Restoring a backup lost your uploaded logo, because backups held only the
+  database while the restored rows still referenced the file.
+- The Content Security Policy only allowed the app's own bootstrap script when
+  a Cloudflare header was present, so any deployment not behind Cloudflare
+  served a blank page.
+- The recurring schedule modal never offered its auto-email option, because it
+  read SMTP status from an endpoint that does not return it.
 
 ### Security
 

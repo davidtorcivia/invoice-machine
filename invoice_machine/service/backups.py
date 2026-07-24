@@ -6,6 +6,7 @@ import os
 import re
 import shutil
 import sqlite3
+import tarfile
 import tempfile
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -24,6 +25,42 @@ _MAX_PRE_RESTORE_BACKUPS = 10
 
 # Embedded timestamp like 20260115_120000 in backup filenames.
 _BACKUP_TS_RE = re.compile(r"(\d{8}_\d{6})")
+
+# Layout inside a tar backup.
+DB_MEMBER = "invoice_machine.db"
+LOGO_PREFIX = "logos"
+
+# Filename patterns covering both the tar archives written now and the bare
+# database files written by earlier releases, under both product names.
+BACKUP_GLOBS = (
+    "invoice_machine_backup_*.tar*",
+    "invoice_machine_backup_*.db*",
+    "invoicely_backup_*.tar*",
+    "invoicely_backup_*.db*",
+)
+
+
+def _is_tar_backup(path: Path) -> bool:
+    """Whether a backup is the archive format rather than a bare database."""
+    return path.name.endswith((".tar", ".tar.gz"))
+
+
+def _extract_member(archive: tarfile.TarFile, member: tarfile.TarInfo, destination: Path) -> None:
+    """Write one regular file from a tar to an exact path.
+
+    Members are streamed by hand rather than via ``extract``/``extractall``:
+    that keeps a crafted archive from writing outside the destination through
+    absolute paths, ``..`` segments, symlinks or hard links, without depending
+    on the extraction filters added in Python 3.12.
+    """
+    if not member.isfile():
+        return
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    source = archive.extractfile(member)
+    if source is None:
+        return
+    with source, open(destination, "wb") as target:
+        shutil.copyfileobj(source, target)
 
 
 def _parse_backup_timestamp(filename: str) -> datetime | None:
@@ -72,7 +109,15 @@ class BackupService:
         self.backup_dir.mkdir(parents=True, exist_ok=True)
 
     def create_backup(self, compress: bool = True) -> dict:
-        """Create a backup of the database and optionally upload it to S3."""
+        """Create a backup of the database and uploaded logos.
+
+        Produces a tar archive holding the database snapshot alongside the
+        ``logos/`` directory. Earlier releases backed up the database alone, so a
+        restore resurrected rows pointing at a logo file that no longer existed
+        and every subsequent PDF rendered without branding. Logos are the only
+        user-supplied files the app cannot regenerate; PDFs are deliberately
+        excluded because they are rebuilt on demand from the database.
+        """
         settings = get_settings()
         timestamp = utc_now()
         timestamp_str = timestamp.strftime("%Y%m%d_%H%M%S")
@@ -81,28 +126,23 @@ class BackupService:
         if not db_path.exists():
             raise FileNotFoundError(f"Database not found at {db_path}")
 
-        backup_filename = (
-            f"invoice_machine_backup_{timestamp_str}.db.gz"
-            if compress
-            else f"invoice_machine_backup_{timestamp_str}.db"
-        )
+        suffix = ".tar.gz" if compress else ".tar"
+        backup_filename = f"invoice_machine_backup_{timestamp_str}{suffix}"
         backup_path = self.backup_dir / backup_filename
 
-        # Take a consistent snapshot first (safe under WAL/concurrent writes),
-        # then compress or move it into place.
+        # Snapshot first (safe under WAL and concurrent writers), then archive.
         snapshot_fd, snapshot_name = tempfile.mkstemp(suffix=".db", dir=self.backup_dir)
         os.close(snapshot_fd)
         snapshot_path = Path(snapshot_name)
         try:
             _snapshot_database(db_path, snapshot_path)
-            if compress:
-                with (
-                    open(snapshot_path, "rb") as src,
-                    gzip.open(backup_path, "wb", compresslevel=6) as dst,
-                ):
-                    shutil.copyfileobj(src, dst)
-            else:
-                shutil.copy2(snapshot_path, backup_path)
+            with tarfile.open(backup_path, "w:gz" if compress else "w") as archive:
+                archive.add(snapshot_path, arcname=DB_MEMBER)
+                logo_dir = settings.logo_dir
+                if logo_dir.is_dir():
+                    for logo in sorted(logo_dir.iterdir()):
+                        if logo.is_file():
+                            archive.add(logo, arcname=f"{LOGO_PREFIX}/{logo.name}")
         finally:
             snapshot_path.unlink(missing_ok=True)
 
@@ -145,8 +185,12 @@ class BackupService:
     def list_backups(self) -> list[dict]:
         """List all local backups sorted newest first."""
         backups = []
-        for pattern in ["invoice_machine_backup_*.db*", "invoicely_backup_*.db*"]:
+        seen: set[str] = set()
+        for pattern in BACKUP_GLOBS:
             for path in self.backup_dir.glob(pattern):
+                if path.name in seen:
+                    continue
+                seen.add(path.name)
                 stat = path.stat()
                 # Prefer the timestamp embedded in the filename; fall back to mtime.
                 created = _parse_backup_timestamp(path.name) or datetime.fromtimestamp(
@@ -174,13 +218,17 @@ class BackupService:
         """
         cutoff = utc_now() - timedelta(days=self.retention_days)
         deleted = 0
+        pruned: set[str] = set()
 
-        for pattern in ["invoice_machine_backup_*.db*", "invoicely_backup_*.db*"]:
+        for pattern in BACKUP_GLOBS:
             for path in self.backup_dir.glob(pattern):
+                if path.name in pruned:
+                    continue
                 created = _parse_backup_timestamp(path.name) or datetime.fromtimestamp(
                     path.stat().st_mtime, tz=UTC
                 )
                 if created < cutoff:
+                    pruned.add(path.name)
                     path.unlink()
                     deleted += 1
 
@@ -237,21 +285,67 @@ class BackupService:
 
         return deleted
 
+    def _materialize_database(self, backup_path: Path, destination: Path) -> None:
+        """Write the database from a backup to ``destination``.
+
+        Handles all three formats this app has produced: the tar archive written
+        now, and the bare .db / .db.gz files written before logos were included.
+        """
+        if _is_tar_backup(backup_path):
+            with tarfile.open(backup_path, "r:*") as archive:
+                member = next(
+                    (m for m in archive.getmembers() if Path(m.name).name == DB_MEMBER), None
+                )
+                if member is None:
+                    raise ValueError("Backup archive contains no database")
+                _extract_member(archive, member, destination)
+        elif backup_path.suffix == ".gz":
+            with gzip.open(backup_path, "rb") as src, open(destination, "wb") as dst:
+                shutil.copyfileobj(src, dst)
+        else:
+            shutil.copy2(backup_path, destination)
+
+    def _restore_logos(self, backup_path: Path) -> int:
+        """Restore uploaded logos from a tar backup. Returns how many were written.
+
+        Files already present are overwritten, but nothing is deleted: an extra
+        logo left behind is a harmless orphan, whereas removing files the archive
+        happens not to contain would destroy data the backup never claimed to
+        replace.
+        """
+        if not _is_tar_backup(backup_path):
+            return 0
+
+        logo_dir = get_settings().logo_dir
+        logo_dir.mkdir(parents=True, exist_ok=True)
+        restored = 0
+        with tarfile.open(backup_path, "r:*") as archive:
+            for member in archive.getmembers():
+                parts = Path(member.name).parts
+                if len(parts) != 2 or parts[0] != LOGO_PREFIX or not member.isfile():
+                    continue
+                # parts[1] is used as a bare filename, so the destination cannot
+                # escape logo_dir even for a hand-crafted archive.
+                _extract_member(archive, member, logo_dir / Path(parts[1]).name)
+                restored += 1
+        return restored
+
     def validate_backup(self, backup_path: Path) -> bool:
-        """Validate that a backup is a readable SQLite database."""
-        if backup_path.suffix == ".gz":
+        """Validate that a backup contains a readable SQLite database."""
+        if backup_path.suffix == ".db":
+            test_path, tmp_path = backup_path, None
+        else:
             with tempfile.NamedTemporaryFile(delete=False, suffix=".db") as tmp:
                 tmp_path = Path(tmp.name)
             try:
-                with gzip.open(backup_path, "rb") as src, open(tmp_path, "wb") as dst:
-                    shutil.copyfileobj(src, dst)
+                self._materialize_database(backup_path, tmp_path)
                 test_path = tmp_path
+            except ValueError:
+                tmp_path.unlink(missing_ok=True)
+                raise
             except Exception as exc:
                 tmp_path.unlink(missing_ok=True)
-                raise ValueError(f"Failed to decompress backup: {exc}")
-        else:
-            test_path = backup_path
-            tmp_path = None
+                raise ValueError(f"Failed to read backup: {exc}")
 
         try:
             conn = sqlite3.connect(test_path)
@@ -307,11 +401,7 @@ class BackupService:
         )
 
         try:
-            if backup_path.suffix == ".gz":
-                with gzip.open(backup_path, "rb") as src, open(tmp_path, "wb") as dst:
-                    shutil.copyfileobj(src, dst)
-            else:
-                shutil.copy2(backup_path, tmp_path)
+            self._materialize_database(backup_path, tmp_path)
 
             if db_path.exists():
                 pre_restore_filename = f"pre_restore_{utc_now().strftime('%Y%m%d_%H%M%S')}.db"
@@ -331,12 +421,17 @@ class BackupService:
         finally:
             tmp_path.unlink(missing_ok=True)
 
+        # Logos only after the database is in place: if the swap fails there is
+        # nothing to point at them, and the originals are still where they were.
+        logos_restored = self._restore_logos(backup_path)
+
         # Keep the pre-restore copies bounded.
         self._cleanup_pre_restore_backups()
 
         return {
             "restored_from": backup_filename,
             "pre_restore_backup": pre_restore_filename,
+            "logos_restored": logos_restored,
             "timestamp": utc_now().isoformat(),
             "message": "Database restored. Please restart the application for changes to take effect.",
         }

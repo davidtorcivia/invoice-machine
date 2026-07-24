@@ -52,6 +52,7 @@ class RestoreResult(BaseModel):
 
     restored_from: str
     pre_restore_backup: str | None
+    logos_restored: int = 0
     timestamp: str
     message: str
 
