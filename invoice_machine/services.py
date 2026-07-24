@@ -19,6 +19,7 @@ from invoice_machine.service.common import (
     validate_recurring_schedule,
 )
 from invoice_machine.service.invoices import InvoiceService
+from invoice_machine.service.payments import PaymentService, recalculate_invoice_payments
 from invoice_machine.service.recurring import RecurringService
 from invoice_machine.service.search import SearchService
 
@@ -26,8 +27,10 @@ __all__ = [
     "BackupService",
     "ClientService",
     "InvoiceService",
+    "PaymentService",
     "RecurringService",
     "SearchService",
+    "recalculate_invoice_payments",
     "VALID_RECURRING_FREQUENCIES",
     "_replace_with_valid_day",
     "calculate_due_date",

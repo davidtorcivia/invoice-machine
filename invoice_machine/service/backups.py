@@ -391,6 +391,9 @@ class BackupService:
             backups.sort(key=lambda backup: backup["created_at"], reverse=True)
             return backups
         except Exception:
+            # Listing is best-effort so the local backup list still renders, but a
+            # misconfigured bucket must not vanish without a trace in the logs.
+            logger.warning("Could not list S3 backups", exc_info=True)
             return []
 
     def delete_backup(self, backup_filename: str) -> bool:

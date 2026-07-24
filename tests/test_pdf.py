@@ -172,6 +172,10 @@ class TestGeneratePDF:
         invoice.tax_name = "Tax"
         invoice.show_payment_instructions = True
         invoice.selected_payment_methods = None
+        # Payment state, as every real invoice has.
+        invoice.amount_paid = Decimal("0.00")
+        invoice.amount_due = Decimal("1000.00")
+        invoice.payment_link_url = None
         return invoice
 
     @pytest.fixture
@@ -221,8 +225,8 @@ class TestGeneratePDF:
 
                         result = await generate_pdf(db_session, mock_invoice)
 
-                        assert result == "pdfs/20250115-1.pdf"
-                        assert (pdf_dir / "20250115-1.pdf").exists()
+                        assert result == "pdfs/20250115-1-1.pdf"
+                        assert (pdf_dir / "20250115-1-1.pdf").exists()
 
     @pytest.mark.asyncio
     async def test_generate_pdf_with_items(
@@ -262,8 +266,8 @@ class TestGeneratePDF:
 
                         result = await generate_pdf(db_session, mock_invoice)
 
-                        assert result == "pdfs/20250115-1.pdf"
-                        pdf_file = pdf_dir / "20250115-1.pdf"
+                        assert result == "pdfs/20250115-1-1.pdf"
+                        pdf_file = pdf_dir / "20250115-1-1.pdf"
                         assert pdf_file.exists()
                         # Verify PDF has content
                         assert pdf_file.stat().st_size > 0
@@ -301,7 +305,7 @@ class TestGeneratePDF:
 
                         result = await generate_pdf(db_session, mock_invoice)
 
-                        assert result == "pdfs/20250115-1.pdf"
+                        assert result == "pdfs/20250115-1-1.pdf"
 
     @pytest.mark.asyncio
     async def test_generate_pdf_quote(
@@ -333,7 +337,7 @@ class TestGeneratePDF:
 
                         result = await generate_pdf(db_session, mock_invoice)
 
-                        assert result == "pdfs/Q-20250115-1.pdf"
+                        assert result == "pdfs/Q-20250115-1-1.pdf"
 
     @pytest.mark.asyncio
     async def test_generate_pdf_with_payment_methods(
@@ -368,7 +372,7 @@ class TestGeneratePDF:
 
                         result = await generate_pdf(db_session, mock_invoice)
 
-                        assert result == "pdfs/20250115-1.pdf"
+                        assert result == "pdfs/20250115-1-1.pdf"
 
     @pytest.mark.asyncio
     async def test_generate_pdf_long_invoice_number(
@@ -399,7 +403,7 @@ class TestGeneratePDF:
 
                         result = await generate_pdf(db_session, mock_invoice)
 
-                        assert "INV-20250115-SPECIAL-CLIENT-12345.pdf" in result
+                        assert "INV-20250115-SPECIAL-CLIENT-12345-1.pdf" in result
 
 
 class TestPDFTemplate:
@@ -419,3 +423,139 @@ class TestPDFTemplate:
         assert "{{ invoice.invoice_number }}" in content or "invoice_number" in content
         assert "{{ business.name }}" in content or "business.name" in content
         assert "format_money" in content
+
+
+class TestStoreInvoicePDF:
+    """Regression tests for PDF freshness bookkeeping and filename uniqueness."""
+
+    @pytest.mark.asyncio
+    async def test_stamping_does_not_leave_invoice_permanently_stale(
+        self, db_session, invoice_with_client, business_profile
+    ):
+        """A stamped PDF must not immediately look stale again.
+
+        `updated_at` has an `onupdate` default that fires at flush time, i.e.
+        always *after* the `pdf_generated_at` written in the same statement. That
+        made every invoice permanently stale and re-rendered the PDF on every
+        single fetch.
+        """
+        from invoice_machine.pdf.generator import store_invoice_pdf
+
+        renders = []
+
+        async def fake_generate(session, invoice):
+            renders.append(invoice.id)
+            return "pdfs/fake.pdf"
+
+        with patch("invoice_machine.pdf.generator.generate_pdf", side_effect=fake_generate):
+            await store_invoice_pdf(db_session, invoice_with_client)
+            assert renders == [invoice_with_client.id]
+
+            # Second and third fetches must reuse the stored PDF.
+            await store_invoice_pdf(db_session, invoice_with_client)
+            await store_invoice_pdf(db_session, invoice_with_client)
+            assert renders == [invoice_with_client.id]
+
+            assert not invoice_with_client.needs_pdf_regeneration
+
+    @pytest.mark.asyncio
+    async def test_real_edit_still_invalidates_the_pdf(
+        self, db_session, invoice_with_client, business_profile
+    ):
+        """Editing the invoice must still force a re-render."""
+        from invoice_machine.pdf.generator import store_invoice_pdf
+
+        renders = []
+
+        async def fake_generate(session, invoice):
+            renders.append(invoice.id)
+            return "pdfs/fake.pdf"
+
+        with patch("invoice_machine.pdf.generator.generate_pdf", side_effect=fake_generate):
+            await store_invoice_pdf(db_session, invoice_with_client)
+
+            invoice_with_client.notes = "edited"
+            await db_session.commit()
+            await db_session.refresh(invoice_with_client)
+
+            await store_invoice_pdf(db_session, invoice_with_client)
+
+        assert len(renders) == 2
+
+    @pytest.mark.asyncio
+    async def test_force_always_rerenders(
+        self, db_session, invoice_with_client, business_profile
+    ):
+        """The explicit regenerate action bypasses the freshness check."""
+        from invoice_machine.pdf.generator import store_invoice_pdf
+
+        renders = []
+
+        async def fake_generate(session, invoice):
+            renders.append(invoice.id)
+            return "pdfs/fake.pdf"
+
+        with patch("invoice_machine.pdf.generator.generate_pdf", side_effect=fake_generate):
+            await store_invoice_pdf(db_session, invoice_with_client)
+            await store_invoice_pdf(db_session, invoice_with_client, force=True)
+
+        assert len(renders) == 2
+
+    def test_filenames_are_unique_across_punctuation_variants(self):
+        """"INV.001" and "INV001" must not share a PDF file.
+
+        sanitize_filename_component drops dots, so a number-only filename let one
+        invoice's PDF be served (and emailed) for a different invoice.
+        """
+        from invoice_machine.pdf.generator import invoice_pdf_filename
+
+        first = Invoice(id=1, invoice_number="INV.001", issue_date=date(2026, 1, 15))
+        second = Invoice(id=2, invoice_number="INV001", issue_date=date(2026, 1, 15))
+
+        assert invoice_pdf_filename(first) != invoice_pdf_filename(second)
+
+
+class TestLogoDataUri:
+    """The data: URI must describe the logo's real format, not always PNG."""
+
+    def _profile_with_logo(self, logo_dir: Path, name: str, content: bytes) -> BusinessProfile:
+        (logo_dir / name).write_bytes(content)
+        profile = BusinessProfile(id=1, name="Test")
+        profile.logo_path = name
+        return profile
+
+    def test_jpeg_logo_is_not_labelled_png(self):
+        from invoice_machine.pdf.generator import get_logo_data_uri
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            logo_dir = Path(tmpdir)
+            profile = self._profile_with_logo(
+                logo_dir, "logo.jpg", b"\xff\xd8\xff\xe0" + b"\x00" * 32
+            )
+            with patch("invoice_machine.pdf.generator.settings") as mock_settings:
+                mock_settings.logo_dir = logo_dir
+                assert get_logo_data_uri(profile).startswith("data:image/jpeg;base64,")
+
+    def test_png_logo_is_labelled_png(self):
+        from invoice_machine.pdf.generator import get_logo_data_uri
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            logo_dir = Path(tmpdir)
+            profile = self._profile_with_logo(
+                logo_dir, "logo.png", b"\x89PNG\r\n\x1a\n" + b"\x00" * 32
+            )
+            with patch("invoice_machine.pdf.generator.settings") as mock_settings:
+                mock_settings.logo_dir = logo_dir
+                assert get_logo_data_uri(profile).startswith("data:image/png;base64,")
+
+    def test_webp_logo_is_labelled_webp(self):
+        from invoice_machine.pdf.generator import get_logo_data_uri
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            logo_dir = Path(tmpdir)
+            profile = self._profile_with_logo(
+                logo_dir, "logo.webp", b"RIFF\x00\x00\x00\x00WEBPVP8 " + b"\x00" * 16
+            )
+            with patch("invoice_machine.pdf.generator.settings") as mock_settings:
+                mock_settings.logo_dir = logo_dir
+                assert get_logo_data_uri(profile).startswith("data:image/webp;base64,")

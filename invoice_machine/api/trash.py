@@ -39,14 +39,18 @@ async def list_trash(
 
     items = []
 
-    # Get trashed clients
+    # Column-only selects: loading whole Invoice entities here would drag in the
+    # selectin-loaded line items and client for every trashed row just to render
+    # a name and a date.
     from sqlalchemy import select
 
-    client_result = await session.execute(
-        select(Client).where(Client.deleted_at.is_not(None))
+    client_rows = await session.execute(
+        select(Client.id, Client.name, Client.business_name, Client.deleted_at).where(
+            Client.deleted_at.is_not(None)
+        )
     )
-    for client in client_result.scalars():
-        deleted_at = ensure_utc(client.deleted_at)
+    for row in client_rows:
+        deleted_at = ensure_utc(row.deleted_at)
         if not deleted_at:
             continue
         days_left = settings.trash_retention_days - int(
@@ -55,19 +59,20 @@ async def list_trash(
         items.append(
             TrashedItemSchema(
                 type="client",
-                id=client.id,
-                name=client.display_name,
+                id=row.id,
+                name=row.business_name or row.name or "Unknown Client",
                 deleted_at=deleted_at,
                 days_until_purge=days_left,
             )
         )
 
-    # Get trashed invoices
-    invoice_result = await session.execute(
-        select(Invoice).where(Invoice.deleted_at.is_not(None))
+    invoice_rows = await session.execute(
+        select(Invoice.id, Invoice.invoice_number, Invoice.deleted_at).where(
+            Invoice.deleted_at.is_not(None)
+        )
     )
-    for invoice in invoice_result.scalars():
-        deleted_at = ensure_utc(invoice.deleted_at)
+    for row in invoice_rows:
+        deleted_at = ensure_utc(row.deleted_at)
         if not deleted_at:
             continue
         days_left = settings.trash_retention_days - int(
@@ -76,8 +81,8 @@ async def list_trash(
         items.append(
             TrashedItemSchema(
                 type="invoice",
-                id=invoice.id,
-                name=invoice.invoice_number,
+                id=row.id,
+                name=row.invoice_number,
                 deleted_at=deleted_at,
                 days_until_purge=days_left,
             )

@@ -319,6 +319,75 @@ export const invoicesApi = {
     action,
     invoice_ids: invoiceIds,
   }),
+
+  /** @param {number | string} id @param {Record<string, unknown>} [data={}] */
+  convertQuote: (id, data = {}) => post(`/invoices/${id}/convert`, data),
+
+  /** @param {number | string} id */
+  createPaymentLink: (id) => post(`/invoices/${id}/payment-link`),
+};
+
+// ===== Payments =====
+
+export const paymentsApi = {
+  /** @param {number | string} invoiceId */
+  list: (invoiceId) => get(`/invoices/${invoiceId}/payments`),
+
+  /** @param {number | string} invoiceId @param {Record<string, unknown>} data */
+  record: (invoiceId, data) => post(`/invoices/${invoiceId}/payments`, data),
+
+  /** @param {number | string} paymentId @param {Record<string, unknown>} data */
+  update: (paymentId, data) => put(`/payments/${paymentId}`, data),
+
+  /** @param {number | string} paymentId */
+  delete: (paymentId) => del(`/payments/${paymentId}`),
+
+  /** @param {string} [asOf] */
+  aging: (asOf) => get(withQuery('/analytics/aging', { as_of: asOf })),
+};
+
+// ===== Export =====
+
+export const exportApi = {
+  /**
+   * Build a download URL for a CSV export.
+   * @param {string} kind one of invoices, line_items, payments, clients
+   * @param {QueryParams} [params={}]
+   */
+  url: (kind, params = {}) =>
+    `${API_BASE}/export/${kind}.csv${buildQuery({
+      from_date: params.from_date,
+      to_date: params.to_date,
+      include_deleted: params.include_deleted ? 'true' : undefined,
+      document_type: params.document_type,
+    })}`,
+};
+
+// ===== Payment / reminder / FX settings =====
+
+export const paymentSettingsApi = {
+  get: () => get('/settings/payments'),
+
+  /** @param {Record<string, unknown>} data */
+  update: (data) => put('/settings/payments', data),
+
+  test: () => post('/settings/payments/test'),
+};
+
+export const remindersApi = {
+  get: () => get('/settings/reminders'),
+
+  /** @param {Record<string, unknown>} data */
+  update: (data) => put('/settings/reminders', data),
+
+  runNow: () => post('/settings/reminders/run'),
+};
+
+export const fxRatesApi = {
+  get: () => get('/settings/fx-rates'),
+
+  /** @param {Record<string, unknown>} rates */
+  update: (rates) => put('/settings/fx-rates', { rates }),
 };
 
 // ===== Trash =====
@@ -410,6 +479,12 @@ export const searchApi = {
 
 export const analyticsApi = {
   getDashboardSummary: () => get('/analytics/dashboard'),
+
+  /** @param {QueryParams} [params={}] */
+  getConsolidated: (params = {}) => get(withQuery('/analytics/consolidated', {
+    from_date: params.from_date,
+    to_date: params.to_date,
+  })),
 
   /** @param {QueryParams} [params={}] */
   getRevenue: (params = {}) => get(withQuery('/analytics/revenue', {

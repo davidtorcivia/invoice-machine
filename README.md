@@ -1,29 +1,36 @@
 # Invoice Machine
 
-A self-hosted invoicing application for freelancers and small businesses. Create invoices and quotes, manage clients, and generate PDFs.
+Self-hosted invoicing for freelancers and small businesses. Write invoices and quotes, track what you are owed, get paid, and let an AI assistant do the typing.
+
+Everything runs on a single SQLite file and a single container. No accounts, no subscription, no third-party calls at runtime.
 
 ## Features
 
-- Create and track invoices and quotes with automatic numbering
-- Client database with address and payment terms
-- PDF generation with customizable branding and logo
-- **Tax support** with per-invoice, per-client, or global defaults
-- **Recurring invoices** for retainers and subscriptions
-- **SMTP email** to send invoices directly to clients
-- **Full-text search** across invoices and clients
-- Built-in authentication with rate limiting
-- Automatic daily backups with optional S3 storage
-- Dark mode with system preference detection
-- Overdue invoice highlighting and automatic status updates
-- **Analytics** for revenue tracking and client insights
-- MCP integration for Claude Desktop (separate key from REST bot API)
-- Bot API key for conventional `/api/*` automation with hosted `SKILL.md`
-- Fully self-hosted assets (fonts bundled locally) — no third-party CDN calls, works offline
-- SQLite storage, runs anywhere
+**Billing**
+- Invoices and quotes with automatic daily numbering
+- Quote to invoice conversion that keeps the original quote as a record
+- Payment tracking with partial payments, running balances, and A/R aging
+- Hosted card payment links via Stripe, with a signed webhook that reconciles automatically
+- Recurring schedules for retainers and subscriptions
+- Tax with per-invoice, per-client, and global defaults
+- Multi-currency, with per-currency totals and an optional converted roll-up
+
+**Getting paid**
+- SMTP delivery of invoice PDFs
+- Automated payment reminders on a schedule you choose
+- Overdue detection and status updates
+
+**Everything else**
+- Branded PDF generation with your logo and accent color
+- Client database with addresses, terms, and per-client defaults
+- Full-text search across invoices, clients, and line items
+- CSV export of invoices, line items, payments, and clients
+- Revenue analytics and client lifetime value
+- Automatic daily backups with optional S3 upload
+- MCP server for Claude, plus a separate bot API key for scripts
+- Dark mode, keyboard-friendly tables, and offline-capable assets
 
 ## Quick Start
-
-### Docker
 
 ```bash
 git clone https://github.com/davidtorcivia/invoice-machine.git
@@ -33,83 +40,35 @@ docker-compose up -d
 
 Open http://localhost:8080 and create your admin account.
 
-### Production Deployment
+Then:
 
-For production, set environment variables to configure the port and data directory:
-
-```bash
-# Set your production values
-export PORT=8085
-export DATA_DIR=/nvme-mirror/apps/invoice-machine/data
-export APP_BASE_URL=https://invoices.yourdomain.com
-
-# Start the container
-docker-compose up -d
-```
-
-Or create a `.env` file in the project directory:
-
-```env
-PORT=8085
-DATA_DIR=/nvme-mirror/apps/invoice-machine/data
-APP_BASE_URL=https://invoices.yourdomain.com
-```
-
-The container always listens on port 8080 internally. The `PORT` variable maps it to your desired external port.
-
-### First Run
-
-1. Create your admin account on the setup screen
-2. Go to Settings to configure your business name, address, and logo
-3. Add payment instructions (bank details, Venmo, etc.)
-4. Start creating invoices
+1. Go to Settings and fill in your business name, address, and logo
+2. Add payment instructions (bank details, Venmo, whatever you use)
+3. Start writing invoices
 
 ## Configuration
 
-Set these in a `.env` file or as environment variables. See `.env.example` for a complete template.
+Set these in a `.env` file or as environment variables. See `.env.example` for a full template.
 
-### Core Settings
+### Core
 
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `PORT` | External port mapping | `8080` |
 | `DATA_DIR` | Directory for data storage | `./data` |
-| `APP_BASE_URL` | Base URL for the application | `http://localhost:8080` |
-| `ENVIRONMENT` | Environment mode (development/staging/production) | `development` |
-| `TRASH_RETENTION_DAYS` | Days before auto-purge from trash | `90` |
+| `APP_BASE_URL` | Public base URL of the app | `http://localhost:8080` |
+| `ENVIRONMENT` | `development`, `staging`, or `production` | `development` |
+| `TRASH_RETENTION_DAYS` | Days before trashed items are purged | `90` |
 
-### Security Settings
+### Security
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `INVOICE_MACHINE_ENCRYPTION_KEY` | Encryption key for sensitive data (SMTP passwords) | Required in production |
+| `INVOICE_MACHINE_ENCRYPTION_KEY` | Encrypts stored credentials. Required in production. | none |
 | `SECURE_COOKIES` | Enable secure cookies (requires HTTPS) | `false` |
-| `CORS_ORIGINS` | Allowed CORS origins (comma-separated) | `http://localhost:3000,http://localhost:8080` |
+| `CORS_ORIGINS` | Allowed origins, comma-separated | `http://localhost:3000,http://localhost:8080` |
 
-#### Generating an Encryption Key
-
-The encryption key protects sensitive data like SMTP credentials. In production, this key is **required**—the application will refuse to start without it.
-
-Generate a secure 32-byte (64 hex characters) key using any of these methods:
-
-**Python:**
-```bash
-python -c "import secrets; print(secrets.token_hex(32))"
-```
-
-**OpenSSL:**
-```bash
-openssl rand -hex 32
-```
-
-**PowerShell:**
-```powershell
--join ((1..32) | ForEach-Object { "{0:x2}" -f (Get-Random -Maximum 256) })
-```
-
-Store the key securely and **never commit it to version control**. If you lose the key, any encrypted credentials (SMTP passwords) will become unreadable and must be re-entered.
-
-### Invoice Defaults
+### Invoice defaults
 
 | Variable | Description | Default |
 |----------|-------------|---------|
@@ -117,121 +76,106 @@ Store the key securely and **never commit it to version control**. If you lose t
 | `DEFAULT_CURRENCY_CODE` | Default currency | `USD` |
 | `DEFAULT_ACCENT_COLOR` | PDF accent color (hex) | `#16a34a` |
 
-### Production Configuration
+### Production
 
-For production deployments behind HTTPS (Cloudflare Tunnel, nginx, etc.), these settings are **required**:
+Behind HTTPS (Cloudflare Tunnel, nginx, Caddy), all of these are required:
 
 ```env
-# Required for production
 INVOICE_MACHINE_ENCRYPTION_KEY=your_64_character_hex_key_here
 APP_BASE_URL=https://invoices.yourdomain.com
 ENVIRONMENT=production
 SECURE_COOKIES=true
 CORS_ORIGINS=https://invoices.yourdomain.com
 
-# Recommended: persistent data storage
+# Recommended: keep data outside the container
 DATA_DIR=/var/lib/invoice-machine/data
 ```
 
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `INVOICE_MACHINE_ENCRYPTION_KEY` | **Yes** | Encryption key for sensitive data (see [Generating an Encryption Key](#generating-an-encryption-key)) |
-| `APP_BASE_URL` | **Yes** | Must match your public URL for PDF links, MCP, and hosted `SKILL.md` |
-| `ENVIRONMENT` | **Yes** | Set to `production` for proper logging and defaults |
-| `SECURE_COOKIES` | **Yes** | Must be `true` when using HTTPS |
-| `CORS_ORIGINS` | **Yes** | Must match your domain to prevent CORS errors |
-| `DATA_DIR` | Recommended | Persistent storage location outside container |
+`CORS_ORIGINS` must include `APP_BASE_URL`. The app logs a warning at startup if it does not.
+
+### Generating an encryption key
+
+This key encrypts your SMTP password, Stripe credentials, and S3 keys. In production the app refuses to start without it.
+
+```bash
+python -c "import secrets; print(secrets.token_hex(32))"
+# or
+openssl rand -hex 32
+```
+
+Store it somewhere safe and keep it out of version control. Back it up separately from your database: without the key, stored credentials cannot be decrypted and have to be entered again.
 
 ## Usage
 
-### Invoices
+### Invoices and quotes
 
-1. Go to Invoices > New Invoice
-2. Select a client or enter details manually
-3. Add line items with descriptions, quantities or hours, and prices
-4. Set issue date and due date
-5. Click Create Invoice
+Create an invoice from Invoices > New Invoice, pick a client, add line items with quantities or hours, and set the dates. Quotes work the same way with the quote checkbox ticked.
 
-### Quotes
+Numbers follow `YYYYMMDD-N`, where N restarts each day. Quotes use a `Q-` prefix. Changing the date of an auto-numbered document renumbers it; a number you typed yourself is never overwritten.
 
-Same as invoices, but check "This is a Quote". Quotes are numbered separately with a Q- prefix.
+When a client accepts a quote, use **Convert to invoice**. That creates a new invoice carrying the quote's line items, tax, and currency, and links the two together. The quote stays exactly as the client saw it.
 
-### PDF Generation
+### Payments
 
-Click Download PDF on any invoice. PDFs regenerate automatically when the invoice changes. Filename format: `[Client Name] - [Invoice Number].pdf`
+Record payments against an invoice from its detail page. Partial payments are fully supported: the invoice keeps a running balance, and it flips to paid on its own once payments cover the total. Delete a payment and it reverts to sent or overdue as appropriate.
 
-### Invoice Numbers
+The Reports page shows an accounts receivable aging table, bucketing outstanding balances by how far past due they are. Amounts in different currencies are always reported separately.
 
-Format: `YYYYMMDD-N` where N resets daily.
+### Online payments
 
-- First invoice on June 23, 2025: `20250623-1`
-- Second invoice same day: `20250623-2`
-- Quotes: `Q-YYYYMMDD-N`
+Settings > Online payments connects a Stripe account so clients can pay by card.
 
-Changing an invoice's date regenerates its number.
+1. Create a [restricted API key](https://docs.stripe.com/keys/restricted-api-keys) in Stripe with write access to Checkout Sessions, and paste it in. A restricted key is strongly preferred over a full secret key, so a leaked value cannot move money or read your customer list.
+2. Add a webhook in Stripe pointing at `https://your-server.com/api/webhooks/stripe`, subscribed to `checkout.session.completed`.
+3. Paste the webhook signing secret back into Settings.
 
-### Tax Handling
+Each invoice then gets a **Create payment link** button. The link covers the outstanding balance, appears on the PDF and in emails via the `{payment_link}` placeholder, and completed payments are recorded automatically. Webhook requests are rejected unless they carry a valid Stripe signature within a five-minute window, and each Stripe event is recorded at most once.
 
-Invoice Machine supports optional tax with a cascade system:
+Which card and wallet types appear at checkout is controlled from your Stripe dashboard.
 
-1. **Invoice-level**: Override tax settings on individual invoices
-2. **Client-level**: Set default tax for specific clients
-3. **Global default**: Configure in Settings > Tax Settings
+### Recurring invoices
 
-The cascade priority is: Invoice > Client > Global. Tax is disabled by default.
+Recurring > New Schedule sets up retainers and subscriptions. Choose a client, a frequency (daily, weekly, monthly, quarterly, yearly), and when in the period to bill: a day of the month, a day of the week, which month of the quarter, or which month of the year.
 
-To enable tax:
-1. Go to Settings and enable tax with your default rate
-2. Optionally set per-client rates in the client editor
-3. Override on specific invoices as needed
+Schedules can carry their own line items, tax, notes, and payment instructions, and can email each generated invoice automatically. Generation runs daily at 02:00 UTC and catches up on any periods missed while the app was down, dating each invoice to its own period. You can also trigger, pause, and resume a schedule by hand.
 
-### Recurring Invoices
+### Email
 
-Set up recurring invoices for retainers, subscriptions, or regular services:
+Settings > Email configures SMTP. Any provider works (Gmail, Fastmail, SendGrid, Mailgun, Postmark). Test the connection, then use **Send email** on any invoice to deliver the PDF.
 
-1. Go to the **Recurring** page in the sidebar and click **New Schedule** (pick the client there)
-2. Create a schedule with:
-   - Name (e.g., "Monthly Retainer")
-   - Frequency (daily, weekly, monthly, quarterly, yearly)
-   - Schedule day (1-31 for monthly, 0-6 for weekly)
-   - Line items and amounts
-3. Invoices are generated automatically at 2 AM UTC
+Subject and body templates live in Settings > Email templates and accept placeholders including `{invoice_number}`, `{client_name}`, `{total}`, `{amount_due}`, `{due_date}`, `{line_items}`, and `{payment_link}`.
 
-You can also trigger schedules manually or pause/resume them.
+### Payment reminders
 
-### Email Delivery
+Settings > Payment reminders chases unpaid invoices for you. Pick a schedule as day offsets around the due date, for example three days before, then one, seven, and fourteen days after. The sweep runs daily at 09:00 UTC.
 
-Send invoices directly to clients via SMTP:
+Each offset is sent at most once per invoice. Fully paid invoices are never chased, partially paid ones are chased for the balance, and turning reminders on for an already-overdue invoice sends a single current reminder rather than the whole backlog.
 
-1. Go to Settings > Email Configuration
-2. Configure your SMTP server:
-   - Host and port (587 for TLS, 465 for SSL)
-   - Username and password
-   - From name and email
-3. Click "Test Connection" to verify
-4. On any invoice, click "Send Email" to deliver the PDF
+### Multi-currency
 
-Works with any SMTP provider (Gmail, SendGrid, Mailgun, etc.).
+Invoices carry their own currency, and totals are reported per currency throughout the app. Money in different currencies is never added together.
+
+For a single headline number, add exchange rates in Settings > Exchange rates. A rate is copied onto each invoice when it is issued, so historical invoices keep the rate that applied at the time, and the Reports page gains a converted roll-up. Invoices with no recorded rate are excluded from that roll-up and reported as such, so a partial picture is never presented as a complete one.
+
+### Export
+
+Reports > Export downloads CSVs of invoices, line items, payments, or clients for the selected year. Money is written as plain decimals alongside an explicit currency column, which is what spreadsheets and accounting imports expect.
+
+### PDFs
+
+Click Download PDF on any invoice. PDFs regenerate when the invoice actually changes and are served from disk otherwise. The download is named `[Client Name] - [Invoice Number].pdf`.
 
 ### Search
 
-Use the search bar to find invoices and clients:
-- Search by invoice number, client name, or notes
-- Results are ranked by relevance using full-text search
-- Partial matches are supported
+The sidebar search covers invoice numbers, client names, notes, and line item descriptions, ranked by relevance with partial matching.
 
 ## MCP Integration
 
-Invoice Machine works with Claude Desktop through MCP. You can create invoices, manage clients, and generate PDFs through natural language.
+Invoice Machine ships an MCP server, so Claude can create invoices, record payments, chase clients, and pull analytics for you.
 
 ### Setup
 
-1. Go to Settings > MCP Integration
-2. Click Generate API Key
-3. Copy the configuration to your Claude Desktop config:
-
-**macOS:** `~/Library/Application Support/Claude/claude_desktop_config.json`
-**Windows:** `%APPDATA%\Claude\claude_desktop_config.json`
+Generate a key under Settings > MCP Integration, then add this to your Claude Desktop config (`~/Library/Application Support/Claude/claude_desktop_config.json` on macOS, `%APPDATA%\Claude\claude_desktop_config.json` on Windows):
 
 ```json
 {
@@ -249,54 +193,9 @@ Invoice Machine works with Claude Desktop through MCP. You can create invoices, 
 }
 ```
 
-Replace `your-server.com` with your actual domain and `YOUR_MCP_API_KEY` with the key from Settings.
+The endpoint runs on the same port as the web app and works behind any reverse proxy. `/mcp` uses the stateless Streamable HTTP transport, so connections survive proxy idle timeouts and app restarts. Clients with native remote MCP support can point at the URL directly with the same bearer token and skip `mcp-remote`. The legacy SSE transport stays available at `/mcp/sse`.
 
-The MCP endpoint runs on the same port as the web app. Works with Cloudflare Tunnel or any reverse proxy.
-
-The `/mcp` endpoint uses the Streamable HTTP transport (stateless), so connections survive proxy idle timeouts and app restarts. Clients that support remote MCP servers natively can use the URL directly with the same Bearer token, without `mcp-remote`. The legacy SSE transport remains available at `/mcp/sse`.
-
-### Key Scope
-
-The MCP API key is only for MCP (`/mcp/*`) connections from Claude Desktop.
-For conventional REST API calls (`/api/*`), use the separate Bot API key described below.
-
-## Bot API Integration
-
-Use a dedicated Bot API key for automation tools, scripts, and agents making standard HTTP requests.
-
-### Setup
-
-1. Go to Settings > Bot API Key
-2. Click Generate Bot API Key
-3. Save the key immediately (it is only shown once)
-4. Send it as a bearer token in REST API requests
-
-### Authentication
-
-Use this header on `/api/*` requests:
-
-```http
-Authorization: Bearer YOUR_BOT_API_KEY
-```
-
-### Skill File
-
-Invoice Machine exposes a hosted skill file for agent setup at:
-
-```text
-https://your-server.com/SKILL.md
-```
-
-### Example Request
-
-```bash
-curl -H "Authorization: Bearer YOUR_BOT_API_KEY" \
-  "https://your-server.com/api/invoices/paginated?page=1&per_page=10"
-```
-
-### Local Docker Setup
-
-If running locally with Docker, you can use stdio transport instead:
+Running locally with Docker, you can use stdio instead:
 
 ```json
 {
@@ -309,186 +208,80 @@ If running locally with Docker, you can use stdio transport instead:
 }
 ```
 
-### Example Commands
+### Things to ask for
 
-**Invoices:**
-- "Create an invoice for Acme Corp for website development, 40 hours at $150/hour"
-- "Create a quote for logo design $500, brand guidelines $1200"
-- "List all unpaid invoices from last month"
-- "Mark invoice 20250115-1 as paid"
-- "Generate PDF for all draft invoices"
+- "Create an invoice for Acme Corp, 40 hours of website development at $150/hour"
+- "Acme paid $2,000 against invoice 20250115-1, record it"
+- "Show me the aging report, who is more than 60 days late?"
+- "Convert quote Q-20250110-1 to an invoice"
+- "Set up a monthly retainer for Acme, $2,000 on the 1st"
+- "Export this year's payments as CSV"
+- "What is my revenue for 2024 across all currencies?"
 
-**Recurring:**
-- "Set up a monthly retainer for Acme Corp, $2000 on the 1st of each month"
-- "Pause the recurring schedule for Client X"
-- "Trigger the quarterly invoice for Big Corp now"
+### Available tools
 
-**Analytics:**
-- "What's my revenue summary for 2024?"
-- "Who are my top 5 clients by total paid?"
-- "Show lifetime value for Acme Corp"
+| Area | Tools |
+|------|-------|
+| Clients | `list_clients`, `get_client`, `create_client`, `update_client`, `delete_client`, `restore_client` |
+| Invoices | `list_invoices`, `get_invoice`, `create_invoice`, `update_invoice`, `delete_invoice`, `restore_invoice`, `convert_quote_to_invoice` |
+| Line items | `add_invoice_item`, `update_invoice_item`, `remove_invoice_item` |
+| Payments | `list_payments`, `record_payment`, `delete_payment`, `get_aging_report` |
+| Recurring | `list_recurring_schedules`, `get_recurring_schedule`, `create_recurring_schedule`, `update_recurring_schedule`, `delete_recurring_schedule`, `pause_recurring_schedule`, `resume_recurring_schedule`, `trigger_recurring_schedule` |
+| Analytics | `get_revenue_summary`, `get_consolidated_summary`, `get_client_lifetime_value`, `get_client_invoice_context` |
+| Email | `send_invoice_email`, `preview_invoice_email`, `get_email_templates`, `update_email_templates`, `test_smtp_connection` |
+| Business profile | `get_business_profile`, `update_business_profile`, `add_payment_method`, `remove_payment_method` |
+| Other | `search`, `export_csv`, `generate_pdf`, `list_trash` |
 
-**Email:**
-- "Send invoice 20250115-1 to john@acme.com"
-- "Email the latest invoice to the client"
+### Key scope
 
-**Search:**
-- "Search for invoices containing 'website'"
-- "Find all clients named Smith"
+The MCP key only authenticates `/mcp/*` connections. For ordinary REST calls, use the bot API key below.
 
-### MCP Tools
+## Bot API
 
-**Business Profile:** `get_business_profile`, `update_business_profile`, `add_payment_method`, `remove_payment_method`
-
-**Clients:** `list_clients`, `get_client`, `create_client`, `update_client`, `delete_client`, `restore_client`
-
-**Invoices:** `list_invoices`, `get_invoice`, `create_invoice`, `update_invoice`, `delete_invoice`, `restore_invoice`
-
-**Line Items:** `add_invoice_item`, `update_invoice_item`, `remove_invoice_item`
-
-**Recurring:** `list_recurring_schedules`, `get_recurring_schedule`, `create_recurring_schedule`, `update_recurring_schedule`, `delete_recurring_schedule`, `pause_recurring_schedule`, `resume_recurring_schedule`, `trigger_recurring_schedule`
-
-**Search:** `search` - Full-text search across invoices and clients
-
-**Analytics:** `get_revenue_summary`, `get_client_lifetime_value`, `get_client_invoice_context`
-
-**Email:** `send_invoice_email`, `test_smtp_connection`
-
-**Other:** `generate_pdf`, `list_trash`
-
-## Project Structure
-
-```
-invoice-machine/
-├── invoice_machine/     # Python backend
-│   ├── api/             # FastAPI routes
-│   ├── mcp/             # MCP server
-│   ├── pdf/             # PDF generation
-│   ├── alembic/         # Database migrations
-│   ├── database.py      # SQLAlchemy models
-│   ├── service/         # Business logic (invoices, clients, recurring, analytics, backups, search)
-│   ├── services.py      # Compatibility facade re-exporting service/*
-│   ├── email.py         # SMTP email service
-│   ├── config.py        # Configuration management
-│   └── main.py          # FastAPI app
-├── frontend/            # SvelteKit frontend
-├── tests/               # Test suite
-│   ├── api/             # API endpoint tests
-│   ├── test_money.py    # Money/quantization tests
-│   ├── test_new_features.py  # Feature tests
-│   └── test_security.py # Security tests
-├── data/                # Runtime data (gitignored)
-│   ├── invoice_machine.db  # SQLite database
-│   ├── backups/         # Database backups
-│   ├── pdfs/            # Generated PDFs
-│   └── logos/           # Uploaded logos
-├── alembic.ini          # Alembic configuration
-├── .env.example         # Environment template
-└── docker-compose.yml
-```
-
-## Development
-
-### Backend
+For scripts, automations, and agents making plain HTTP requests. Generate a key under Settings > Bot API Key (it is shown once) and send it as a bearer token:
 
 ```bash
-pip install -e ".[dev]"
-python -c "import mcp; print('mcp installed')"
-uvicorn invoice_machine.main:app --reload --port 8080
+curl -H "Authorization: Bearer YOUR_BOT_API_KEY" \
+  "https://your-server.com/api/invoices/paginated?page=1&per_page=10"
 ```
 
-### Frontend
+A hosted skill file describing the API lives at `https://your-server.com/SKILL.md`.
 
-```bash
-cd frontend
-npm install
-npm run dev
-npm run build  # Production build
-```
+## Backups
 
-### Tests
+Automatic backups run daily at midnight UTC once enabled under Settings > Backup & Restore. Set a retention period (30 days by default) and optionally upload to any S3-compatible store (AWS S3, Backblaze B2, Cloudflare R2, MinIO).
 
-```bash
-pytest tests/ -v
-```
+Backups are taken through SQLite's online backup API, so they are consistent even while the app is writing. Restoring creates a pre-restore safety copy first, then applies any pending schema migrations, so a backup from an older release comes back usable.
 
-## Backup
-
-### Automatic Backups
-
-Invoice Machine can automatically back up your database daily at midnight UTC.
-
-1. Go to Settings > Backup & Restore
-2. Enable "Automatic daily backups"
-3. Set retention period (default: 30 days)
-
-### S3 Storage
-
-Optionally upload backups to S3-compatible storage (AWS S3, Backblaze B2, MinIO):
-
-1. Enable "Upload backups to S3-compatible storage"
-2. Enter your endpoint URL, credentials, bucket, and region
-3. Click "Test S3 Connection" to verify
-
-### Manual Backup
-
-All data lives in the `data/` directory. Copy it to back up everything. You can also create manual backups from the Settings page and download them directly.
-
-### Restore
-
-Click the restore button on any backup to restore. A pre-restore backup is created automatically. The application needs to be restarted after restore.
+The `data/` directory holds everything: database, PDFs, logos, and backups. Copying it is a complete backup.
 
 ## Security
 
-Invoice Machine includes several security features:
+**Authentication.** PBKDF2-HMAC-SHA256 with 600,000 iterations, password complexity requirements, login rate limiting, database-backed sessions with 30-day expiry, and CSRF protection via double-submit cookies.
 
-### Authentication
-- PBKDF2-HMAC-SHA256 password hashing with 600,000 iterations
-- Password complexity requirements (minimum 8 characters with lowercase, uppercase, and digit)
-- Rate limiting on login endpoints (3 attempts/minute)
-- Database-backed sessions with 30-day expiration
-- CSRF protection using double-submit cookie pattern
-- Configurable secure cookies for HTTPS deployments
+**Credentials at rest.** SMTP passwords, Stripe keys, and S3 credentials are encrypted with Fernet. Plaintext credentials are rejected outright in production.
 
-### Credential Encryption
-- SMTP passwords and other sensitive data encrypted at rest using Fernet (AES-128-CBC)
-- Encryption key required in production (application refuses to start without it)
-- Key derivation uses PBKDF2-HMAC-SHA256 with unique salt
+**Webhooks.** Stripe requests are verified by HMAC signature with a replay window before anything in the payload is trusted.
 
-### Input Validation
-- Path traversal prevention on file operations
-- Email header injection protection
-- Image upload validation (magic bytes + extension)
-- SQL injection prevention via SQLAlchemy ORM
-- FTS5 query sanitization
+**Input handling.** Path traversal guards on every file operation, email header injection protection, magic-byte validation on image uploads, parameterized queries throughout, FTS5 query sanitization, and an SSRF guard on outbound SMTP connections.
 
-### Container Security
-- Docker container runs as non-root user (UID 1000)
-- Minimal attack surface with production-only dependencies
-- No third-party CDN/font calls at runtime — the UI ships all assets locally, so no client browsing data leaks to external services and the app works fully offline
+**Container.** Runs as a non-root user with production-only dependencies. The UI ships its own fonts and assets, so no browsing data leaks to a CDN and the app works offline.
 
-### Production Recommendations
+### Production checklist
 
-1. **Set encryption key**: Generate and set `INVOICE_MACHINE_ENCRYPTION_KEY` (see [Generating an Encryption Key](#generating-an-encryption-key)). Protect the `.env` file (`chmod 600 .env`) and back the key up out-of-band — it decrypts your stored SMTP credentials.
-2. **Use HTTPS**: Set `SECURE_COOKIES=true` when behind HTTPS
-3. **Restrict CORS**: Set `CORS_ORIGINS` to your actual domain only (it must match `APP_BASE_URL`; the app logs a warning at startup if it doesn't)
-4. **Regular backups**: Enable automatic backups with S3 for offsite storage
-5. **Access control**: Use Cloudflare Access or similar for additional protection
-6. **Keep updated**: Pull latest Docker images regularly
+1. Generate and set `INVOICE_MACHINE_ENCRYPTION_KEY`, `chmod 600` your `.env`, and back the key up somewhere separate
+2. Set `SECURE_COOKIES=true` behind HTTPS
+3. Point `CORS_ORIGINS` at your domain only
+4. Turn on automatic backups with S3 for offsite copies
+5. Put an access layer in front of it (Cloudflare Access, Tailscale, or a VPN)
+6. Use a Stripe restricted key rather than a secret key
+7. Pull new images regularly
 
 ## Deployment
 
-For remote access, use a reverse proxy. Example with Cloudflare Tunnel:
-
-1. `cloudflared tunnel create invoice-machine`
-2. Configure Access policy in Cloudflare dashboard
-3. Set `APP_BASE_URL` in `.env`
-4. Set `SECURE_COOKIES=true` for HTTPS
-
-### Docker Compose Production Example
+### Docker Compose
 
 ```yaml
-version: '3.8'
 services:
   invoice-machine:
     image: invoice-machine:latest
@@ -496,19 +289,13 @@ services:
     ports:
       - "8080:8080"
     environment:
-      # Required for production
       - INVOICE_MACHINE_ENCRYPTION_KEY=${INVOICE_MACHINE_ENCRYPTION_KEY}
       - APP_BASE_URL=https://invoices.yourdomain.com
       - ENVIRONMENT=production
       - SECURE_COOKIES=true
       - CORS_ORIGINS=https://invoices.yourdomain.com
-      # Database (uses container path)
       - DATABASE_URL=sqlite+aiosqlite:////app/data/invoice_machine.db
       - DATA_DIR=/app/data
-      # Optional: customize defaults
-      - DEFAULT_PAYMENT_TERMS_DAYS=30
-      - DEFAULT_CURRENCY_CODE=USD
-      - TRASH_RETENTION_DAYS=90
     volumes:
       - /var/lib/invoice-machine/data:/app/data
     restart: unless-stopped
@@ -519,11 +306,70 @@ services:
       retries: 3
 ```
 
-**Important notes:**
-- The `DATABASE_URL` uses 4 slashes (`////app/data/`) because SQLite URLs need 3 slashes plus the absolute path
-- The volume mount (`/var/lib/invoice-machine/data:/app/data`) persists all data including the database, PDFs, logos, and backups
-- Set `container_name` to `invoice-machine` if using MCP with `docker exec`
+Two things that catch people out: `DATABASE_URL` needs four slashes (three for the SQLite URL plus the leading slash of the absolute path), and the volume mount is what persists your database, PDFs, logos, and backups. Keep `container_name` as `invoice-machine` if you plan to use MCP over `docker exec`.
+
+### Cloudflare Tunnel
+
+```bash
+cloudflared tunnel create invoice-machine
+```
+
+Configure an Access policy in the Cloudflare dashboard, then set `APP_BASE_URL` and `SECURE_COOKIES=true`. The app reads `CF-Connecting-IP` for rate limiting and audit logging, so limits apply per client rather than to the tunnel as a whole.
+
+### Scheduled jobs
+
+One worker holds a lock and runs these; the times are UTC.
+
+| Job | When |
+|-----|------|
+| Database backup | 00:00 |
+| Overdue invoice sweep | 01:00 |
+| Recurring invoice generation | 02:00 |
+| Trash purge | 03:00 |
+| Payment reminders | 09:00 |
+| Expired session cleanup | hourly |
+
+## Development
+
+```bash
+# Backend
+pip install -e ".[dev]"
+uvicorn invoice_machine.main:app --reload --port 8080
+
+# Frontend
+cd frontend && npm install && npm run dev
+
+# Tests
+pytest -q
+ruff check invoice_machine/ tests/
+```
+
+Schema changes go through Alembic, which is the single source of truth for the database:
+
+```bash
+alembic revision -m "describe the change"
+alembic upgrade head
+```
+
+`tests/test_schema_drift.py` runs the migrations against a throwaway database and fails if the models and migrations disagree.
+
+### Layout
+
+```
+invoice_machine/
+├── api/          FastAPI routes
+├── service/      Business logic (invoices, payments, recurring, analytics, export, reminders, stripe, backups, search)
+├── mcp/          MCP tool definitions
+├── pdf/          WeasyPrint templates and generation
+├── alembic/      Database migrations
+├── database.py   SQLAlchemy models
+└── main.py       App entry point
+
+frontend/         SvelteKit UI
+tests/            Test suite
+data/             Runtime data, gitignored (database, pdfs, logos, backups)
+```
 
 ## License
 
-MIT License. See [LICENSE](LICENSE) for details.
+MIT. See [LICENSE](LICENSE).

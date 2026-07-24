@@ -1,15 +1,17 @@
 <script>
   import { page } from '$app/stores';
   import { goto } from '$app/navigation';
-  import { invoicesApi, emailApi } from '$lib/api';
+  import { invoicesApi, emailApi, paymentsApi } from '$lib/api';
   import { toast } from '$lib/stores';
   import Header from '$lib/components/Header.svelte';
   import ConfirmModal from '$lib/components/ConfirmModal.svelte';
   import InvoiceClientCard from '$lib/components/invoices/InvoiceClientCard.svelte';
   import InvoiceDetailHeader from '$lib/components/invoices/InvoiceDetailHeader.svelte';
   import InvoiceLineItemsSummaryCard from '$lib/components/invoices/InvoiceLineItemsSummaryCard.svelte';
+  import InvoicePaymentsCard from '$lib/components/invoices/InvoicePaymentsCard.svelte';
   import InvoiceSidebarDetailsCard from '$lib/components/invoices/InvoiceSidebarDetailsCard.svelte';
   import InvoiceStatusBanner from '$lib/components/invoices/InvoiceStatusBanner.svelte';
+  import RecordPaymentModal from '$lib/components/invoices/RecordPaymentModal.svelte';
   import SendInvoiceEmailModal from '$lib/components/invoices/SendInvoiceEmailModal.svelte';
 
   $: invoiceId = $page.params.id || '';
@@ -29,6 +31,12 @@
   let emailRecipient = '';
   let emailSubject = '';
   let emailBody = '';
+  let payments = [];
+  let showRecordPaymentModal = false;
+  let savingPayment = false;
+  let paymentsBusy = false;
+  let deletePaymentTarget = null;
+  let creatingPaymentLink = false;
 
   $: if (invoiceId) loadInvoice();
   $: isQuote = invoice?.document_type === 'quote';
@@ -41,11 +49,82 @@
       const data = await invoicesApi.get(invoiceId);
       invoice = data;
       items = data.items || [];
+      await loadPayments();
     } catch (error) {
       loadError = true;
       toast.error('Failed to load invoice');
     } finally {
       loading = false;
+    }
+  }
+
+  async function loadPayments() {
+    // Quotes are not owed, so they carry no payment ledger.
+    if (isQuote) {
+      payments = [];
+      return;
+    }
+    try {
+      const data = await paymentsApi.list(invoiceId);
+      payments = data.payments || [];
+      if (invoice) {
+        invoice = { ...invoice, amount_paid: data.amount_paid, amount_due: data.amount_due };
+      }
+    } catch (error) {
+      payments = [];
+    }
+  }
+
+  async function savePayment(event) {
+    savingPayment = true;
+    try {
+      await paymentsApi.record(invoiceId, event.detail);
+      toast.success('Payment recorded');
+      showRecordPaymentModal = false;
+      await loadInvoice();
+    } catch (error) {
+      toast.error(error.message || 'Failed to record payment');
+    } finally {
+      savingPayment = false;
+    }
+  }
+
+  async function confirmDeletePayment() {
+    if (!deletePaymentTarget) return;
+    paymentsBusy = true;
+    try {
+      await paymentsApi.delete(deletePaymentTarget.id);
+      toast.success('Payment deleted');
+      await loadInvoice();
+    } catch (error) {
+      toast.error(error.message || 'Failed to delete payment');
+    } finally {
+      paymentsBusy = false;
+      deletePaymentTarget = null;
+    }
+  }
+
+  async function createPaymentLink() {
+    creatingPaymentLink = true;
+    try {
+      const result = await invoicesApi.createPaymentLink(invoiceId);
+      toast.success('Payment link created');
+      await loadInvoice();
+      window.open(result.payment_link_url, '_blank', 'noopener');
+    } catch (error) {
+      toast.error(error.message || 'Failed to create payment link');
+    } finally {
+      creatingPaymentLink = false;
+    }
+  }
+
+  async function copyPaymentLink() {
+    if (!invoice?.payment_link_url) return;
+    try {
+      await navigator.clipboard.writeText(invoice.payment_link_url);
+      toast.success('Payment link copied');
+    } catch (error) {
+      toast.error('Could not copy the link');
     }
   }
 
@@ -104,11 +183,13 @@
   async function confirmConvert() {
     converting = true;
     try {
-      await invoicesApi.update(invoiceId, { document_type: 'invoice' });
-      toast.success('Quote converted to invoice');
-      await loadInvoice();
+      // Creates a linked invoice and leaves the quote intact, so there is still
+      // a record of exactly what the client accepted.
+      const created = await invoicesApi.convertQuote(invoiceId);
+      toast.success(`Created invoice ${created.invoice_number}`);
+      await goto(`/invoices/${created.id}`);
     } catch (error) {
-      toast.error('Failed to convert quote');
+      toast.error(error.message || 'Failed to convert quote');
     } finally {
       converting = false;
       showConvertModal = false;
@@ -209,6 +290,82 @@
 
       <div class="invoice-sidebar">
         <InvoiceSidebarDetailsCard {invoice} {documentLabel} {isQuote} />
+
+        {#if !isQuote}
+          <InvoicePaymentsCard
+            {payments}
+            currencyCode={invoice.currency_code}
+            total={invoice.total}
+            amountPaid={invoice.amount_paid}
+            amountDue={invoice.amount_due}
+            busy={paymentsBusy}
+            on:record={() => (showRecordPaymentModal = true)}
+            on:delete={(event) => (deletePaymentTarget = event.detail)}
+          />
+
+          <div class="card">
+            <div class="card-header">
+              <h2 class="card-title">Pay online</h2>
+            </div>
+            <div class="card-body">
+              {#if invoice.payment_link_url}
+                <p class="link-hint">Share this link so the client can pay by card.</p>
+                <div class="link-actions">
+                  <a
+                    href={invoice.payment_link_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="btn btn-secondary btn-sm"
+                  >Open</a>
+                  <button type="button" class="btn btn-secondary btn-sm" on:click={copyPaymentLink}>
+                    Copy link
+                  </button>
+                  <button
+                    type="button"
+                    class="btn btn-secondary btn-sm"
+                    on:click={createPaymentLink}
+                    disabled={creatingPaymentLink}
+                  >
+                    {creatingPaymentLink ? 'Refreshing...' : 'Refresh'}
+                  </button>
+                </div>
+              {:else}
+                <p class="link-hint">
+                  Create a hosted checkout link for the outstanding balance. Requires
+                  online payments to be configured in settings.
+                </p>
+                <button
+                  type="button"
+                  class="btn btn-secondary btn-sm"
+                  on:click={createPaymentLink}
+                  disabled={creatingPaymentLink || parseFloat(invoice.amount_due) <= 0}
+                >
+                  {creatingPaymentLink ? 'Creating...' : 'Create payment link'}
+                </button>
+              {/if}
+            </div>
+          </div>
+        {/if}
+
+        {#if invoice.converted_to_invoice_id}
+          <div class="card">
+            <div class="card-body">
+              <p class="link-hint">
+                This quote was converted to
+                <a href="/invoices/{invoice.converted_to_invoice_id}">an invoice</a>.
+              </p>
+            </div>
+          </div>
+        {:else if invoice.converted_from_invoice_id}
+          <div class="card">
+            <div class="card-body">
+              <p class="link-hint">
+                Created from
+                <a href="/invoices/{invoice.converted_from_invoice_id}">a quote</a>.
+              </p>
+            </div>
+          </div>
+        {/if}
       </div>
     </div>
   {:else}
@@ -239,14 +396,36 @@
 <ConfirmModal
   show={showConvertModal}
   title="Convert to Invoice"
-  message="Convert quote #{invoice?.invoice_number} to an invoice? The document number will remain the same."
-  confirmText="Convert"
+  message="Create an invoice from quote {invoice?.invoice_number}? The quote is kept as a record of what was accepted, and the new invoice is linked to it."
+  confirmText="Create invoice"
   cancelText="Cancel"
   variant="primary"
   icon="check"
   loading={converting}
   onConfirm={confirmConvert}
   onCancel={cancelConvert}
+/>
+
+<RecordPaymentModal
+  open={showRecordPaymentModal}
+  currencyCode={invoice?.currency_code || 'USD'}
+  amountDue={invoice?.amount_due || '0'}
+  saving={savingPayment}
+  on:save={savePayment}
+  on:cancel={() => (showRecordPaymentModal = false)}
+/>
+
+<ConfirmModal
+  show={!!deletePaymentTarget}
+  title="Delete payment"
+  message="Delete this payment? The invoice balance will be recalculated, and a fully paid invoice will revert to unpaid."
+  confirmText="Delete"
+  cancelText="Cancel"
+  variant="danger"
+  icon="trash"
+  loading={paymentsBusy}
+  onConfirm={confirmDeletePayment}
+  onCancel={() => (deletePaymentTarget = null)}
 />
 
 <SendInvoiceEmailModal
@@ -315,6 +494,19 @@
     display: flex;
     flex-direction: column;
     gap: var(--space-6);
+  }
+
+  .link-hint {
+    margin: 0 0 0.75rem;
+    color: var(--color-text-muted);
+    font-size: 0.85rem;
+    line-height: 1.5;
+  }
+
+  .link-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
   }
 
   .invoice-sidebar {

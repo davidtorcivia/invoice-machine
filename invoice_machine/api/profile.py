@@ -1,8 +1,11 @@
 """Business profile API endpoints."""
 
+import json
+import logging
 import os
 import uuid
 from datetime import datetime
+from decimal import Decimal
 
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
@@ -14,6 +17,7 @@ from invoice_machine.database import BusinessProfile, get_session
 from invoice_machine.rate_limit import limiter
 from invoice_machine.utils import utc_now
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/profile", tags=["profile"])
 settings = get_settings()
 
@@ -84,10 +88,61 @@ class BusinessProfileUpdate(BaseModel):
     payment_methods: str | None = Field(None, max_length=10000)  # JSON string
     theme_preference: str | None = Field(None, pattern="^(system|light|dark)$")
     app_base_url: str | None = Field(None, max_length=500)
-    # Tax settings
+    # Tax settings. Decimal with bounds, not a free-form string: "abc" used to
+    # reach the DECIMAL column and 500, and "999" was accepted verbatim as a
+    # 999% default rate applied to every subsequently created invoice.
     default_tax_enabled: bool | None = None
-    default_tax_rate: str | None = Field(None, max_length=10)
+    default_tax_rate: Decimal | None = Field(None, ge=0, le=100)
     default_tax_name: str | None = Field(None, max_length=50)
+
+    @field_validator("payment_methods")
+    @classmethod
+    def validate_payment_methods(cls, value: str | None) -> str | None:
+        """Reject payment_methods that isn't a JSON array of {id, name, instructions}.
+
+        Unparseable JSON was stored happily and then silently degraded to an empty
+        list everywhere it was read, so a user's payment methods just disappeared.
+        """
+        if value is None or value == "":
+            return value
+        try:
+            parsed = json.loads(value)
+        except (json.JSONDecodeError, TypeError):
+            raise ValueError("payment_methods must be valid JSON") from None
+        if not isinstance(parsed, list):
+            raise ValueError("payment_methods must be a JSON array")
+        if len(parsed) > 50:
+            raise ValueError("payment_methods supports at most 50 entries")
+        for entry in parsed:
+            if not isinstance(entry, dict):
+                raise ValueError("each payment method must be a JSON object")
+            if not str(entry.get("id") or "").strip():
+                raise ValueError("each payment method needs a non-empty id")
+            if not str(entry.get("name") or "").strip():
+                raise ValueError("each payment method needs a non-empty name")
+        return value
+
+
+# Optional profile columns that an explicit `null` may legitimately clear. Every
+# other column is NOT NULL (or has app-level meaning for its default), so a null
+# there is treated as "leave unchanged".
+NULLABLE_PROFILE_FIELDS = frozenset(
+    {
+        "business_name",
+        "address_line1",
+        "address_line2",
+        "city",
+        "state",
+        "postal_code",
+        "email",
+        "phone",
+        "ein",
+        "default_notes",
+        "default_payment_instructions",
+        "payment_methods",
+        "app_base_url",
+    }
+)
 
 
 def sanitize_filename(filename: str) -> str:
@@ -99,16 +154,53 @@ def sanitize_filename(filename: str) -> str:
     return name
 
 
+def _delete_logo_file(logo_filename: str | None) -> None:
+    """Best-effort removal of a logo file from the logo directory."""
+    if not logo_filename:
+        return
+    safe_name = sanitize_filename(logo_filename)
+    if not safe_name:
+        return
+    logo_file = settings.logo_dir / safe_name
+    try:
+        if logo_file.resolve().parent != settings.logo_dir.resolve():
+            return
+        logo_file.unlink(missing_ok=True)
+    except OSError as exc:
+        logger.warning("Could not delete logo file %s: %s", safe_name, exc)
+
+
 # Image magic bytes for validation
 # Note: SVG is excluded due to XSS security risks (can contain embedded JavaScript)
 # WebP is intentionally absent here: a bare ``RIFF`` prefix also matches AVI/WAV
 # containers, so it is validated separately by its full RIFF....WEBP signature.
 IMAGE_SIGNATURES = {
-    b"\x89PNG\r\n\x1a\n": "png",        # PNG
-    b"\xff\xd8\xff": "jpeg",             # JPEG
-    b"GIF87a": "gif",                    # GIF87a
-    b"GIF89a": "gif",                    # GIF89a
+    b"\x89PNG\r\n\x1a\n": ".png",        # PNG
+    b"\xff\xd8\xff": ".jpg",             # JPEG
+    b"GIF87a": ".gif",                   # GIF87a
+    b"GIF89a": ".gif",                   # GIF89a
 }
+
+
+def detect_image_extension(content: bytes) -> str | None:
+    """Return the file extension implied by the content's magic bytes.
+
+    The stored extension is derived from the bytes, never from the client-supplied
+    filename, so a PNG uploaded as "logo.jpg" is stored (and later served) as the
+    format it actually is.
+    """
+    if len(content) < 8:
+        return None
+
+    for signature, extension in IMAGE_SIGNATURES.items():
+        if content[: len(signature)] == signature:
+            return extension
+
+    # WebP requires the full RIFF....WEBP container, not just a RIFF prefix.
+    if content[:4] == b"RIFF" and len(content) >= 12 and content[8:12] == b"WEBP":
+        return ".webp"
+
+    return None
 
 
 def validate_image_content(content: bytes) -> bool:
@@ -118,19 +210,7 @@ def validate_image_content(content: bytes) -> bool:
     Checks magic bytes to verify file is actually an image,
     not just a renamed malicious file.
     """
-    if len(content) < 8:
-        return False
-
-    # Check against known image signatures
-    for signature, _ in IMAGE_SIGNATURES.items():
-        if content[:len(signature)] == signature:
-            return True
-
-    # WebP requires the full RIFF....WEBP container, not just a RIFF prefix.
-    if content[:4] == b"RIFF" and len(content) >= 12 and content[8:12] == b"WEBP":
-        return True
-
-    return False
+    return detect_image_extension(content) is not None
 
 
 @router.get("", response_model=BusinessProfileSchema)
@@ -161,8 +241,11 @@ async def update_profile(
         update_data["default_tax_enabled"] = int(update_data["default_tax_enabled"])
 
     for key, value in update_data.items():
-        if value is not None:
-            setattr(profile, key, value)
+        # An explicit null clears an optional field; NOT-NULL columns keep their
+        # current value rather than blowing up on an IntegrityError.
+        if value is None and key not in NULLABLE_PROFILE_FIELDS:
+            continue
+        setattr(profile, key, value)
 
     profile.updated_at = utc_now()
     await session.commit()
@@ -215,16 +298,16 @@ async def upload_logo(
     if len(contents) == 0:
         raise HTTPException(status_code=400, detail="Uploaded file is empty")
 
-    # Validate file content is actually an image (magic bytes check)
-    if not validate_image_content(contents):
+    # Validate file content is actually an image (magic bytes check) and take the
+    # extension from the content rather than the client-supplied filename.
+    detected_ext = detect_image_extension(contents)
+    if detected_ext is None:
         raise HTTPException(
             status_code=400,
             detail="File does not appear to be a valid image"
         )
 
-    # Generate safe filename with UUID
-    safe_ext = ext if ext else ".png"
-    unique_filename = f"logo-{uuid.uuid4().hex}{safe_ext}"
+    unique_filename = f"logo-{uuid.uuid4().hex}{detected_ext}"
 
     # Ensure logo directory exists
     settings.logo_dir.mkdir(parents=True, exist_ok=True)
@@ -240,9 +323,15 @@ async def upload_logo(
 
     # Update profile
     profile = await BusinessProfile.get_or_create(session)
+    previous_logo = profile.logo_path
     profile.logo_path = unique_filename
     profile.updated_at = utc_now()
     await session.commit()
+
+    # Only after the new logo is committed: drop the superseded file so repeated
+    # uploads don't accumulate orphans in the logo directory forever.
+    if previous_logo and previous_logo != unique_filename:
+        _delete_logo_file(previous_logo)
 
     return {"logo_path": unique_filename, "url": f"/api/profile/logo/{unique_filename}"}
 
@@ -257,18 +346,11 @@ async def delete_logo(
     profile = await BusinessProfile.get_or_create(session)
 
     if profile.logo_path:
-        # Try to delete the file
-        logo_file = settings.logo_dir / profile.logo_path
-        if logo_file.exists():
-            try:
-                logo_file.unlink()
-            except OSError as e:
-                import logging
-                logging.getLogger(__name__).warning(f"Could not delete logo file: {e}")
-
+        previous_logo = profile.logo_path
         profile.logo_path = None
         profile.updated_at = utc_now()
         await session.commit()
+        _delete_logo_file(previous_logo)
 
     return {"success": True}
 

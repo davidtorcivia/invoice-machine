@@ -9,6 +9,7 @@ from email import encoders
 from email.mime.base import MIMEBase
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+from email.utils import formataddr
 from pathlib import Path
 
 from starlette.concurrency import run_in_threadpool
@@ -179,6 +180,17 @@ def expand_template(template: str, invoice: "Invoice", profile: "BusinessProfile
     except Exception:
         line_items_text = "services rendered"
 
+    amount_due_formatted = format_currency(invoice.amount_due, invoice.currency_code)
+    amount_paid_formatted = format_currency(
+        invoice.amount_paid or 0, invoice.currency_code
+    )
+    # A quote is not a bill, so never surface a pay-now link on one.
+    payment_link = (
+        invoice.payment_link_url or ""
+        if getattr(invoice, "document_type", "invoice") != "quote"
+        else ""
+    )
+
     replacements = {
         "{invoice_number}": invoice.invoice_number,
         "{quote_number}": invoice.invoice_number,
@@ -190,6 +202,9 @@ def expand_template(template: str, invoice: "Invoice", profile: "BusinessProfile
         "{total}": total_formatted,
         "{amount}": total_formatted,
         "{subtotal}": subtotal_formatted,
+        "{amount_paid}": amount_paid_formatted,
+        "{amount_due}": amount_due_formatted,
+        "{payment_link}": payment_link,
         "{due_date}": due_date_str,
         "{issue_date}": issue_date_str,
         "{your_name}": profile.name or profile.business_name or "Invoice Machine",
@@ -197,11 +212,21 @@ def expand_template(template: str, invoice: "Invoice", profile: "BusinessProfile
         "{line_items}": line_items_text,
     }
 
-    result = template
-    for placeholder, value in replacements.items():
-        result = result.replace(placeholder, value)
-
-    return result
+    # Single pass over the source template: a value that happens to contain a
+    # placeholder (e.g. a client literally named "{total}") must not then be
+    # expanded itself.
+    result: list[str] = []
+    index = 0
+    while index < len(template):
+        for placeholder, value in replacements.items():
+            if template.startswith(placeholder, index):
+                result.append(value)
+                index += len(placeholder)
+                break
+        else:
+            result.append(template[index])
+            index += 1
+    return "".join(result)
 
 
 class EmailService:
@@ -268,11 +293,9 @@ class EmailService:
         msg = MIMEMultipart()
         from_name = _sanitize_header(self.profile.smtp_from_name or "", "From name")
         from_email = _sanitize_email(self.profile.smtp_from_email)
-        msg["From"] = (
-            f"{from_name} <{from_email}>"
-            if from_name
-            else from_email
-        )
+        # formataddr quotes/escapes the display name. Assembling "name <addr>" by
+        # hand let a display name containing <> or a comma forge extra addresses.
+        msg["From"] = formataddr((from_name, from_email)) if from_name else from_email
         msg["To"] = to_email
         msg["Subject"] = subject
 

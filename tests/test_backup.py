@@ -9,6 +9,7 @@ These tests verify:
 """
 
 import gzip
+import json
 import sqlite3
 import tempfile
 from datetime import UTC, datetime, timedelta
@@ -17,6 +18,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from invoice_machine.crypto import encrypt_credential
 from invoice_machine.services import BackupService
 
 
@@ -549,3 +551,60 @@ class TestRestoreBackup:
 
             assert db_file.read_bytes() == backup_content
             assert list(data_dir.glob("invoice_machine.db.restore-*.tmp")) == []
+
+
+class TestS3ConfigResolution:
+    """get_backup_service must degrade gracefully on unusable S3 credentials."""
+
+    @pytest.mark.asyncio
+    async def test_undecryptable_credentials_disable_s3_instead_of_500ing(
+        self, db_session, business_profile
+    ):
+        """A legacy/plaintext credential must not break the whole backups page."""
+        from invoice_machine.api.backup import get_backup_service
+
+        business_profile.backup_s3_enabled = 1
+        business_profile.backup_s3_config = json.dumps({
+            "endpoint_url": "https://example.com",
+            "bucket": "b",
+            "access_key_id": "plaintext-not-encrypted",
+            "secret_access_key": "plaintext-not-encrypted",
+        })
+        await db_session.commit()
+
+        with patch(
+            "invoice_machine.api.backup.decrypt_credential",
+            side_effect=ValueError("Failed to decrypt credential"),
+        ):
+            service = await get_backup_service(db_session)
+
+        assert service.s3_config is None
+
+    @pytest.mark.asyncio
+    async def test_malformed_s3_config_json_disables_s3(self, db_session, business_profile):
+        """Corrupt stored JSON must not leave a half-built S3 config in play."""
+        from invoice_machine.api.backup import get_backup_service
+
+        business_profile.backup_s3_enabled = 1
+        business_profile.backup_s3_config = "{not json"
+        await db_session.commit()
+
+        service = await get_backup_service(db_session)
+        assert service.s3_config is None
+
+    @pytest.mark.asyncio
+    async def test_valid_credentials_enable_s3(self, db_session, business_profile):
+        from invoice_machine.api.backup import get_backup_service
+
+        business_profile.backup_s3_enabled = 1
+        business_profile.backup_s3_config = json.dumps({
+            "bucket": "b",
+            "access_key_id": encrypt_credential("AKIA-test"),
+            "secret_access_key": encrypt_credential("secret-test"),
+        })
+        await db_session.commit()
+
+        service = await get_backup_service(db_session)
+        assert service.s3_config is not None
+        assert service.s3_config["enabled"] is True
+        assert service.s3_config["access_key_id"] == "AKIA-test"

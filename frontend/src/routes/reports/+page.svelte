@@ -1,17 +1,28 @@
 <script>
   import { onMount } from 'svelte';
-  import { analyticsApi } from '$lib/api';
+  import { analyticsApi, exportApi, paymentsApi } from '$lib/api';
   import { toast } from '$lib/stores';
   import Header from '$lib/components/Header.svelte';
   import Icon from '$lib/components/Icons.svelte';
+  import AgingReportCard from '$lib/components/reports/AgingReportCard.svelte';
+  import ConsolidatedCard from '$lib/components/reports/ConsolidatedCard.svelte';
   import ReportSummaryGrid from '$lib/components/reports/ReportSummaryGrid.svelte';
   import RevenueBreakdownCard from '$lib/components/reports/RevenueBreakdownCard.svelte';
   import TopClientsCard from '$lib/components/reports/TopClientsCard.svelte';
+
+  const EXPORT_KINDS = [
+    { kind: 'invoices', label: 'Invoices' },
+    { kind: 'line_items', label: 'Line items' },
+    { kind: 'payments', label: 'Payments' },
+    { kind: 'clients', label: 'Clients' }
+  ];
 
   let loading = true;
   let loadError = false;
   let revenueData = null;
   let clientData = [];
+  let agingData = null;
+  let consolidatedData = null;
   let groupBy = 'month';
   let year = new Date().getFullYear();
 
@@ -26,12 +37,22 @@
     loading = true;
     loadError = false;
     try {
-      const [revenue, clients] = await Promise.all([
+      const [revenue, clients, aging, consolidated] = await Promise.all([
         analyticsApi.getRevenue({ from_date: fromDate, to_date: toDate, group_by: groupBy }),
-        analyticsApi.getClientLifetimeValues({ limit: 10 })
+        analyticsApi.getClientLifetimeValues({ limit: 10 }),
+        paymentsApi.aging(),
+        analyticsApi.getConsolidated({ from_date: fromDate, to_date: toDate })
       ]);
       revenueData = revenue;
       clientData = clients;
+      agingData = aging;
+      // Only worth showing once more than one currency is actually in play.
+      consolidatedData =
+        (consolidated?.coverage?.total_invoices || 0) > 0 &&
+        (Object.keys(revenue?.by_currency || {}).length > 1 ||
+          !consolidated?.coverage?.complete)
+          ? consolidated
+          : null;
     } catch (error) {
       loadError = true;
       toast.error('Failed to load analytics');
@@ -39,6 +60,10 @@
     } finally {
       loading = false;
     }
+  }
+
+  function exportUrl(kind) {
+    return exportApi.url(kind, { from_date: fromDate, to_date: toDate });
   }
 
   async function changeYear(delta) {
@@ -77,7 +102,30 @@
   {:else}
     <ReportSummaryGrid totals={revenueData?.totals} />
     <RevenueBreakdownCard {revenueData} {year} {groupBy} {changeYear} {changeGroupBy} />
+    <ConsolidatedCard consolidated={consolidatedData} />
+    <AgingReportCard aging={agingData} />
     <TopClientsCard {clientData} />
+
+    <div class="card">
+      <div class="card-header">
+        <div>
+          <h2 class="card-title">Export</h2>
+          <p class="card-subtitle">
+            Download {year} records as CSV for your spreadsheet or accountant
+          </p>
+        </div>
+      </div>
+      <div class="card-body">
+        <div class="export-actions">
+          {#each EXPORT_KINDS as option (option.kind)}
+            <a class="btn btn-secondary btn-sm" href={exportUrl(option.kind)} download>
+              <Icon name="download" size="sm" />
+              {option.label}
+            </a>
+          {/each}
+        </div>
+      </div>
+    </div>
   {/if}
 </div>
 
@@ -106,6 +154,18 @@
     color: var(--color-text-secondary);
     font-size: 0.875rem;
     margin: var(--space-1) 0 0 0;
+  }
+
+  .card-subtitle {
+    margin: var(--space-1) 0 0;
+    font-size: 0.8rem;
+    color: var(--color-text-secondary);
+  }
+
+  .export-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-3);
   }
 
   .loading-container {

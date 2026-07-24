@@ -14,9 +14,7 @@ from invoice_machine.rate_limit import limiter
 from invoice_machine.services import InvoiceService
 from invoice_machine.utils import (
     INVOICE_NUMBER_REGEX,
-    ensure_utc,
     sanitize_filename_component,
-    utc_now,
 )
 
 router = APIRouter(prefix="/api/invoices", tags=["invoices"])
@@ -62,6 +60,22 @@ class InvoiceSchema(BaseModel):
     tax_rate: str = "0"
     tax_name: str = "Tax"
     tax_amount: str = "0"
+    # Payment state
+    amount_paid: str = "0"
+    amount_due: str = "0"
+    is_partially_paid: bool = False
+    # Multi-currency: rate into base_currency_code, captured at issue time
+    exchange_rate: str | None = None
+    base_currency_code: str | None = None
+    # Quote <-> invoice conversion links
+    converted_from_invoice_id: int | None = None
+    converted_to_invoice_id: int | None = None
+    # Hosted payment link
+    payment_link_url: str | None = None
+    payment_link_created_at: datetime | None = None
+    # Reminder bookkeeping
+    last_reminder_sent_at: datetime | None = None
+    reminders_sent: list[int] = []
     notes: str | None = None
     pdf_path: str | None = None
     pdf_generated_at: datetime | None = None
@@ -97,6 +111,9 @@ class InvoiceCreate(BaseModel):
     tax_enabled: int | None = Field(None, ge=0, le=1)
     tax_rate: Decimal | None = Field(None, ge=0, le=100)
     tax_name: str | None = Field(None, max_length=50)
+    # Rate into the business base currency, captured at issue time. Omit to use
+    # the profile's configured rate (or 1 when already in the base currency).
+    exchange_rate: Decimal | None = Field(None, gt=0, le=Decimal("1000000"))
     items: list[LineItemCreate] | None = Field(None, max_length=100)
 
 
@@ -115,6 +132,7 @@ class InvoiceUpdate(BaseModel):
     tax_enabled: int | None = Field(None, ge=0, le=1)
     tax_rate: Decimal | None = Field(None, ge=0, le=100)
     tax_name: str | None = Field(None, max_length=50)
+    exchange_rate: Decimal | None = Field(None, gt=0, le=Decimal("1000000"))
 
 
 class InvoiceItemUpdate(BaseModel):
@@ -311,6 +329,7 @@ async def create_invoice(
             tax_enabled=invoice_data.tax_enabled,
             tax_rate=invoice_data.tax_rate,
             tax_name=invoice_data.tax_name,
+            exchange_rate=invoice_data.exchange_rate,
             items=items_data,
         )
     except ValueError as e:
@@ -339,13 +358,54 @@ async def update_invoice(
     session: AsyncSession = Depends(get_session),
 ) -> dict:
     """Update invoice."""
-    invoice = await InvoiceService.update_invoice(
-        session,
-        invoice_id,
-        **updates.model_dump(exclude_unset=True),
-    )
+    try:
+        invoice = await InvoiceService.update_invoice(
+            session,
+            invoice_id,
+            **updates.model_dump(exclude_unset=True),
+        )
+    except ValueError as e:
+        await session.rollback()
+        raise HTTPException(status_code=400, detail=str(e))
     if not invoice:
         raise HTTPException(status_code=404, detail="Invoice not found")
+    return serialize_invoice(invoice)
+
+
+class QuoteConvertRequest(BaseModel):
+    """Convert a quote into an invoice."""
+
+    issue_date: date | None = None
+    payment_terms_days: int | None = Field(default=None, ge=0, le=365)
+    invoice_number_override: str | None = Field(
+        default=None, max_length=50, pattern=INVOICE_NUMBER_REGEX
+    )
+
+
+@router.post("/{invoice_id}/convert", response_model=InvoiceSchema, status_code=201)
+@limiter.limit("60/hour")
+async def convert_quote(
+    request: Request,
+    invoice_id: int,
+    data: QuoteConvertRequest | None = None,
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """Create an invoice from an accepted quote, keeping the quote intact."""
+    payload = data or QuoteConvertRequest()
+    try:
+        invoice = await InvoiceService.convert_quote_to_invoice(
+            session,
+            invoice_id,
+            issue_date=payload.issue_date,
+            payment_terms_days=payload.payment_terms_days,
+            invoice_number_override=payload.invoice_number_override,
+        )
+    except ValueError as e:
+        await session.rollback()
+        raise HTTPException(status_code=400, detail=str(e))
+
+    if invoice is None:
+        raise HTTPException(status_code=404, detail="Quote not found")
     return serialize_invoice(invoice)
 
 
@@ -399,6 +459,8 @@ async def add_invoice_item(
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    if item is None:
+        raise HTTPException(status_code=404, detail="Invoice not found")
     return {
         **serialize_invoice_item(item),
     }
@@ -449,20 +511,15 @@ async def generate_invoice_pdf(
 ):
     """Generate PDF for invoice."""
     from invoice_machine.config import get_settings
-    from invoice_machine.pdf.generator import generate_pdf
+    from invoice_machine.pdf.generator import store_invoice_pdf
 
     settings = get_settings()
     invoice = await InvoiceService.get_invoice(session, invoice_id)
     if not invoice:
         raise HTTPException(status_code=404, detail="Invoice not found")
 
-    # Generate PDF
-    pdf_path = await generate_pdf(session, invoice)
-
-    # Update invoice
-    invoice.pdf_path = pdf_path
-    invoice.pdf_generated_at = utc_now()
-    await session.commit()
+    # Explicit "regenerate" action: always re-render.
+    await store_invoice_pdf(session, invoice, force=True)
 
     return {
         "invoice_id": invoice.id,
@@ -481,27 +538,15 @@ async def get_invoice_pdf(
     from fastapi.responses import FileResponse
 
     from invoice_machine.config import get_settings
-    from invoice_machine.pdf.generator import generate_pdf
+    from invoice_machine.pdf.generator import store_invoice_pdf
 
     settings = get_settings()
     invoice = await InvoiceService.get_invoice(session, invoice_id)
     if not invoice:
         raise HTTPException(status_code=404, detail="Invoice not found")
 
-    # Check if PDF needs to be generated
-    needs_generation = (
-        not invoice.pdf_path
-        or not invoice.pdf_generated_at
-        or ensure_utc(invoice.updated_at) > ensure_utc(invoice.pdf_generated_at)
-    )
-
-    if needs_generation:
-        # Generate PDF
-        pdf_path = await generate_pdf(session, invoice)
-        invoice.pdf_path = pdf_path
-        invoice.pdf_generated_at = utc_now()
-        await session.commit()
-        await session.refresh(invoice)
+    # Renders only when missing or stale; a fresh PDF is served straight off disk.
+    await store_invoice_pdf(session, invoice)
 
     # Sanitize pdf_path to prevent path traversal
     # Reject any path traversal attempts

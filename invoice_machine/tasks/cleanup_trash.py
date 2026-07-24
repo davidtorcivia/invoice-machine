@@ -28,9 +28,10 @@ async def cleanup_trash():
         await session.commit()
 
         logger.info(
-            "Trash cleanup complete: %s clients, %s invoices purged",
+            "Trash cleanup complete: %s clients, %s invoices purged, %s PDFs removed",
             result["clients_deleted"],
             result["invoices_deleted"],
+            result.get("pdfs_deleted", 0),
         )
 
 

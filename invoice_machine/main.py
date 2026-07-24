@@ -17,12 +17,16 @@ from invoice_machine.api import (
     clients,
     email,
     email_templates,
+    export,
     invoices,
     mcp,
+    payment_settings,
+    payments,
     profile,
     recurring,
     search,
     trash,
+    webhooks,
 )
 from invoice_machine.app_middleware import configure_http_middleware
 from invoice_machine.app_runtime import lifespan
@@ -62,6 +66,10 @@ app.include_router(email.router)
 app.include_router(email_templates.router)
 app.include_router(search.router)
 app.include_router(analytics.router)
+app.include_router(payments.router)
+app.include_router(payment_settings.router)
+app.include_router(export.router)
+app.include_router(webhooks.router)
 
 # Streamable HTTP is the primary MCP transport. It must be an exact "/mcp"
 # route on the main app (not a route inside the mount below) because hitting a

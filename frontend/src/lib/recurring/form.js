@@ -118,7 +118,7 @@ export function createScheduleFormDataFromSchedule(schedule) {
     name: schedule.name,
     frequency: schedule.frequency,
     schedule_day: schedule.schedule_day,
-    schedule_month: schedule.schedule_month || 1,
+    schedule_month: schedule.schedule_month ?? new Date().getMonth() + 1,
     quarter_month: schedule.quarter_month || 1,
     currency_code: schedule.currency_code,
     payment_terms_days: schedule.payment_terms_days,
@@ -138,18 +138,35 @@ export function createScheduleFormDataFromSchedule(schedule) {
 }
 
 /**
+ * Build the request body for a create/update.
+ *
+ * Only fields the API actually accepts are sent — `id` and any UI-only state are
+ * dropped rather than relying on the server to ignore them.
+ *
  * @param {ScheduleFormData} formData
  */
 export function buildSchedulePayload(formData) {
   return {
-    ...formData,
     client_id: Number(formData.client_id),
+    name: formData.name,
+    frequency: formData.frequency,
     schedule_day: Number(formData.schedule_day),
     schedule_month: formData.frequency === 'yearly' ? Number(formData.schedule_month) : null,
     quarter_month: formData.frequency === 'quarterly' ? Number(formData.quarter_month) : 1,
+    currency_code: formData.currency_code,
     payment_terms_days: Number(formData.payment_terms_days),
+    notes: formData.use_default_notes ? '' : formData.notes,
+    use_default_notes: !!formData.use_default_notes,
+    line_items: formData.line_items,
+    show_payment_instructions: !!formData.show_payment_instructions,
+    selected_payment_methods: formData.selected_payment_methods || [],
+    auto_email_enabled: !!formData.auto_email_enabled,
+    email_subject_template: formData.email_subject_template || null,
+    email_body_template: formData.email_body_template || null,
+    is_active: !!formData.is_active,
+    tax_enabled: formData.tax_enabled,
     tax_rate: formData.tax_enabled && formData.tax_rate ? Number(formData.tax_rate) : null,
-    notes: formData.use_default_notes ? '' : formData.notes
+    tax_name: formData.tax_name || null
   };
 }
 

@@ -27,18 +27,15 @@ async def generate_pdf(invoice_id: int) -> dict:
             "generated_at": "2025-01-15T10:30:00Z"
         }
     """
-    from invoice_machine.pdf.generator import generate_pdf as do_generate_pdf
+    from invoice_machine.pdf.generator import store_invoice_pdf
 
     async with get_session() as session:
         invoice = await InvoiceService.get_invoice(session, invoice_id)
         if not invoice:
             return {"error": "Invoice not found"}
 
-        pdf_path = await do_generate_pdf(session, invoice)
-
-        invoice.pdf_path = pdf_path
-        invoice.pdf_generated_at = utc_now()
-        await session.commit()
+        # Explicit "regenerate" tool: always re-render.
+        await store_invoice_pdf(session, invoice, force=True)
 
         return {
             "invoice_id": invoice.id,
@@ -67,14 +64,15 @@ async def list_trash() -> list:
         now = utc_now()
         items = []
 
-        # Trashed clients
-        client_result = await session.execute(
-            select(Client).where(
+        # Column-only selects: whole entities would pull in each invoice's
+        # selectin-loaded line items and client just to render a name and a date.
+        client_rows = await session.execute(
+            select(Client.id, Client.name, Client.business_name, Client.deleted_at).where(
                 Client.deleted_at.is_not(None)
             )
         )
-        for client in client_result.scalars():
-            deleted_at = ensure_utc(client.deleted_at)
+        for row in client_rows:
+            deleted_at = ensure_utc(row.deleted_at)
             if not deleted_at:
                 continue
             days_left = settings.trash_retention_days - int(
@@ -82,20 +80,19 @@ async def list_trash() -> list:
             )
             items.append({
                 "type": "client",
-                "id": client.id,
-                "name": client.display_name,
+                "id": row.id,
+                "name": row.business_name or row.name or "Unknown Client",
                 "deleted_at": deleted_at.isoformat(),
                 "days_until_purge": days_left,
             })
 
-        # Trashed invoices
-        invoice_result = await session.execute(
-            select(Invoice).where(
+        invoice_rows = await session.execute(
+            select(Invoice.id, Invoice.invoice_number, Invoice.deleted_at).where(
                 Invoice.deleted_at.is_not(None)
             )
         )
-        for invoice in invoice_result.scalars():
-            deleted_at = ensure_utc(invoice.deleted_at)
+        for row in invoice_rows:
+            deleted_at = ensure_utc(row.deleted_at)
             if not deleted_at:
                 continue
             days_left = settings.trash_retention_days - int(
@@ -103,8 +100,8 @@ async def list_trash() -> list:
             )
             items.append({
                 "type": "invoice",
-                "id": invoice.id,
-                "name": invoice.invoice_number,
+                "id": row.id,
+                "name": row.invoice_number,
                 "deleted_at": deleted_at.isoformat(),
                 "days_until_purge": days_left,
             })

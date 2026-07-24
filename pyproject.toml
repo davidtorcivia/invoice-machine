@@ -20,6 +20,10 @@ dependencies = [
     "slowapi>=0.1.9",
     "mcp>=1.0.0",
     "cryptography>=42.0.0",
+    # Runtime dependency for the Stripe REST calls in service/stripe_links.py.
+    # It arrived transitively via mcp before; declared explicitly so the payment
+    # integration cannot break on an unrelated dependency change.
+    "httpx>=0.26.0",
 ]
 
 [project.optional-dependencies]

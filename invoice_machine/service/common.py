@@ -191,7 +191,47 @@ async def snapshot_client_info(session: AsyncSession, client: Client, invoice: I
     invoice.client_address = "\n".join(address_lines) if address_lines else None
 
 
-def format_currency(amount: Decimal | float, currency_code: str = "USD") -> str:
+def resolve_exchange_rate(
+    business: BusinessProfile | None,
+    currency_code: str,
+    explicit_rate: Decimal | None = None,
+) -> Decimal | None:
+    """Resolve the rate converting ``currency_code`` into the business base currency.
+
+    Precedence: an explicit per-invoice rate, then the profile's configured rate
+    table, then 1 when the invoice already *is* in the base currency. Returns None
+    when no rate is known — consolidated reporting then excludes the invoice and
+    reports it as uncovered instead of inventing a rate.
+    """
+    if explicit_rate is not None:
+        rate = Decimal(str(explicit_rate))
+        if not rate.is_finite() or rate <= 0:
+            raise ValueError("Exchange rate must be a positive number")
+        return rate
+
+    base = (business.default_currency_code if business else None) or "USD"
+    code = (currency_code or base).upper()
+    if code == base.upper():
+        return Decimal("1")
+
+    if business is not None:
+        configured = business.fx_rates_map.get(code)
+        if configured is not None:
+            return configured
+
+    return None
+
+
+def convert_to_base(
+    amount: Decimal | float | int | str, exchange_rate: Decimal | None
+) -> Decimal | None:
+    """Convert an amount into the base currency, or None when no rate is known."""
+    if exchange_rate is None:
+        return None
+    return quantize_money(Decimal(str(amount)) * Decimal(str(exchange_rate)))
+
+
+def format_currency(amount: Decimal | float | str, currency_code: str = "USD") -> str:
     """Format a money value for display."""
     amount = Decimal(str(amount))
     if currency_code == "USD":
@@ -215,11 +255,37 @@ def _replace_with_valid_day(target_date: date, schedule_day: int) -> date:
     return target_date.replace(day=min(schedule_day, last_day))
 
 
+def _align_to_quarter_month(target_date: date, quarter_month: int, schedule_day: int) -> date:
+    """Move a date to the configured month within its calendar quarter.
+
+    ``quarter_month`` is 1-3 (1st/2nd/3rd month of the quarter), so a quarterly
+    schedule set to the "2nd month" always bills in Feb/May/Aug/Nov regardless of
+    which month the schedule happened to be created in.
+    """
+    offset = min(max(int(quarter_month or 1), 1), 3) - 1
+    quarter_start_month = ((target_date.month - 1) // 3) * 3 + 1
+    aligned = target_date.replace(day=1, month=quarter_start_month + offset)
+    return _replace_with_valid_day(aligned, schedule_day)
+
+
+def _align_to_year_month(
+    target_date: date, schedule_month: int | None, schedule_day: int
+) -> date:
+    """Move a date to the configured calendar month for a yearly schedule."""
+    if schedule_month is None:
+        return _replace_with_valid_day(target_date, schedule_day)
+    month = min(max(int(schedule_month), 1), 12)
+    aligned = target_date.replace(day=1, month=month)
+    return _replace_with_valid_day(aligned, schedule_day)
+
+
 def validate_recurring_schedule(
     frequency: str,
     schedule_day: int,
     payment_terms_days: int | None = None,
     tax_rate: Decimal | None = None,
+    schedule_month: int | None = None,
+    quarter_month: int | None = None,
 ) -> None:
     """Validate recurring schedule cadence and financial fields."""
     if frequency not in VALID_RECURRING_FREQUENCIES:
@@ -233,6 +299,12 @@ def validate_recurring_schedule(
     if frequency in {"monthly", "quarterly", "yearly"} and not (1 <= schedule_day <= 31):
         raise ValueError("For monthly/quarterly/yearly frequency, schedule_day must be 1-31")
 
+    if schedule_month is not None and not (1 <= schedule_month <= 12):
+        raise ValueError("schedule_month must be 1-12")
+
+    if quarter_month is not None and not (1 <= quarter_month <= 3):
+        raise ValueError("quarter_month must be 1-3 (which month within the quarter)")
+
     if payment_terms_days is not None and not (0 <= payment_terms_days <= 365):
         raise ValueError("Payment terms must be between 0 and 365 days")
 
@@ -240,11 +312,53 @@ def validate_recurring_schedule(
         raise ValueError("Tax rate must be between 0 and 100")
 
 
+def delete_invoice_pdf_files(pdf_paths: list[str]) -> int:
+    """Best-effort removal of generated PDFs for permanently deleted invoices.
+
+    Purging an invoice used to leave its rendered PDF behind forever, so the
+    pdfs/ directory grew without bound and kept documents on disk for records the
+    user had explicitly destroyed.
+    """
+    import logging
+    import os
+
+    from invoice_machine.config import get_settings
+
+    logger = logging.getLogger(__name__)
+    pdf_dir = get_settings().pdf_dir
+    try:
+        pdf_dir_resolved = pdf_dir.resolve()
+    except OSError:
+        return 0
+
+    removed = 0
+    for stored_path in pdf_paths:
+        if not stored_path:
+            continue
+        # Stored as "pdfs/<name>.pdf"; only ever touch that one directory.
+        name = os.path.basename(stored_path)
+        if not name or name in (".", ".."):
+            continue
+        candidate = pdf_dir / name
+        try:
+            if candidate.resolve().parent != pdf_dir_resolved:
+                continue
+            if candidate.is_file():
+                candidate.unlink()
+                removed += 1
+        except OSError as exc:
+            logger.warning("Could not delete PDF %s: %s", name, exc)
+    return removed
+
+
 async def purge_trashed_records(
     session: AsyncSession,
     deleted_before: datetime | None = None,
 ) -> dict[str, int]:
-    """Delete trashed invoices and only then delete unreferenced trashed clients."""
+    """Delete trashed invoices and only then delete unreferenced trashed clients.
+
+    Also removes the generated PDF for each purged invoice.
+    """
     invoice_conditions = [Invoice.deleted_at.is_not(None)]
     client_conditions = [Client.deleted_at.is_not(None)]
     if deleted_before is not None:
@@ -254,6 +368,15 @@ async def purge_trashed_records(
     invoice_filter = and_(*invoice_conditions)
     client_filter = and_(*client_conditions)
     remaining_invoice_exists = select(Invoice.id).where(Invoice.client_id == Client.id).exists()
+
+    # Capture the PDF paths before the rows go away.
+    doomed_pdfs = [
+        path
+        for path in (
+            await session.execute(select(Invoice.pdf_path).where(invoice_filter))
+        ).scalars()
+        if path
+    ]
 
     invoice_count = int(
         (await session.execute(select(func.count(Invoice.id)).where(invoice_filter))).scalar() or 0
@@ -272,7 +395,10 @@ async def purge_trashed_records(
     )
     await session.execute(delete(Client).where(client_filter, ~remaining_invoice_exists))
 
+    pdfs_deleted = delete_invoice_pdf_files(doomed_pdfs)
+
     return {
         "invoices_deleted": invoice_count,
         "clients_deleted": client_count,
+        "pdfs_deleted": pdfs_deleted,
     }

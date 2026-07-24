@@ -17,7 +17,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from invoice_machine.database import BusinessProfile, Invoice
 from invoice_machine.service.clients import ClientService
-from invoice_machine.service.common import BILLED_STATUSES, format_currency, quantize_money
+from invoice_machine.service.common import (
+    BILLED_STATUSES,
+    convert_to_base,
+    format_currency,
+    quantize_money,
+)
 from invoice_machine.utils import utc_now
 
 
@@ -292,6 +297,87 @@ async def revenue_summary(
         "by_currency": {cur: _bucket_totals(vals, cur) for cur, vals in per_currency.items()},
         "other_currencies": [c for c in per_currency if c != primary],
         "breakdown": breakdown,
+    }
+
+
+async def consolidated_summary(
+    session: AsyncSession,
+    from_date_parsed: date | None = None,
+    to_date_parsed: date | None = None,
+) -> dict:
+    """Single-currency roll-up of invoiced/paid/outstanding, with coverage stats.
+
+    Multi-currency totals are otherwise never combined (see the module docstring).
+    This opt-in view converts each invoice using the exchange rate captured on it
+    at issue time, and is explicit about what it could not convert: invoices with
+    no recorded rate are excluded and counted in ``uncovered``, so a partial
+    picture can never be mistaken for a complete one.
+    """
+    profile = await BusinessProfile.get(session)
+    base_currency = (profile.default_currency_code if profile else None) or "USD"
+
+    conditions = [
+        Invoice.document_type == "invoice",
+        Invoice.deleted_at.is_(None),
+    ]
+    if from_date_parsed:
+        conditions.append(Invoice.issue_date >= from_date_parsed)
+    if to_date_parsed:
+        conditions.append(Invoice.issue_date <= to_date_parsed)
+
+    rows = (
+        await session.execute(
+            select(
+                Invoice.currency_code,
+                Invoice.status,
+                Invoice.total,
+                Invoice.amount_paid,
+                Invoice.exchange_rate,
+            ).where(*conditions)
+        )
+    ).all()
+
+    invoiced = Decimal("0.00")
+    paid = Decimal("0.00")
+    outstanding = Decimal("0.00")
+    covered_count = 0
+    uncovered_count = 0
+    uncovered_currencies: dict[str, int] = {}
+
+    for row in rows:
+        if row.exchange_rate is None:
+            uncovered_count += 1
+            currency = row.currency_code or base_currency
+            uncovered_currencies[currency] = uncovered_currencies.get(currency, 0) + 1
+            continue
+
+        covered_count += 1
+        total_base = convert_to_base(row.total or 0, row.exchange_rate) or Decimal("0.00")
+        paid_base = convert_to_base(row.amount_paid or 0, row.exchange_rate) or Decimal("0.00")
+
+        if row.status in BILLED_STATUSES:
+            invoiced += total_base
+        paid += paid_base
+        if row.status in ("sent", "overdue"):
+            outstanding += max(total_base - paid_base, Decimal("0.00"))
+
+    total_count = covered_count + uncovered_count
+    return {
+        "currency": base_currency,
+        "invoiced": str(quantize_money(invoiced)),
+        "invoiced_formatted": format_currency(invoiced, base_currency),
+        "paid": str(quantize_money(paid)),
+        "paid_formatted": format_currency(paid, base_currency),
+        "outstanding": str(quantize_money(outstanding)),
+        "outstanding_formatted": format_currency(outstanding, base_currency),
+        "coverage": {
+            "converted_invoices": covered_count,
+            "total_invoices": total_count,
+            # Invoices with no recorded rate are NOT in the totals above.
+            "uncovered_invoices": uncovered_count,
+            "uncovered_by_currency": uncovered_currencies,
+            "complete": uncovered_count == 0,
+        },
     }
 
 

@@ -118,6 +118,20 @@ class BusinessProfile(Base):
     # Email template settings (optional - defaults used if not set)
     email_subject_template: Mapped[str | None] = mapped_column(String(500), nullable=True)
     email_body_template: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Automated payment reminders
+    reminders_enabled: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    # JSON array of day offsets relative to due date (negative = before due).
+    reminder_offsets: Mapped[str | None] = mapped_column(Text, nullable=True)
+    reminder_subject_template: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    reminder_body_template: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Hosted payment links
+    payments_enabled: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    payments_provider: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    # Both encrypted at rest (enc: prefix) via invoice_machine.crypto.
+    stripe_secret_key: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    stripe_webhook_secret: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    # JSON object of currency code -> rate into default_currency_code.
+    fx_rates: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=utc_now, onupdate=utc_now
@@ -164,6 +178,46 @@ class BusinessProfile(Base):
             return methods if isinstance(methods, list) else []
         except (json.JSONDecodeError, TypeError):
             return []
+
+    @property
+    def reminder_offsets_list(self) -> list[int]:
+        """Reminder day-offsets relative to due date, sorted and de-duplicated."""
+        import json
+
+        if not self.reminder_offsets:
+            return []
+        try:
+            offsets = json.loads(self.reminder_offsets)
+        except (json.JSONDecodeError, TypeError):
+            return []
+        if not isinstance(offsets, list):
+            return []
+        return sorted({int(o) for o in offsets if isinstance(o, (int, float))})
+
+    @property
+    def fx_rates_map(self) -> dict[str, Decimal]:
+        """Currency -> rate into default_currency_code. Bad entries are dropped."""
+        import json
+        from decimal import InvalidOperation
+
+        if not self.fx_rates:
+            return {}
+        try:
+            raw = json.loads(self.fx_rates)
+        except (json.JSONDecodeError, TypeError):
+            return {}
+        if not isinstance(raw, dict):
+            return {}
+
+        rates: dict[str, Decimal] = {}
+        for code, value in raw.items():
+            try:
+                rate = Decimal(str(value))
+            except (InvalidOperation, ValueError, TypeError):
+                continue
+            if rate.is_finite() and rate > 0:
+                rates[str(code).upper()] = rate
+        return rates
 
 
 class Client(Base):
@@ -250,6 +304,11 @@ class Invoice(Base):
     # Timestamp set when the invoice transitions to "paid" (cleared if un-paid).
     # Used for cash-basis reporting ("paid this month") instead of created_at.
     paid_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # Sum of recorded payments, denormalized from the payments table so list and
+    # aging queries never have to aggregate per row.
+    amount_paid: Mapped[Decimal] = mapped_column(
+        DECIMAL(10, 2), default=Decimal("0.00"), server_default="0"
+    )
     document_type: Mapped[str] = mapped_column(String(20), default="invoice")  # invoice/quote
     client_reference: Mapped[str | None] = mapped_column(String(100), nullable=True)  # PO/job number
     show_payment_instructions: Mapped[int] = mapped_column(Integer, default=1)
@@ -271,6 +330,29 @@ class Invoice(Base):
     pdf_path: Mapped[str | None] = mapped_column(String(500), nullable=True)
     pdf_generated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
+    # Rate to convert this invoice's currency into base_currency_code, captured at
+    # issue time. NULL means "not recorded" — consolidated reporting excludes those
+    # invoices and says so rather than guessing a rate.
+    exchange_rate: Mapped[Decimal | None] = mapped_column(DECIMAL(18, 8), nullable=True)
+    base_currency_code: Mapped[str | None] = mapped_column(String(3), nullable=True)
+
+    # Quote <-> invoice conversion links. Plain integers, not declared foreign
+    # keys: SQLite cannot add a FK constraint to an existing table via ALTER
+    # TABLE, so a declared FK here would make the create_all schema diverge from
+    # the migrated one.
+    converted_from_invoice_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    converted_to_invoice_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    # Reminder bookkeeping: JSON array of day-offsets already sent, so a restart
+    # or a second run on the same day cannot re-send the same reminder.
+    reminders_sent: Mapped[str | None] = mapped_column(Text, nullable=True)
+    last_reminder_sent_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+    # Hosted payment link (Stripe Checkout Session) for this invoice.
+    payment_link_url: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    payment_link_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    payment_link_created_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=utc_now, onupdate=utc_now
@@ -291,6 +373,14 @@ class Invoice(Base):
         lazy="selectin",
     )
 
+    payments: Mapped[list["Payment"]] = relationship(
+        "Payment",
+        back_populates="invoice",
+        cascade="all, delete-orphan",
+        order_by="Payment.payment_date",
+        lazy="selectin",
+    )
+
     __table_args__ = (
         Index("idx_invoices_date", "issue_date"),
         Index("idx_invoices_status", "status"),
@@ -301,12 +391,47 @@ class Invoice(Base):
         Index("idx_invoices_client_status", "client_id", "status"),
         Index("idx_invoices_date_status", "issue_date", "status"),
         Index("idx_invoices_client_deleted", "client_id", "deleted_at"),
+        # Reminder sweep and A/R aging both scan open invoices by due date.
+        Index("idx_invoices_due_status_deleted", "due_date", "status", "deleted_at"),
     )
 
     @property
     def is_active(self) -> bool:
         """Check if invoice is active (not deleted)."""
         return self.deleted_at is None
+
+    @property
+    def amount_due(self) -> Decimal:
+        """Outstanding balance (never negative, so an overpayment reads as 0 due)."""
+        total = Decimal(str(self.total or 0))
+        paid = Decimal(str(self.amount_paid or 0))
+        return max(total - paid, Decimal("0.00"))
+
+    @property
+    def is_partially_paid(self) -> bool:
+        """True when some — but not all — of the invoice has been paid.
+
+        Deliberately derived rather than a new `status` value: adding a status
+        would ripple through every filter, badge, bulk action and analytics
+        bucket, while the money question is fully answered by amount_paid.
+        """
+        paid = Decimal(str(self.amount_paid or 0))
+        return paid > 0 and paid < Decimal(str(self.total or 0))
+
+    @property
+    def reminders_sent_list(self) -> list[int]:
+        """Day-offsets whose reminder has already been sent for this invoice."""
+        import json
+
+        if not self.reminders_sent:
+            return []
+        try:
+            offsets = json.loads(self.reminders_sent)
+        except (json.JSONDecodeError, TypeError):
+            return []
+        if not isinstance(offsets, list):
+            return []
+        return [int(offset) for offset in offsets if isinstance(offset, (int, float))]
 
     @property
     def needs_pdf_regeneration(self) -> bool:
@@ -353,6 +478,45 @@ class InvoiceItem(Base):
     )
 
     __table_args__ = (Index("idx_items_invoice", "invoice_id"),)
+
+
+class Payment(Base):
+    """A payment recorded against an invoice.
+
+    Multiple payments per invoice give partial-payment support; the invoice's
+    denormalized ``amount_paid`` is recomputed from this table on every change.
+    """
+
+    __tablename__ = "payments"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    invoice_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("invoices.id", ondelete="CASCADE"), nullable=False
+    )
+    amount: Mapped[Decimal] = mapped_column(DECIMAL(10, 2), nullable=False)
+    # Snapshot of the invoice currency at payment time: money is never summed
+    # across currencies, and a later currency edit must not relabel history.
+    currency_code: Mapped[str] = mapped_column(String(3), default="USD", server_default="USD")
+    payment_date: Mapped[date] = mapped_column(Date, nullable=False)
+    method: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    reference: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Set only for payments created by a provider webhook (e.g. "stripe").
+    provider: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    external_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=utc_now, onupdate=utc_now
+    )
+
+    invoice: Mapped["Invoice"] = relationship("Invoice", back_populates="payments")
+
+    __table_args__ = (
+        Index("idx_payments_invoice", "invoice_id"),
+        Index("idx_payments_date", "payment_date"),
+        # Webhook idempotency: one provider event can only ever land once.
+        Index("idx_payments_provider_external", "provider", "external_id", unique=True),
+    )
 
 
 class Session(Base):
@@ -468,12 +632,29 @@ class RecurringSchedule(Base):
     frequency: Mapped[str] = mapped_column(String(20), nullable=False)
     # Day of month (1-31) for monthly/quarterly/yearly, or day of week (0-6) for weekly
     schedule_day: Mapped[int] = mapped_column(Integer, default=1)
+    # Calendar month (1-12) for yearly schedules. None = keep the created month.
+    schedule_month: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Which month within each quarter (1-3) for quarterly schedules.
+    quarter_month: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
     # Invoice template fields
     currency_code: Mapped[str] = mapped_column(String(3), default="USD")
     payment_terms_days: Mapped[int] = mapped_column(Integer, default=30)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # When set, generated invoices inherit the business profile's default notes
+    # instead of this schedule's own notes.
+    use_default_notes: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
     # JSON array of line items: [{description, quantity, unit_price, unit_type}]
     line_items: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Payment-instruction settings copied onto each generated invoice.
+    show_payment_instructions: Mapped[int] = mapped_column(
+        Integer, default=1, server_default="1"
+    )
+    # JSON array of payment method IDs
+    selected_payment_methods: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Email each generated invoice to the client automatically.
+    auto_email_enabled: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    email_subject_template: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    email_body_template: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Tax settings (inherit from client/global if not set)
     tax_enabled: Mapped[int | None] = mapped_column(Integer, nullable=True)
     tax_rate: Mapped[Decimal | None] = mapped_column(DECIMAL(5, 2), nullable=True)
@@ -513,6 +694,19 @@ class RecurringSchedule(Base):
         try:
             items = json.loads(self.line_items)
             return items if isinstance(items, list) else []
+        except (json.JSONDecodeError, TypeError):
+            return []
+
+    @property
+    def selected_payment_methods_list(self) -> list[str]:
+        """Parse selected payment method IDs from stored JSON."""
+        import json
+
+        if not self.selected_payment_methods:
+            return []
+        try:
+            methods = json.loads(self.selected_payment_methods)
+            return methods if isinstance(methods, list) else []
         except (json.JSONDecodeError, TypeError):
             return []
 

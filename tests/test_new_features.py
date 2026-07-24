@@ -11,6 +11,7 @@ from invoice_machine.services import (
     RecurringService,
     SearchService,
 )
+from invoice_machine.utils import utc_now
 
 
 def _fixed_utc_now(year, month, day):
@@ -595,3 +596,175 @@ class TestClientTaxSettings:
 
         # Should use global default
         assert invoice.tax_rate == Decimal("8.00")
+
+
+class TestRecurringScheduleFields:
+    """The schedule fields the UI exposes must actually take effect."""
+
+    @pytest.mark.asyncio
+    async def test_unrelated_edit_does_not_reset_next_invoice_date(
+        self, db_session, test_client, monkeypatch
+    ):
+        """Renaming a schedule must not move the next billing date.
+
+        The UI submits the whole form on every save, so `frequency`/`schedule_day`
+        are always present. Keying the recalculation off mere presence silently
+        skipped or duplicated a billing period on every unrelated edit.
+        """
+        monkeypatch.setattr(
+            "invoice_machine.service.recurring.utc_now", _fixed_utc_now(2025, 3, 10)
+        )
+        schedule = await RecurringService.create_schedule(
+            db_session,
+            client_id=test_client.id,
+            name="Retainer",
+            frequency="monthly",
+            schedule_day=15,
+            next_invoice_date=date(2025, 3, 15),
+        )
+
+        updated = await RecurringService.update_schedule(
+            db_session,
+            schedule.id,
+            name="Renamed Retainer",
+            frequency="monthly",   # unchanged, but always submitted
+            schedule_day=15,       # unchanged, but always submitted
+        )
+
+        assert updated.name == "Renamed Retainer"
+        assert updated.next_invoice_date == date(2025, 3, 15)
+
+    @pytest.mark.asyncio
+    async def test_yearly_schedule_honours_configured_month(self, db_session, test_client):
+        """A "yearly in March" schedule must bill in March, not its creation month."""
+        schedule = await RecurringService.create_schedule(
+            db_session,
+            client_id=test_client.id,
+            name="Annual",
+            frequency="yearly",
+            schedule_day=15,
+            schedule_month=3,
+            next_invoice_date=date(2025, 3, 15),
+        )
+        assert schedule.schedule_month == 3
+
+        following = RecurringService.calculate_next_date(
+            date(2025, 3, 15), "yearly", 15, schedule_month=3
+        )
+        assert following == date(2026, 3, 15)
+
+        # Even starting from an off-month date, the cadence lands in March.
+        from_july = RecurringService.calculate_next_date(
+            date(2025, 7, 2), "yearly", 15, schedule_month=3
+        )
+        assert from_july == date(2026, 3, 15)
+
+    @pytest.mark.asyncio
+    async def test_quarterly_schedule_honours_month_in_quarter(self, db_session, test_client):
+        """"2nd month of the quarter" must mean Feb/May/Aug/Nov."""
+        schedule = await RecurringService.create_schedule(
+            db_session,
+            client_id=test_client.id,
+            name="Quarterly Hosting",
+            frequency="quarterly",
+            schedule_day=10,
+            quarter_month=2,
+            next_invoice_date=date(2025, 2, 10),
+        )
+        assert schedule.quarter_month == 2
+
+        following = RecurringService.calculate_next_date(
+            date(2025, 2, 10), "quarterly", 10, quarter_month=2
+        )
+        assert following == date(2025, 5, 10)
+
+    @pytest.mark.asyncio
+    async def test_generated_invoice_inherits_payment_instruction_settings(
+        self, db_session, business_profile, test_client
+    ):
+        """Payment-method selections configured on a schedule reach its invoices."""
+        schedule = await RecurringService.create_schedule(
+            db_session,
+            client_id=test_client.id,
+            name="Retainer",
+            frequency="monthly",
+            schedule_day=1,
+            line_items=[{"description": "Service", "quantity": 1, "unit_price": 100}],
+            show_payment_instructions=1,
+            selected_payment_methods=["pm-1", "pm-2"],
+        )
+
+        result = await RecurringService.trigger_schedule(db_session, schedule.id)
+        assert result["success"] is True
+
+        invoice = await InvoiceService.get_invoice(db_session, result["invoice_id"])
+        assert invoice.show_payment_instructions == 1
+        assert invoice.selected_payment_methods_list == ["pm-1", "pm-2"]
+
+    @pytest.mark.asyncio
+    async def test_use_default_notes_pulls_from_business_profile(
+        self, db_session, business_profile, test_client
+    ):
+        """use_default_notes makes generated invoices use the profile's notes."""
+        business_profile.default_notes = "Thanks for your business."
+        await db_session.commit()
+
+        schedule = await RecurringService.create_schedule(
+            db_session,
+            client_id=test_client.id,
+            name="Retainer",
+            frequency="monthly",
+            schedule_day=1,
+            notes="schedule-specific notes",
+            use_default_notes=1,
+            line_items=[{"description": "Service", "quantity": 1, "unit_price": 100}],
+        )
+
+        result = await RecurringService.trigger_schedule(db_session, schedule.id)
+        invoice = await InvoiceService.get_invoice(db_session, result["invoice_id"])
+        assert invoice.notes == "Thanks for your business."
+
+    @pytest.mark.asyncio
+    async def test_create_schedule_rejects_unknown_client(self, db_session):
+        """An unknown client must be a validation error, not an FK crash."""
+        with pytest.raises(ValueError, match="not found"):
+            await RecurringService.create_schedule(
+                db_session,
+                client_id=999999,
+                name="Orphan",
+                frequency="monthly",
+                schedule_day=1,
+            )
+
+    @pytest.mark.asyncio
+    async def test_malformed_line_items_do_not_abort_the_whole_run(
+        self, db_session, business_profile, test_client
+    ):
+        """One schedule with corrupt stored JSON must not kill the other schedules."""
+        today = utc_now().date()
+        broken = await RecurringService.create_schedule(
+            db_session,
+            client_id=test_client.id,
+            name="Broken",
+            frequency="monthly",
+            schedule_day=1,
+            next_invoice_date=today,
+        )
+        broken.line_items = "{not valid json"
+        healthy = await RecurringService.create_schedule(
+            db_session,
+            client_id=test_client.id,
+            name="Healthy",
+            frequency="monthly",
+            schedule_day=1,
+            line_items=[{"description": "Service", "quantity": 1, "unit_price": 50}],
+            next_invoice_date=today,
+        )
+        await db_session.commit()
+
+        results = await RecurringService.process_due_schedules(db_session)
+
+        healthy_results = [r for r in results if r["schedule_id"] == healthy.id]
+        assert healthy_results, "healthy schedule should still have been processed"
+        assert any(r.get("success") for r in healthy_results)
+        assert broken.id != healthy.id

@@ -11,7 +11,6 @@ from __future__ import annotations
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from invoice_machine.database import BusinessProfile
-from invoice_machine.utils import utc_now
 
 
 async def send_invoice_email(
@@ -31,7 +30,7 @@ async def send_invoice_email(
     successful send moves a draft to ``sent`` (recorded as ``status_updated``).
     """
     from invoice_machine.email import EmailService
-    from invoice_machine.pdf.generator import generate_pdf
+    from invoice_machine.pdf.generator import store_invoice_pdf
     from invoice_machine.services import InvoiceService
 
     profile = await BusinessProfile.get_or_create(session)
@@ -46,10 +45,7 @@ async def send_invoice_email(
         return {"success": False, "error": f"Invoice {invoice_id} not found", "not_found": True}
 
     # Never email a stale or missing PDF.
-    if not invoice.pdf_path or invoice.needs_pdf_regeneration:
-        invoice.pdf_path = await generate_pdf(session, invoice)
-        invoice.pdf_generated_at = utc_now()
-        await session.commit()
+    await store_invoice_pdf(session, invoice)
 
     email_service = EmailService(profile)
     result = await email_service.send_invoice(

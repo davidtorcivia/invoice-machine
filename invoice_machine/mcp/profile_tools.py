@@ -138,7 +138,12 @@ async def update_business_profile(
         if "default_tax_enabled" in updates:
             updates["default_tax_enabled"] = 1 if updates["default_tax_enabled"] else 0
         if "default_tax_rate" in updates:
-            updates["default_tax_rate"] = Decimal(str(updates["default_tax_rate"]))
+            # Bounded like the REST schema: an out-of-range rate here would be
+            # applied to every subsequently created invoice.
+            rate = Decimal(str(updates["default_tax_rate"]))
+            if not rate.is_finite() or rate < 0 or rate > 100:
+                raise ValueError("default_tax_rate must be between 0 and 100")
+            updates["default_tax_rate"] = rate
 
         # Convert SMTP boolean fields to integers
         if "smtp_enabled" in updates:

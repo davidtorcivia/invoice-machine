@@ -19,7 +19,17 @@ from invoice_machine.rate_limit import bearer_auth_throttle, get_client_ip, limi
 
 settings = get_settings()
 logger = logging.getLogger(__name__)
-PUBLIC_PATHS = {"/health", "/api/auth/status", "/api/auth/setup", "/api/auth/login"}
+PUBLIC_PATHS = {
+    "/health",
+    "/api/auth/status",
+    "/api/auth/setup",
+    "/api/auth/login",
+    # Provider webhooks cannot carry a session cookie or a CSRF token. They are
+    # authenticated by the provider's request signature inside the handler, which
+    # is a stronger guarantee than either — see api/webhooks.py. CSRF is moot:
+    # there is no ambient credential for a browser to be tricked into replaying.
+    "/api/webhooks/stripe",
+}
 UNSAFE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 
 

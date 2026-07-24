@@ -42,10 +42,18 @@ class RecurringScheduleSchema(BaseModel):
     name: str
     frequency: str
     schedule_day: int
+    schedule_month: int | None = None
+    quarter_month: int = 1
     currency_code: str
     payment_terms_days: int
     notes: str | None = None
+    use_default_notes: bool = True
     line_items: list[dict] | None = None
+    show_payment_instructions: bool = True
+    selected_payment_methods: list[str] = []
+    auto_email_enabled: bool = False
+    email_subject_template: str | None = None
+    email_body_template: str | None = None
     tax_enabled: bool | None = None
     tax_rate: str | None = None
     tax_name: str | None = None
@@ -65,10 +73,20 @@ class RecurringScheduleCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=255)
     frequency: str = Field(..., pattern="^(daily|weekly|monthly|quarterly|yearly)$")
     schedule_day: int = Field(1, ge=0, le=31)
+    # Which calendar month a yearly schedule bills in (None = month of creation).
+    schedule_month: int | None = Field(None, ge=1, le=12)
+    # Which month within each quarter a quarterly schedule bills in.
+    quarter_month: int = Field(1, ge=1, le=3)
     currency_code: str = Field("USD", max_length=3)
     payment_terms_days: int = Field(30, ge=0, le=365)
     notes: str | None = Field(None, max_length=10000)
+    use_default_notes: bool = True
     line_items: list[LineItemCreate] | None = None
+    show_payment_instructions: bool = True
+    selected_payment_methods: list[str] | None = Field(None, max_length=50)
+    auto_email_enabled: bool = False
+    email_subject_template: str | None = Field(None, max_length=500)
+    email_body_template: str | None = Field(None, max_length=10000)
     tax_enabled: bool | None = None
     tax_rate: Decimal | None = Field(None, ge=0, le=100)
     tax_name: str | None = Field(None, max_length=50)
@@ -86,10 +104,18 @@ class RecurringScheduleUpdate(BaseModel):
     name: str | None = Field(None, min_length=1, max_length=255)
     frequency: str | None = Field(None, pattern="^(daily|weekly|monthly|quarterly|yearly)$")
     schedule_day: int | None = Field(None, ge=0, le=31)
+    schedule_month: int | None = Field(None, ge=1, le=12)
+    quarter_month: int | None = Field(None, ge=1, le=3)
     currency_code: str | None = Field(None, max_length=3)
     payment_terms_days: int | None = Field(None, ge=0, le=365)
     notes: str | None = Field(None, max_length=10000)
+    use_default_notes: bool | None = None
     line_items: list[LineItemCreate] | None = None
+    show_payment_instructions: bool | None = None
+    selected_payment_methods: list[str] | None = Field(None, max_length=50)
+    auto_email_enabled: bool | None = None
+    email_subject_template: str | None = Field(None, max_length=500)
+    email_body_template: str | None = Field(None, max_length=10000)
     tax_enabled: bool | None = None
     tax_rate: Decimal | None = Field(None, ge=0, le=100)
     tax_name: str | None = Field(None, max_length=50)
@@ -142,10 +168,18 @@ async def create_schedule(
             name=data.name,
             frequency=data.frequency,
             schedule_day=data.schedule_day,
+            schedule_month=data.schedule_month,
+            quarter_month=data.quarter_month,
             currency_code=data.currency_code,
             payment_terms_days=data.payment_terms_days,
             notes=data.notes,
+            use_default_notes=int(data.use_default_notes),
             line_items=line_items,
+            show_payment_instructions=int(data.show_payment_instructions),
+            selected_payment_methods=data.selected_payment_methods,
+            auto_email_enabled=int(data.auto_email_enabled),
+            email_subject_template=data.email_subject_template or None,
+            email_body_template=data.email_body_template or None,
             tax_enabled=int(data.tax_enabled) if data.tax_enabled is not None else None,
             tax_rate=data.tax_rate,
             tax_name=data.tax_name,
@@ -153,6 +187,7 @@ async def create_schedule(
         )
         return _schedule_to_dict(schedule)
     except ValueError as e:
+        await session.rollback()
         raise HTTPException(status_code=400, detail=str(e))
 
 
@@ -189,17 +224,21 @@ async def update_schedule(
             for item in update_data["line_items"]
         ]
 
-    # Convert tax_enabled to int
-    if "tax_enabled" in update_data and update_data["tax_enabled"] is not None:
-        update_data["tax_enabled"] = int(update_data["tax_enabled"])
-
-    # Convert is_active to int
-    if "is_active" in update_data and update_data["is_active"] is not None:
-        update_data["is_active"] = int(update_data["is_active"])
+    # SQLite stores booleans as ints.
+    for bool_field in (
+        "tax_enabled",
+        "is_active",
+        "use_default_notes",
+        "show_payment_instructions",
+        "auto_email_enabled",
+    ):
+        if update_data.get(bool_field) is not None:
+            update_data[bool_field] = int(update_data[bool_field])
 
     try:
         schedule = await RecurringService.update_schedule(session, schedule_id, **update_data)
     except ValueError as e:
+        await session.rollback()
         raise HTTPException(status_code=400, detail=str(e))
 
     if not schedule:

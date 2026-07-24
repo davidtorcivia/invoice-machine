@@ -9,9 +9,14 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from invoice_machine.crypto import decrypt_credential, encrypt_credential
+from invoice_machine.crypto import (
+    UnencryptedCredentialError,
+    decrypt_credential,
+    encrypt_credential,
+)
 from invoice_machine.database import BusinessProfile, close_db, get_session, init_db
 from invoice_machine.rate_limit import limiter
+from invoice_machine.runtime_schema import ensure_database_schema
 from invoice_machine.services import BackupService
 from invoice_machine.utils import utc_now
 
@@ -74,27 +79,30 @@ class BackupSettingsUpdate(BaseModel):
 
 
 def _decrypt_s3_config(s3_config: dict) -> dict:
-    """Decrypt S3 credentials in config dict."""
+    """Decrypt S3 credentials in config dict.
+
+    A credential that cannot be decrypted (wrong key) or that is stored in the
+    clear (rejected outright in production) leaves that field unset rather than
+    raising: otherwise a single legacy value made every backup endpoint 500 and
+    locked the user out of the backups page entirely.
+    """
     if not s3_config:
         return s3_config
 
     result = s3_config.copy()
 
-    # Decrypt access key ID
-    if result.get("access_key_id"):
+    for field in ("access_key_id", "secret_access_key"):
+        if not result.get(field):
+            continue
         try:
-            result["access_key_id"] = decrypt_credential(result["access_key_id"])
-        except ValueError as e:
-            import logging
-            logging.getLogger(__name__).debug(f"S3 access key not encrypted (legacy): {e}")
-
-    # Decrypt secret access key
-    if result.get("secret_access_key"):
-        try:
-            result["secret_access_key"] = decrypt_credential(result["secret_access_key"])
-        except ValueError as e:
-            import logging
-            logging.getLogger(__name__).debug(f"S3 secret key not encrypted (legacy): {e}")
+            result[field] = decrypt_credential(result[field])
+        except (ValueError, UnencryptedCredentialError) as exc:
+            logger.warning(
+                "S3 %s could not be decrypted (%s); re-save the credential in settings.",
+                field,
+                exc,
+            )
+            result[field] = None
 
     return result
 
@@ -108,9 +116,17 @@ async def get_backup_service(session: AsyncSession) -> BackupService:
         try:
             s3_config = json.loads(profile.backup_s3_config)
             s3_config = _decrypt_s3_config(s3_config)
-            s3_config["enabled"] = True
+            # Never hand boto3 a half-configured credential set: with the keys
+            # missing it silently falls back to the ambient credential chain
+            # (env vars / instance role), which is not what the user configured.
+            if s3_config.get("access_key_id") and s3_config.get("secret_access_key"):
+                s3_config["enabled"] = True
+            else:
+                logger.warning("S3 backups are enabled but credentials are unusable; skipping S3.")
+                s3_config = None
         except json.JSONDecodeError:
-            pass
+            logger.warning("Stored S3 backup configuration is not valid JSON; ignoring it.")
+            s3_config = None
 
     return BackupService(
         retention_days=profile.backup_retention_days or 30,
@@ -332,7 +348,18 @@ async def restore_backup(
             # Always clear the flag, even if re-opening the DB fails — otherwise
             # the restore guard would 503 every request until a container restart.
             try:
-                await init_db()
+                # Full schema bootstrap, not just init_db(): a backup taken on an
+                # older release is at an older Alembic revision, and create_all
+                # only adds missing *tables* — every missing column would surface
+                # as "no such column" on the next query.
+                await ensure_database_schema(apply_migrations=True)
+            except Exception:
+                logger.error("Post-restore schema upgrade failed", exc_info=True)
+                # Still get connections back so the app can report the problem.
+                try:
+                    await init_db()
+                except Exception:
+                    logger.error("Post-restore init_db failed", exc_info=True)
             finally:
                 restore_state.restore_in_progress = False
 

@@ -54,6 +54,26 @@ async def get_revenue_summary(
     )
 
 
+@router.get("/consolidated")
+@limiter.limit("30/minute")
+async def get_consolidated_summary(
+    request: Request,
+    from_date: str | None = Query(None, description="Start date (ISO format)"),
+    to_date: str | None = Query(None, description="End date (ISO format)"),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """Opt-in single-currency roll-up using each invoice's captured FX rate.
+
+    Reports how many invoices could not be converted instead of silently
+    dropping or mis-summing them.
+    """
+    return await analytics_service.consolidated_summary(
+        session,
+        from_date_parsed=date.fromisoformat(from_date) if from_date else None,
+        to_date_parsed=date.fromisoformat(to_date) if to_date else None,
+    )
+
+
 @router.get("/clients")
 @limiter.limit("30/minute")
 async def get_client_lifetime_values(

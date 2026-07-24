@@ -179,3 +179,33 @@ async def get_client_invoice_context(
 
 
 
+
+
+@mcp.tool()
+async def get_consolidated_summary(
+    from_date: str | None = None,
+    to_date: str | None = None,
+) -> dict:
+    """
+    Single-currency roll-up of invoiced/paid/outstanding across all currencies.
+
+    Every other money figure in this app is reported per-currency and never
+    summed across currencies. This opt-in view converts each invoice using the
+    exchange rate captured on it at issue time, and reports coverage: invoices
+    with no recorded rate are EXCLUDED from the totals and counted separately,
+    so a partial roll-up is never mistaken for a complete one. Check
+    `coverage.complete` before quoting these numbers as a full picture.
+
+    Args:
+        from_date: Start date (ISO format, optional)
+        to_date: End date (ISO format, optional)
+
+    Returns:
+        {currency, invoiced, paid, outstanding, coverage: {...}}
+    """
+    async with get_session() as session:
+        return await analytics_service.consolidated_summary(
+            session,
+            from_date_parsed=date.fromisoformat(from_date) if from_date else None,
+            to_date_parsed=date.fromisoformat(to_date) if to_date else None,
+        )

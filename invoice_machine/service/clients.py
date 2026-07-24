@@ -204,10 +204,38 @@ class ClientService:
         """Get a client by ID."""
         return await session.get(Client, client_id)
 
+    # Caller-settable columns. Identity and lifecycle columns (id, timestamps,
+    # deleted_at) are deliberately absent so no caller can set them by name.
+    _WRITABLE_FIELDS = frozenset(  # noqa: RUF012
+        {
+            "name",
+            "business_name",
+            "address_line1",
+            "address_line2",
+            "city",
+            "state",
+            "postal_code",
+            "country",
+            "email",
+            "phone",
+            "payment_terms_days",
+            "notes",
+            "tax_enabled",
+            "tax_rate",
+            "tax_name",
+            "preferred_currency",
+        }
+    )
+
+    # Nullable columns an explicit null may clear. payment_terms_days is NOT NULL,
+    # so a null there means "leave unchanged" rather than an IntegrityError.
+    _NULLABLE_FIELDS = _WRITABLE_FIELDS - {"payment_terms_days"}
+
     @staticmethod
     async def create_client(session: AsyncSession, **kwargs) -> Client:
         """Create a new client."""
-        client = Client(**kwargs)
+        fields = {k: v for k, v in kwargs.items() if k in ClientService._WRITABLE_FIELDS}
+        client = Client(**fields)
         session.add(client)
         await session.commit()
         await session.refresh(client)
@@ -217,14 +245,21 @@ class ClientService:
     async def update_client(
         session: AsyncSession, client_id: int, **kwargs
     ) -> Client | None:
-        """Update a client in place."""
+        """Update a client in place.
+
+        An explicitly-supplied null clears a nullable field — previously any None
+        was skipped, so an address line or email could never be removed once set.
+        """
         client = await ClientService.get_client(session, client_id)
         if not client:
             return None
 
         for key, value in kwargs.items():
-            if hasattr(client, key) and value is not None:
-                setattr(client, key, value)
+            if key not in ClientService._WRITABLE_FIELDS:
+                continue
+            if value is None and key not in ClientService._NULLABLE_FIELDS:
+                continue
+            setattr(client, key, value)
 
         client.updated_at = utc_now()
         await session.commit()

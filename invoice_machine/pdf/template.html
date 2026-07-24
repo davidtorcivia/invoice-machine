@@ -353,6 +353,12 @@
             line-height: 1.7;
         }
 
+        .pay-link {
+            color: var(--accent);
+            font-weight: 600;
+            text-decoration: underline;
+        }
+
         /* ============================================
            FOOTER - Fixed at bottom of each page
            ============================================ */
@@ -408,8 +414,8 @@
         <!-- Header -->
         <div class="header">
             <div class="brand">
-                {% if logo_data %}
-                <img src="data:image/png;base64,{{ logo_data }}" alt="Logo" class="logo">
+                {% if logo_data_uri %}
+                <img src="{{ logo_data_uri }}" alt="Logo" class="logo">
                 {% endif %}
                 <div class="business-name">{{ business.business_name or business.name }}</div>
                 <div class="business-details">
@@ -515,10 +521,27 @@
 
         <!-- Payment Instructions & Notes -->
         <div class="info-sections">
+            {% if payment_link_url %}
+            <div class="info-block payment">
+                <div class="info-title">Pay Online</div>
+                <div class="info-text">
+                    <a href="{{ payment_link_url }}" class="pay-link">Pay this invoice online</a>
+                </div>
+            </div>
+            {% endif %}
             {% if show_payment_instructions and payment_instructions %}
             <div class="info-block payment">
                 <div class="info-title">Payment Details</div>
                 <div class="info-text">{{ payment_instructions }}</div>
+            </div>
+            {% endif %}
+            {% if amount_paid and amount_paid > 0 %}
+            <div class="info-block payment">
+                <div class="info-title">Payments Received</div>
+                <div class="info-text">
+                    Paid to date: {{ format_money(amount_paid, invoice.currency_code) }}<br>
+                    <strong>Balance due: {{ format_money(amount_due, invoice.currency_code) }}</strong>
+                </div>
             </div>
             {% endif %}
             {% if invoice.notes or business.default_notes %}

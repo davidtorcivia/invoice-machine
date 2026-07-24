@@ -238,8 +238,9 @@ export function createDataStore(fetchFn, initialValue = null, options = {}) {
     }
 
     // Create new abort controller for this request
-    currentController = new AbortController();
-    const signal = currentController.signal;
+    const controller = new AbortController();
+    currentController = controller;
+    const signal = controller.signal;
 
     error.set(null);
     try {
@@ -264,7 +265,13 @@ export function createDataStore(fetchFn, initialValue = null, options = {}) {
       toast.error(e.message);
       throw e;
     } finally {
-      currentController = null;
+      // Only clear the slot if this call still owns it. Clearing unconditionally
+      // let a superseded request wipe out the *newer* request's controller, so a
+      // third refresh could no longer cancel the second and results could land
+      // out of order.
+      if (currentController === controller) {
+        currentController = null;
+      }
     }
   };
 

@@ -6,6 +6,7 @@ from decimal import Decimal
 import pytest
 from sqlalchemy import func, select
 
+from invoice_machine.config import get_settings
 from invoice_machine.database import Client, Invoice, InvoiceItem
 from invoice_machine.services import (
     ClientService,
@@ -511,3 +512,59 @@ class TestTrashPurge:
         assert await db_session.get(Invoice, invoice.id) is None
         assert await db_session.get(Client, test_client.id) is None
         assert item_count == 0
+
+
+class TestPurgeDeletesGeneratedFiles:
+    """Permanently deleting an invoice must not leave its PDF on disk."""
+
+    @pytest.mark.asyncio
+    async def test_purge_removes_pdf_files(self, db_session, tmp_path, monkeypatch):
+        from invoice_machine.database import Invoice
+
+        pdf_dir = tmp_path / "pdfs"
+        pdf_dir.mkdir()
+        doomed = pdf_dir / "doomed-1.pdf"
+        doomed.write_bytes(b"%PDF-1.4")
+        kept = pdf_dir / "kept-2.pdf"
+        kept.write_bytes(b"%PDF-1.4")
+
+        trashed = Invoice(
+            invoice_number="TRASH-1",
+            issue_date=date(2026, 1, 1),
+            deleted_at=utc_now(),
+            pdf_path="pdfs/doomed-1.pdf",
+        )
+        live = Invoice(
+            invoice_number="LIVE-1",
+            issue_date=date(2026, 1, 1),
+            pdf_path="pdfs/kept-2.pdf",
+        )
+        db_session.add_all([trashed, live])
+        await db_session.commit()
+
+        monkeypatch.setattr(get_settings(), "pdf_dir", pdf_dir)
+        result = await purge_trashed_records(db_session)
+        await db_session.commit()
+
+        assert result["invoices_deleted"] == 1
+        assert result["pdfs_deleted"] == 1
+        assert not doomed.exists(), "purged invoice's PDF should be gone"
+        assert kept.exists(), "live invoice's PDF must be untouched"
+
+    @pytest.mark.asyncio
+    async def test_purge_ignores_path_traversal_in_stored_pdf_path(self, tmp_path, monkeypatch):
+        """A crafted pdf_path must never delete outside the pdfs directory."""
+        from invoice_machine.database import Invoice
+        from invoice_machine.service.common import delete_invoice_pdf_files
+
+        pdf_dir = tmp_path / "pdfs"
+        pdf_dir.mkdir()
+        outsider = tmp_path / "important.db"
+        outsider.write_bytes(b"data")
+
+        monkeypatch.setattr(get_settings(), "pdf_dir", pdf_dir)
+        removed = delete_invoice_pdf_files(["../important.db", "pdfs/../../important.db"])
+
+        assert removed == 0
+        assert outsider.exists()
+        assert Invoice is not None

@@ -82,9 +82,19 @@ async def _scheduled_backup_job() -> None:
 
         backup_service = await get_backup_service(session)
         # Snapshot + gzip + S3 upload are blocking; keep them off the event loop.
-        await asyncio.to_thread(backup_service.create_backup, compress=True)
+        result = await asyncio.to_thread(backup_service.create_backup, compress=True)
         await asyncio.to_thread(backup_service.cleanup_old_backups)
-        logger.info("Scheduled backup completed successfully")
+
+        # create_backup swallows S3 errors into the result so a failed upload does
+        # not lose the local snapshot — but it must not be reported as a success.
+        if result.get("s3_error"):
+            logger.error(
+                "Scheduled backup %s written locally, but the S3 upload failed: %s",
+                result.get("filename"),
+                result["s3_error"],
+            )
+        else:
+            logger.info("Scheduled backup completed successfully: %s", result.get("filename"))
 
 
 async def _trash_cleanup_job() -> None:
@@ -119,6 +129,19 @@ async def _recurring_invoice_job() -> None:
                 len(results),
                 success_count,
             )
+
+
+async def _payment_reminder_job() -> None:
+    """Send any payment reminders that fall due today."""
+    from invoice_machine.database import async_session_maker
+    from invoice_machine.service.reminders import send_due_reminders
+
+    async with async_session_maker() as session:
+        results = await send_due_reminders(session)
+        if results:
+            sent = sum(1 for result in results if result.get("success"))
+            failed = len(results) - sent
+            logger.info("Payment reminders: %s sent, %s failed", sent, failed)
 
 
 async def _rebuild_search_indexes() -> None:
@@ -200,6 +223,10 @@ async def lifespan(app: FastAPI):
             asyncio.create_task(_run_daily_task(app, 3, "Trash cleanup task", _trash_cleanup_job)),
             asyncio.create_task(_run_daily_task(app, 1, "Overdue check task", _overdue_check_job)),
             asyncio.create_task(_run_daily_task(app, 2, "Recurring invoice task", _recurring_invoice_job)),
+            # After the overdue sweep, so "N days overdue" wording is accurate.
+            asyncio.create_task(
+                _run_daily_task(app, 9, "Payment reminder task", _payment_reminder_job)
+            ),
         ]
     logger.info("Invoice Machine ready! Listening on port %s", settings.port)
 

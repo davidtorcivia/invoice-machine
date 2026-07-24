@@ -249,6 +249,58 @@ async def update_invoice(
 
 
 @mcp.tool()
+async def convert_quote_to_invoice(
+    quote_id: int,
+    issue_date: str | None = None,
+    payment_terms_days: int | None = None,
+    invoice_number_override: str | None = None,
+) -> dict:
+    """
+    Create an invoice from an accepted quote, keeping the quote intact.
+
+    The quote is preserved as the document the client agreed to, and the two are
+    linked (the quote gains converted_to_invoice_id, the invoice gains
+    converted_from_invoice_id). Line items, tax snapshot, currency and payment
+    settings are carried over, so the client is billed what they accepted.
+
+    Args:
+        quote_id: The quote's ID (document_type must be "quote")
+        issue_date: Invoice date (ISO format, defaults to today UTC)
+        payment_terms_days: Payment terms (defaults to the quote's terms)
+        invoice_number_override: Custom invoice number
+
+    Returns:
+        The created invoice, or an error dict
+    """
+    async with get_session() as session:
+        try:
+            invoice = await InvoiceService.convert_quote_to_invoice(
+                session,
+                quote_id,
+                issue_date=date.fromisoformat(issue_date) if issue_date else None,
+                payment_terms_days=payment_terms_days,
+                invoice_number_override=invoice_number_override,
+            )
+        except ValueError as exc:
+            await session.rollback()
+            return {"success": False, "error": str(exc)}
+
+        if invoice is None:
+            return {"success": False, "error": f"Quote {quote_id} not found"}
+
+        return {
+            "success": True,
+            "invoice": serialize_invoice(
+                invoice,
+                include_items=True,
+                include_formatted_total=True,
+                json_ready=True,
+                selected_payment_methods_as_list=True,
+            ),
+        }
+
+
+@mcp.tool()
 async def delete_invoice(invoice_id: int) -> bool:
     """
     Move invoice to trash (soft delete).

@@ -119,6 +119,10 @@ class TestExpandTemplate:
         invoice.total = Decimal("1000.00")
         invoice.currency_code = "USD"
         invoice.items = []
+        # Payment state, as every real invoice has.
+        invoice.amount_paid = Decimal("0.00")
+        invoice.amount_due = Decimal("1000.00")
+        invoice.payment_link_url = None
         return invoice
 
     @pytest.fixture
@@ -278,6 +282,10 @@ class TestEmailService:
         invoice.currency_code = "USD"
         invoice.pdf_path = "pdfs/20250115-1.pdf"
         invoice.items = []
+        # Payment state, as every real invoice has.
+        invoice.amount_paid = Decimal("0.00")
+        invoice.amount_due = Decimal("1000.00")
+        invoice.payment_link_url = None
         return invoice
 
     def test_validate_config_smtp_disabled(self, mock_profile):
@@ -508,3 +516,75 @@ class TestEmailService:
         ):
             result = service._get_smtp_password()
             assert result == "plain_password"
+
+
+class TestFromHeaderConstruction:
+    """The From header must be built with formataddr, not string interpolation."""
+
+    def _service_with_from_name(self, from_name: str):
+        from invoice_machine.database import BusinessProfile
+        from invoice_machine.email import EmailService
+
+        profile = BusinessProfile(
+            id=1,
+            name="Test",
+            smtp_enabled=1,
+            smtp_host="smtp.example.com",
+            smtp_port=587,
+            smtp_from_email="billing@example.com",
+            smtp_from_name=from_name,
+            smtp_use_tls=1,
+        )
+        return EmailService(profile)
+
+    def _capture_message(self, service):
+        """Run _send_email_sync with SMTP stubbed and return the built message."""
+        captured = {}
+
+        class _FakeServer:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                return False
+
+            def starttls(self):
+                pass
+
+            def login(self, *args):
+                pass
+
+            def send_message(self, msg):
+                captured["msg"] = msg
+
+        with patch("invoice_machine.email._validate_smtp_target"), patch(
+            "invoice_machine.email.smtplib.SMTP", return_value=_FakeServer()
+        ):
+            service._send_email_sync("client@example.com", "Subject", "Body")
+        return captured["msg"]
+
+    def test_display_name_with_angle_brackets_cannot_forge_an_address(self):
+        """A display name containing <> must not inject a second address."""
+        service = self._service_with_from_name("Evil <attacker@evil.example>")
+        msg = self._capture_message(service)
+
+        from email.utils import getaddresses
+
+        addresses = [addr for _name, addr in getaddresses([msg["From"]]) if addr]
+        assert addresses == ["billing@example.com"]
+
+    def test_display_name_with_comma_stays_one_address(self):
+        """A comma in the display name must be quoted, not treated as a separator."""
+        service = self._service_with_from_name("Doe, Jane")
+        msg = self._capture_message(service)
+
+        from email.utils import getaddresses
+
+        addresses = [addr for _name, addr in getaddresses([msg["From"]]) if addr]
+        assert addresses == ["billing@example.com"]
+
+    def test_plain_display_name_is_preserved(self):
+        service = self._service_with_from_name("Acme Billing")
+        msg = self._capture_message(service)
+        assert "Acme Billing" in msg["From"]
+        assert "billing@example.com" in msg["From"]

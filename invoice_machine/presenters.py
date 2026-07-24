@@ -11,6 +11,7 @@ from invoice_machine.database import (
     Client,
     Invoice,
     InvoiceItem,
+    Payment,
     RecurringSchedule,
 )
 from invoice_machine.service.common import format_quantity
@@ -59,6 +60,23 @@ def serialize_invoice_item(item: InvoiceItem) -> dict:
         "unit_price": str(item.unit_price),
         "total": str(item.total),
         "sort_order": getattr(item, "sort_order", 0),
+    }
+
+
+def serialize_payment(payment: Payment, *, json_ready: bool = False) -> dict:
+    """Serialize a recorded payment for API or MCP responses."""
+    return {
+        "id": payment.id,
+        "invoice_id": payment.invoice_id,
+        "amount": str(payment.amount),
+        "currency_code": payment.currency_code,
+        "payment_date": _maybe_iso(payment.payment_date, json_ready),
+        "method": payment.method,
+        "reference": payment.reference,
+        "notes": payment.notes,
+        "provider": payment.provider,
+        "external_id": payment.external_id,
+        "created_at": _maybe_iso(payment.created_at, json_ready),
     }
 
 
@@ -179,6 +197,7 @@ def serialize_invoice(
     include_formatted_total: bool = False,
     json_ready: bool = False,
     selected_payment_methods_as_list: bool = False,
+    include_payments: bool = False,
 ) -> dict:
     """Serialize invoice fields for API or MCP responses."""
     selected_payment_methods: Any = (
@@ -214,6 +233,19 @@ def serialize_invoice(
             else "0"
         ),
         "total": str(invoice.total),
+        "amount_paid": str(invoice.amount_paid or 0),
+        "amount_due": str(invoice.amount_due),
+        "is_partially_paid": invoice.is_partially_paid,
+        "exchange_rate": (
+            str(invoice.exchange_rate) if invoice.exchange_rate is not None else None
+        ),
+        "base_currency_code": invoice.base_currency_code,
+        "converted_from_invoice_id": invoice.converted_from_invoice_id,
+        "converted_to_invoice_id": invoice.converted_to_invoice_id,
+        "payment_link_url": invoice.payment_link_url,
+        "payment_link_created_at": _maybe_iso(invoice.payment_link_created_at, json_ready),
+        "last_reminder_sent_at": _maybe_iso(invoice.last_reminder_sent_at, json_ready),
+        "reminders_sent": invoice.reminders_sent_list,
         "notes": invoice.notes,
         "show_payment_instructions": bool(getattr(invoice, "show_payment_instructions", True)),
         "selected_payment_methods": selected_payment_methods,
@@ -230,6 +262,10 @@ def serialize_invoice(
         data["items"] = [serialize_invoice_item(item) for item in invoice.items]
     else:
         data["items"] = []
+    if include_payments:
+        data["payments"] = [
+            serialize_payment(payment, json_ready=json_ready) for payment in invoice.payments
+        ]
     if include_formatted_total:
         from invoice_machine.services import format_currency
 
@@ -252,10 +288,18 @@ def serialize_recurring_schedule(
         "name": schedule.name,
         "frequency": schedule.frequency,
         "schedule_day": schedule.schedule_day,
+        "schedule_month": schedule.schedule_month,
+        "quarter_month": schedule.quarter_month,
         "currency_code": schedule.currency_code,
         "payment_terms_days": schedule.payment_terms_days,
         "notes": schedule.notes,
+        "use_default_notes": bool(schedule.use_default_notes),
         "line_items": schedule.line_items_list,
+        "show_payment_instructions": bool(schedule.show_payment_instructions),
+        "selected_payment_methods": schedule.selected_payment_methods_list,
+        "auto_email_enabled": bool(schedule.auto_email_enabled),
+        "email_subject_template": schedule.email_subject_template,
+        "email_body_template": schedule.email_body_template,
         "tax_enabled": bool(schedule.tax_enabled) if schedule.tax_enabled is not None else None,
         "tax_rate": (
             str(schedule.tax_rate)

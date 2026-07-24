@@ -1,7 +1,14 @@
 <script>
   import { onMount } from 'svelte';
   import { beforeNavigate } from '$app/navigation';
-  import { profileApi, backupsApi, emailApi } from '$lib/api';
+  import {
+    profileApi,
+    backupsApi,
+    emailApi,
+    paymentSettingsApi,
+    remindersApi,
+    fxRatesApi
+  } from '$lib/api';
   import { parseJsonArray, stringifyJsonArray } from '$lib/json';
   import {
     buildBackupPayload,
@@ -36,6 +43,9 @@
   import SettingsPaymentMethodsSection from '$lib/components/settings/SettingsPaymentMethodsSection.svelte';
   import SettingsSmtpSection from '$lib/components/settings/SettingsSmtpSection.svelte';
   import SettingsTaxSection from '$lib/components/settings/SettingsTaxSection.svelte';
+  import SettingsPaymentsSection from '$lib/components/settings/SettingsPaymentsSection.svelte';
+  import SettingsRemindersSection from '$lib/components/settings/SettingsRemindersSection.svelte';
+  import SettingsFxRatesSection from '$lib/components/settings/SettingsFxRatesSection.svelte';
 
   let profile = null;
   let loading = true;
@@ -88,6 +98,34 @@
   let smtpSnapshot = '';
   let backupSnapshot = '';
 
+  // Online payments, reminders and FX rates.
+  let paymentsForm = {
+    payments_enabled: false,
+    stripe_secret_key_set: false,
+    stripe_webhook_secret_set: false,
+    webhook_url: null
+  };
+  // Write-only: blank means "keep the stored credential".
+  let stripeSecretKey = '';
+  let stripeWebhookSecret = '';
+  let testingPayments = false;
+  let paymentsSnapshot = '';
+
+  let remindersForm = {
+    reminders_enabled: false,
+    reminder_offsets: [-3, 1, 7, 14],
+    reminder_subject_template: '',
+    reminder_body_template: '',
+    smtp_enabled: false,
+    default_subject: '',
+    default_body: ''
+  };
+  let runningReminders = false;
+  let remindersSnapshot = '';
+
+  let fxRates = { base_currency_code: 'USD', rates: {} };
+  let fxSnapshot = '';
+
   const profileState = () =>
     JSON.stringify({ profileForm, paymentMethods, appBaseUrl: apiAccess.appBaseUrl });
   const smtpState = () => JSON.stringify(smtpForm);
@@ -98,11 +136,23 @@
     JSON.stringify({ profileForm, paymentMethods, appBaseUrl: apiAccess.appBaseUrl }) !== profileSnapshot;
   $: smtpDirty = smtpSnapshot !== '' && JSON.stringify(smtpForm) !== smtpSnapshot;
   $: backupDirty = backupSnapshot !== '' && JSON.stringify(backupForm) !== backupSnapshot;
-  $: settingsDirty = profileDirty || smtpDirty || backupDirty;
+  $: paymentsDirty =
+    paymentsSnapshot !== '' &&
+    (JSON.stringify(paymentsForm) !== paymentsSnapshot ||
+      !!stripeSecretKey ||
+      !!stripeWebhookSecret);
+  $: remindersDirty =
+    remindersSnapshot !== '' && JSON.stringify(remindersForm) !== remindersSnapshot;
+  $: fxDirty = fxSnapshot !== '' && JSON.stringify(fxRates) !== fxSnapshot;
+  $: settingsDirty =
+    profileDirty || smtpDirty || backupDirty || paymentsDirty || remindersDirty || fxDirty;
   $: dirtySectionLabels = [
     profileDirty && 'Business profile',
     smtpDirty && 'Email (SMTP)',
-    backupDirty && 'Backup'
+    backupDirty && 'Backup',
+    paymentsDirty && 'Online payments',
+    remindersDirty && 'Payment reminders',
+    fxDirty && 'Exchange rates'
   ].filter(Boolean);
 
   beforeNavigate((nav) => {
@@ -117,7 +167,44 @@
     await loadProfile();
     await loadBackupSettings();
     await loadBackups();
+    await loadPaymentSettings();
+    await loadReminderSettings();
+    await loadFxRates();
   });
+
+  async function loadPaymentSettings() {
+    try {
+      paymentsForm = await paymentSettingsApi.get();
+      stripeSecretKey = '';
+      stripeWebhookSecret = '';
+      paymentsSnapshot = JSON.stringify(paymentsForm);
+    } catch (error) {
+      console.error('Failed to load payment settings:', error);
+    }
+  }
+
+  async function loadReminderSettings() {
+    try {
+      const data = await remindersApi.get();
+      remindersForm = {
+        ...data,
+        reminder_subject_template: data.reminder_subject_template || '',
+        reminder_body_template: data.reminder_body_template || ''
+      };
+      remindersSnapshot = JSON.stringify(remindersForm);
+    } catch (error) {
+      console.error('Failed to load reminder settings:', error);
+    }
+  }
+
+  async function loadFxRates() {
+    try {
+      fxRates = await fxRatesApi.get();
+      fxSnapshot = JSON.stringify(fxRates);
+    } catch (error) {
+      console.error('Failed to load exchange rates:', error);
+    }
+  }
 
   async function loadProfile() {
     loading = true;
@@ -163,6 +250,39 @@
     backupSnapshot = backupState();
   }
 
+  async function persistPayments() {
+    const payload = { payments_enabled: paymentsForm.payments_enabled };
+    // Only send credentials the user actually typed, so a blank field keeps the
+    // stored value rather than wiping it.
+    if (stripeSecretKey) payload.stripe_secret_key = stripeSecretKey;
+    if (stripeWebhookSecret) payload.stripe_webhook_secret = stripeWebhookSecret;
+
+    paymentsForm = await paymentSettingsApi.update(payload);
+    stripeSecretKey = '';
+    stripeWebhookSecret = '';
+    paymentsSnapshot = JSON.stringify(paymentsForm);
+  }
+
+  async function persistReminders() {
+    const data = await remindersApi.update({
+      reminders_enabled: remindersForm.reminders_enabled,
+      reminder_offsets: remindersForm.reminder_offsets,
+      reminder_subject_template: remindersForm.reminder_subject_template || '',
+      reminder_body_template: remindersForm.reminder_body_template || ''
+    });
+    remindersForm = {
+      ...data,
+      reminder_subject_template: data.reminder_subject_template || '',
+      reminder_body_template: data.reminder_body_template || ''
+    };
+    remindersSnapshot = JSON.stringify(remindersForm);
+  }
+
+  async function persistFxRates() {
+    fxRates = await fxRatesApi.update(fxRates.rates);
+    fxSnapshot = JSON.stringify(fxRates);
+  }
+
   async function saveAll() {
     if (profileDirty && !profileForm.name.trim()) {
       toast.error('Please enter your name');
@@ -174,11 +294,44 @@
       if (profileDirty) await persistProfile();
       if (smtpDirty) await persistSmtp();
       if (backupDirty) await persistBackup();
+      if (paymentsDirty) await persistPayments();
+      if (remindersDirty) await persistReminders();
+      if (fxDirty) await persistFxRates();
       toast.success('Settings saved');
     } catch (error) {
       toast.error(error.message || 'Failed to save settings');
     } finally {
       savingAll = false;
+    }
+  }
+
+  async function testPaymentCredentials() {
+    testingPayments = true;
+    try {
+      if (paymentsDirty) await persistPayments();
+      const result = await paymentSettingsApi.test();
+      toast.success(result.warning || result.message || 'Stripe credentials verified');
+    } catch (error) {
+      toast.error(error.message || 'Could not verify Stripe credentials');
+    } finally {
+      testingPayments = false;
+    }
+  }
+
+  async function runRemindersNow() {
+    runningReminders = true;
+    try {
+      if (remindersDirty) await persistReminders();
+      const result = await remindersApi.runNow();
+      if (result.attempted === 0) {
+        toast.info('No reminders are due right now');
+      } else {
+        toast.success(`Sent ${result.sent} of ${result.attempted} reminders`);
+      }
+    } catch (error) {
+      toast.error(error.message || 'Failed to send reminders');
+    } finally {
+      runningReminders = false;
     }
   }
 
@@ -191,6 +344,11 @@
     }
     if (smtpSnapshot) smtpForm = JSON.parse(smtpSnapshot);
     if (backupSnapshot) backupForm = JSON.parse(backupSnapshot);
+    if (paymentsSnapshot) paymentsForm = JSON.parse(paymentsSnapshot);
+    if (remindersSnapshot) remindersForm = JSON.parse(remindersSnapshot);
+    if (fxSnapshot) fxRates = JSON.parse(fxSnapshot);
+    stripeSecretKey = '';
+    stripeWebhookSecret = '';
   }
 
   async function testSmtpConnection() {
@@ -558,6 +716,24 @@
         {testingSmtp}
         {testSmtpConnection}
       />
+
+      <SettingsRemindersSection
+        bind:settings={remindersForm}
+        running={runningReminders}
+        on:runnow={runRemindersNow}
+      />
+
+      <SettingsPaymentsSection
+        bind:settings={paymentsForm}
+        bind:secretKey={stripeSecretKey}
+        bind:webhookSecret={stripeWebhookSecret}
+        testing={testingPayments}
+        on:test={testPaymentCredentials}
+        on:copied={() => toast.success('Webhook URL copied')}
+        on:copyfailed={() => toast.error('Could not copy the URL')}
+      />
+
+      <SettingsFxRatesSection bind:fxRates />
 
       <SettingsApiAccessSection
         bind:mcpOpen={openSections.mcpIntegration}

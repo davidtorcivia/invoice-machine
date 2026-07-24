@@ -16,6 +16,7 @@ from invoice_machine.service.common import (
     normalize_line_items,
     quantize_quantity,
     recalculate_invoice_totals,
+    resolve_exchange_rate,
     snapshot_client_info,
 )
 from invoice_machine.utils import normalize_invoice_number_override, utc_now
@@ -158,6 +159,8 @@ class InvoiceService:
         tax_enabled: bool | None = None,
         tax_rate: Decimal | None = None,
         tax_name: str | None = None,
+        exchange_rate: Decimal | None = None,
+        converted_from_invoice_id: int | None = None,
     ) -> Invoice:
         """Create a new invoice or quote, including optional line items."""
         business = await BusinessProfile.get_or_create(session)
@@ -204,6 +207,11 @@ class InvoiceService:
             or business.default_payment_terms_days
         )
 
+        # Capture the FX rate into the base currency at issue time so consolidated
+        # reporting has a historically stable rate instead of today's.
+        base_currency = business.default_currency_code or "USD"
+        resolved_rate = resolve_exchange_rate(business, currency_code, exchange_rate)
+
         override = invoice_number_override is not None
         override_number = (
             normalize_invoice_number_override(invoice_number_override) if override else None
@@ -234,6 +242,9 @@ class InvoiceService:
                 tax_enabled=1 if use_tax_enabled else 0,
                 tax_rate=use_tax_rate or Decimal("0.00"),
                 tax_name=use_tax_name or "Tax",
+                exchange_rate=resolved_rate,
+                base_currency_code=base_currency,
+                converted_from_invoice_id=converted_from_invoice_id,
             )
             if client:
                 await snapshot_client_info(session, client, invoice)
@@ -299,6 +310,7 @@ class InvoiceService:
             "tax_name",
             "document_type",
             "client_id",
+            "exchange_rate",
         }
 
         tax_fields_changed = False
@@ -363,6 +375,84 @@ class InvoiceService:
             await snapshot_client_info(session, client, invoice)
 
         invoice.updated_at = utc_now()
+        try:
+            await session.commit()
+        except IntegrityError as exc:
+            # invoice_number is UNIQUE: a custom number that collides (or an
+            # auto-number regenerated into an existing slot) is caller error, not
+            # a server fault.
+            await session.rollback()
+            raise ValueError(
+                f"Invoice number '{invoice.invoice_number}' already exists"
+            ) from exc
+        await session.refresh(invoice)
+        return invoice
+
+    @staticmethod
+    async def convert_quote_to_invoice(
+        session: AsyncSession,
+        quote_id: int,
+        issue_date: date | None = None,
+        payment_terms_days: int | None = None,
+        invoice_number_override: str | None = None,
+    ) -> Invoice | None:
+        """Create an invoice from an accepted quote, keeping both documents.
+
+        The quote is preserved verbatim (it is the document the client agreed to)
+        and the two are linked via converted_to/converted_from. This replaces
+        flipping ``document_type`` in place, which destroyed the quote and
+        renumbered it, leaving no record of what was actually quoted.
+
+        Returns None if the quote does not exist; raises ValueError if the source
+        is not a quote or has already been converted.
+        """
+        quote = await InvoiceService.get_invoice(session, quote_id)
+        if quote is None or quote.deleted_at is not None:
+            return None
+
+        if quote.document_type != "quote":
+            raise ValueError("Only quotes can be converted to invoices")
+        if quote.converted_to_invoice_id:
+            raise ValueError(
+                f"Quote {quote.invoice_number} was already converted to invoice "
+                f"{quote.converted_to_invoice_id}"
+            )
+
+        items = [
+            {
+                "description": item.description,
+                "quantity": item.quantity,
+                "unit_type": item.unit_type,
+                "unit_price": item.unit_price,
+                "sort_order": item.sort_order,
+            }
+            for item in quote.items
+        ]
+
+        invoice = await InvoiceService.create_invoice(
+            session,
+            client_id=quote.client_id,
+            issue_date=issue_date or utc_now().date(),
+            payment_terms_days=payment_terms_days or quote.payment_terms_days,
+            currency_code=quote.currency_code,
+            notes=quote.notes,
+            items=items,
+            document_type="invoice",
+            client_reference=quote.client_reference,
+            show_payment_instructions=bool(quote.show_payment_instructions),
+            selected_payment_methods=quote.selected_payment_methods,
+            invoice_number_override=invoice_number_override,
+            # Carry the quote's tax snapshot so the amount the client accepted is
+            # the amount they are billed, even if the defaults have since changed.
+            tax_enabled=bool(quote.tax_enabled),
+            tax_rate=quote.tax_rate,
+            tax_name=quote.tax_name,
+            exchange_rate=quote.exchange_rate,
+            converted_from_invoice_id=quote.id,
+        )
+
+        quote.converted_to_invoice_id = invoice.id
+        quote.updated_at = utc_now()
         await session.commit()
         await session.refresh(invoice)
         return invoice
@@ -403,8 +493,8 @@ class InvoiceService:
         unit_price: Decimal | float | str = 0,
         sort_order: int = 0,
         unit_type: str = "qty",
-    ) -> InvoiceItem:
-        """Add a line item to an invoice."""
+    ) -> InvoiceItem | None:
+        """Add a line item to an invoice. Returns None if the invoice is missing."""
         quantity = _coerce_quantity(quantity)
 
         unit_price = Decimal(str(unit_price))
@@ -414,6 +504,12 @@ class InvoiceService:
         valid_unit_types = ["qty", "hours"]
         if unit_type not in valid_unit_types:
             raise ValueError(f"Invalid unit type. Must be one of: {valid_unit_types}")
+
+        # Resolve the parent first: inserting against a missing invoice_id used to
+        # trip the foreign key and surface as a 500 instead of a clean 404.
+        invoice = await session.get(Invoice, invoice_id)
+        if invoice is None:
+            return None
 
         item = InvoiceItem(
             invoice_id=invoice_id,
@@ -427,9 +523,7 @@ class InvoiceService:
         session.add(item)
         await session.flush()
 
-        invoice = await session.get(Invoice, invoice_id)
-        if invoice:
-            await recalculate_invoice_totals(session, invoice)
+        await recalculate_invoice_totals(session, invoice)
 
         await session.commit()
         await session.refresh(item)
