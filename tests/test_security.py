@@ -338,3 +338,100 @@ class TestApiKeyHashing:
         assert is_encrypted("") is False
         assert is_encrypted("enc:abc") is True
         assert is_encrypted("plain") is False
+
+
+class TestSpaContentSecurityPolicy:
+    """The SPA must boot under a strict CSP, on any deployment.
+
+    Regression guard for a bug where script-src was only relaxed when a
+    Cloudflare header was present. SvelteKit's inline bootstrap script was
+    blocked everywhere else, so direct-to-origin access and every deployment not
+    behind Cloudflare served a blank page.
+    """
+
+    def _policy(self, tmp_path, monkeypatch, html, headers=None):
+        from unittest.mock import MagicMock
+
+        from invoice_machine import app_middleware
+
+        (tmp_path / "index.html").write_text(html, encoding="utf-8")
+        monkeypatch.setattr(app_middleware, "static_dir", lambda: tmp_path)
+        app_middleware.spa_inline_script_hashes.cache_clear()
+
+        request = MagicMock()
+        request.headers = headers or {}
+        try:
+            return app_middleware.build_spa_csp_policy(request)
+        finally:
+            app_middleware.spa_inline_script_hashes.cache_clear()
+
+    def _script_src(self, policy):
+        for directive in policy.split(";"):
+            directive = directive.strip()
+            if directive.startswith("script-src ") and "attr" not in directive:
+                return directive
+        return ""
+
+    def test_inline_bootstrap_script_is_hashed(self, tmp_path, monkeypatch):
+        import base64
+        import hashlib
+
+        body = "__sveltekit_boot({});"
+        policy = self._policy(
+            tmp_path, monkeypatch, f"<html><body><script>{body}</script></body></html>"
+        )
+        expected = base64.b64encode(hashlib.sha256(body.encode()).digest()).decode()
+        assert f"'sha256-{expected}'" in self._script_src(policy)
+
+    def test_app_boots_without_cloudflare_headers(self, tmp_path, monkeypatch):
+        """The hash must be present with no proxy headers at all."""
+        policy = self._policy(
+            tmp_path, monkeypatch, "<html><script>boot()</script></html>", headers={}
+        )
+        script_src = self._script_src(policy)
+        assert "sha256-" in script_src, "inline bootstrap would be blocked"
+
+    def test_unsafe_inline_is_never_granted_to_scripts(self, tmp_path, monkeypatch):
+        """A hash admits our script; 'unsafe-inline' would admit an injected one.
+
+        Browsers also ignore 'unsafe-inline' when a hash is present, so leaving
+        it in would be misleading as well as weak.
+        """
+        for headers in ({}, {"cf-ray": "abc123"}):
+            policy = self._policy(
+                tmp_path, monkeypatch, "<html><script>boot()</script></html>", headers=headers
+            )
+            assert "'unsafe-inline'" not in self._script_src(policy), headers
+
+    def test_external_scripts_are_not_hashed(self, tmp_path, monkeypatch):
+        """Only inline scripts need a hash; a src= script is covered by its origin."""
+        policy = self._policy(
+            tmp_path,
+            monkeypatch,
+            '<html><script src="/app.js"></script></html>',
+        )
+        assert "sha256-" not in self._script_src(policy)
+
+    def test_cloudflare_host_still_allowed_when_proxied(self, tmp_path, monkeypatch):
+        policy = self._policy(
+            tmp_path,
+            monkeypatch,
+            "<html><script>boot()</script></html>",
+            headers={"cf-ray": "abc123"},
+        )
+        assert "https://static.cloudflareinsights.com" in self._script_src(policy)
+
+    def test_missing_build_does_not_crash(self, tmp_path, monkeypatch):
+        """Running the API without a built SPA must still serve a policy."""
+        from unittest.mock import MagicMock
+
+        from invoice_machine import app_middleware
+
+        monkeypatch.setattr(app_middleware, "static_dir", lambda: tmp_path / "absent")
+        app_middleware.spa_inline_script_hashes.cache_clear()
+        request = MagicMock()
+        request.headers = {}
+        try:
+            assert "script-src 'self'" in app_middleware.build_spa_csp_policy(request)
+        finally:
+            app_middleware.spa_inline_script_hashes.cache_clear()

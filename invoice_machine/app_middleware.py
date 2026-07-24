@@ -2,8 +2,13 @@
 
 from __future__ import annotations
 
+import base64
+import hashlib
 import logging
+import re
 import secrets
+from functools import lru_cache
+from pathlib import Path
 
 from fastapi import FastAPI, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
@@ -33,13 +38,54 @@ PUBLIC_PATHS = {
 UNSAFE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 
 
+def static_dir() -> Path:
+    """Directory holding the built SPA, relative to the working directory."""
+    return Path("invoice_machine/static")
+
+
+@lru_cache(maxsize=1)
+def spa_inline_script_hashes() -> tuple[str, ...]:
+    """CSP source hashes for the inline scripts in the built SPA shell.
+
+    SvelteKit emits one inline <script> in index.html to boot hydration. Under a
+    strict ``script-src 'self'`` the browser refuses to run it and the whole app
+    is a blank page. Hashing it keeps the policy strict while letting exactly
+    that script through, which is what allowed 'unsafe-inline' to be dropped.
+
+    Previously the policy only relaxed to 'unsafe-inline' when a Cloudflare
+    header was present, so the app booted through the CDN and nowhere else:
+    direct-to-origin and every non-Cloudflare deployment served a blank page.
+
+    Cached because it is per-build, not per-request. Empty when the SPA has not
+    been built (running the API alone in development).
+    """
+    index_path = static_dir() / "index.html"
+    try:
+        html = index_path.read_text(encoding="utf-8")
+    except OSError:
+        return ()
+
+    hashes = []
+    for body in re.findall(r"<script(?![^>]*\bsrc=)[^>]*>(.*?)</script>", html, re.S):
+        digest = hashlib.sha256(body.encode("utf-8")).digest()
+        hashes.append(f"'sha256-{base64.b64encode(digest).decode('ascii')}'")
+
+    if not hashes:
+        logger.debug("No inline scripts found in %s", index_path)
+    return tuple(hashes)
+
+
 def build_spa_csp_policy(request: Request) -> str:
     """Build the SPA CSP policy, with Cloudflare allowances when applicable."""
-    script_src = ["'self'"]
+    # Hashes rather than 'unsafe-inline': a hash admits exactly the script we
+    # shipped, while 'unsafe-inline' would admit any script an XSS could inject.
+    script_src = ["'self'", *spa_inline_script_hashes()]
     connect_src = ["'self'"]
 
     if request.headers.get("cf-ray") or request.headers.get("cf-visitor"):
-        script_src.extend(["'unsafe-inline'", "https://static.cloudflareinsights.com"])
+        # Cloudflare Insights loads from its own origin with a src attribute, so
+        # allowing the host is enough; it needs no inline permission.
+        script_src.append("https://static.cloudflareinsights.com")
         connect_src.extend(
             [
                 "https://cloudflareinsights.com",

@@ -3,7 +3,6 @@
 import asyncio
 import logging
 import sys
-from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, JSONResponse, Response
@@ -28,7 +27,7 @@ from invoice_machine.api import (
     trash,
     webhooks,
 )
-from invoice_machine.app_middleware import configure_http_middleware
+from invoice_machine.app_middleware import configure_http_middleware, static_dir
 from invoice_machine.app_runtime import lifespan
 from invoice_machine.config import get_settings
 from invoice_machine.skill_manifest import render_skill_manifest
@@ -40,7 +39,7 @@ logging.basicConfig(
 )
 
 settings = get_settings()
-STATIC_DIR = Path("invoice_machine/static")
+STATIC_DIR = static_dir()
 STATIC_DIR_RESOLVED = STATIC_DIR.resolve()
 
 app = FastAPI(

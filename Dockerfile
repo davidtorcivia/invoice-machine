@@ -3,7 +3,7 @@
 # ---------------------------------------------------------------------------
 # Stage 1: build the SvelteKit frontend (Node only needed here).
 # ---------------------------------------------------------------------------
-FROM node:20-slim AS frontend
+FROM node:22-slim AS frontend
 WORKDIR /app/frontend
 COPY frontend/package.json frontend/package-lock.json ./
 RUN --mount=type=cache,target=/root/.npm npm ci

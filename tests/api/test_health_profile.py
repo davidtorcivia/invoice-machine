@@ -16,13 +16,24 @@ class TestHealthEndpoint:
 
     @pytest.mark.asyncio
     async def test_cloudflare_csp_allows_insights_scripts(self, test_client):
-        """Cloudflare-proxied requests get compatible CSP for Rocket Loader/Insights."""
+        """Cloudflare-proxied requests may reach Insights, without weakening script-src.
+
+        Insights loads from its own origin with a src attribute, so allowing the
+        host is sufficient. It previously also granted 'unsafe-inline', which was
+        both unnecessary for Insights and the only reason the SPA booted at all
+        (see TestSpaContentSecurityPolicy in tests/test_security.py).
+        """
         response = await test_client.get("/health", headers={"cf-ray": "test-ray-id"})
         assert response.status_code == 200
 
         csp = response.headers.get("content-security-policy", "")
-        assert "script-src 'self' 'unsafe-inline' https://static.cloudflareinsights.com" in csp
+        assert "https://static.cloudflareinsights.com" in csp
         assert "connect-src 'self' https://cloudflareinsights.com" in csp
+
+        script_src = next(
+            (d.strip() for d in csp.split(";") if d.strip().startswith("script-src ")), ""
+        )
+        assert "'unsafe-inline'" not in script_src
 
     @pytest.mark.asyncio
     async def test_cors_preflight_allows_csrf_header(self, test_client):
