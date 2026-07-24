@@ -5,6 +5,7 @@ Revises: 004_composite_indexes
 Create Date: 2026-01-17
 
 """
+
 from collections.abc import Sequence
 
 import sqlalchemy as sa
@@ -20,6 +21,7 @@ depends_on: str | Sequence[str] | None = None
 def upgrade() -> None:
     # Check if column exists to make migration idempotent
     from sqlalchemy import inspect
+
     conn = op.get_bind()
     inspector = inspect(conn)
     columns = [col["name"] for col in inspector.get_columns("clients")]

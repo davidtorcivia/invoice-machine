@@ -17,9 +17,7 @@ class TestTrashEndpoints:
     async def test_list_trash_with_items(self, test_client):
         """Lists both trashed clients and invoices."""
         # Create and delete a client
-        client_response = await test_client.post(
-            "/api/clients", json={"name": "Deleted Client"}
-        )
+        client_response = await test_client.post("/api/clients", json={"name": "Deleted Client"})
         client_id = client_response.json()["id"]
         await test_client.delete(f"/api/clients/{client_id}")
 
@@ -42,14 +40,10 @@ class TestTrashEndpoints:
     @pytest.mark.asyncio
     async def test_empty_trash_keeps_trashed_client_with_live_invoice(self, test_client):
         """Emptying trash does not permanently delete clients still referenced by active invoices."""
-        client_response = await test_client.post(
-            "/api/clients", json={"name": "Protected Client"}
-        )
+        client_response = await test_client.post("/api/clients", json={"name": "Protected Client"})
         client_id = client_response.json()["id"]
 
-        invoice_response = await test_client.post(
-            "/api/invoices", json={"client_id": client_id}
-        )
+        invoice_response = await test_client.post("/api/invoices", json={"client_id": client_id})
         invoice_id = invoice_response.json()["id"]
 
         await test_client.delete(f"/api/clients/{client_id}")
@@ -100,9 +94,7 @@ class TestRecurringEndpoints:
     async def test_create_recurring_schedule(self, test_client):
         """Create a recurring schedule."""
         # First create a client
-        client_response = await test_client.post(
-            "/api/clients", json={"name": "Recurring Client"}
-        )
+        client_response = await test_client.post("/api/clients", json={"name": "Recurring Client"})
         client_id = client_response.json()["id"]
 
         # Create recurring schedule
@@ -114,7 +106,12 @@ class TestRecurringEndpoints:
                 "frequency": "monthly",
                 "schedule_day": 1,
                 "line_items": [
-                    {"description": "Retainer Fee", "quantity": 1, "unit_type": "qty", "unit_price": "500.00"}
+                    {
+                        "description": "Retainer Fee",
+                        "quantity": 1,
+                        "unit_type": "qty",
+                        "unit_price": "500.00",
+                    }
                 ],
             },
         )
@@ -131,9 +128,7 @@ class TestRecurringEndpoints:
     async def test_get_recurring_schedule(self, test_client):
         """Get a recurring schedule by ID."""
         # Create client and schedule
-        client_response = await test_client.post(
-            "/api/clients", json={"name": "Test Client"}
-        )
+        client_response = await test_client.post("/api/clients", json={"name": "Test Client"})
         client_id = client_response.json()["id"]
 
         create_response = await test_client.post(
@@ -165,9 +160,7 @@ class TestRecurringEndpoints:
     async def test_update_recurring_schedule(self, test_client):
         """Update a recurring schedule."""
         # Create client and schedule
-        client_response = await test_client.post(
-            "/api/clients", json={"name": "Test Client"}
-        )
+        client_response = await test_client.post("/api/clients", json={"name": "Test Client"})
         client_id = client_response.json()["id"]
 
         create_response = await test_client.post(
@@ -195,9 +188,7 @@ class TestRecurringEndpoints:
     @pytest.mark.asyncio
     async def test_update_recurring_schedule_rejects_invalid_weekly_day(self, test_client):
         """Weekly schedules reject out-of-range schedule_day values on update."""
-        client_response = await test_client.post(
-            "/api/clients", json={"name": "Weekly Client"}
-        )
+        client_response = await test_client.post("/api/clients", json={"name": "Weekly Client"})
         client_id = client_response.json()["id"]
 
         create_response = await test_client.post(
@@ -221,9 +212,7 @@ class TestRecurringEndpoints:
     async def test_pause_schedule(self, test_client):
         """Pause a recurring schedule."""
         # Create client and schedule
-        client_response = await test_client.post(
-            "/api/clients", json={"name": "Test Client"}
-        )
+        client_response = await test_client.post("/api/clients", json={"name": "Test Client"})
         client_id = client_response.json()["id"]
 
         create_response = await test_client.post(
@@ -247,9 +236,7 @@ class TestRecurringEndpoints:
     async def test_resume_schedule(self, test_client):
         """Resume a paused schedule."""
         # Create client and schedule
-        client_response = await test_client.post(
-            "/api/clients", json={"name": "Test Client"}
-        )
+        client_response = await test_client.post("/api/clients", json={"name": "Test Client"})
         client_id = client_response.json()["id"]
 
         create_response = await test_client.post(
@@ -274,9 +261,7 @@ class TestRecurringEndpoints:
     async def test_trigger_schedule(self, test_client):
         """Manually trigger a recurring schedule."""
         # Create client and schedule
-        client_response = await test_client.post(
-            "/api/clients", json={"name": "Trigger Client"}
-        )
+        client_response = await test_client.post("/api/clients", json={"name": "Trigger Client"})
         client_id = client_response.json()["id"]
 
         create_response = await test_client.post(
@@ -287,7 +272,12 @@ class TestRecurringEndpoints:
                 "frequency": "monthly",
                 "schedule_day": 1,
                 "line_items": [
-                    {"description": "Service", "quantity": 1, "unit_type": "qty", "unit_price": "100.00"}
+                    {
+                        "description": "Service",
+                        "quantity": 1,
+                        "unit_type": "qty",
+                        "unit_price": "100.00",
+                    }
                 ],
             },
         )
@@ -306,9 +296,7 @@ class TestRecurringEndpoints:
     async def test_delete_schedule(self, test_client):
         """Delete a recurring schedule."""
         # Create client and schedule
-        client_response = await test_client.post(
-            "/api/clients", json={"name": "Delete Client"}
-        )
+        client_response = await test_client.post("/api/clients", json={"name": "Delete Client"})
         client_id = client_response.json()["id"]
 
         create_response = await test_client.post(
@@ -328,6 +316,3 @@ class TestRecurringEndpoints:
         # Verify deleted
         get_response = await test_client.get(f"/api/recurring/{schedule_id}")
         assert get_response.status_code == 404
-
-
-

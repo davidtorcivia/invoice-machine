@@ -5,6 +5,7 @@ Revises: 003_fts5
 Create Date: 2026-01-17
 
 """
+
 from collections.abc import Sequence
 
 from alembic import op
@@ -19,6 +20,7 @@ depends_on: str | Sequence[str] | None = None
 def upgrade() -> None:
     # Get existing indexes to make migration idempotent
     from sqlalchemy import inspect
+
     conn = op.get_bind()
     inspector = inspect(conn)
 

@@ -231,4 +231,3 @@ async def remove_payment_method(method_id: str) -> bool:
         await session.commit()
 
         return True
-

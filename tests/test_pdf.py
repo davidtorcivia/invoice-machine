@@ -143,6 +143,7 @@ class TestGetLogoBase64:
                 # A complete data: URI, with the payload still valid base64.
                 assert result.startswith("data:")
                 import base64
+
                 decoded = base64.b64decode(result.split(",", 1)[1])
                 assert decoded == b"PNG fake image data"
 
@@ -199,9 +200,7 @@ class TestGeneratePDF:
         return profile
 
     @pytest.mark.asyncio
-    async def test_generate_pdf_creates_file(
-        self, mock_invoice, mock_business_profile, db_session
-    ):
+    async def test_generate_pdf_creates_file(self, mock_invoice, mock_business_profile, db_session):
         """PDF generation creates a file on disk."""
         with tempfile.TemporaryDirectory() as tmpdir:
             pdf_dir = Path(tmpdir)
@@ -230,9 +229,7 @@ class TestGeneratePDF:
                         assert (pdf_dir / "20250115-1-1.pdf").exists()
 
     @pytest.mark.asyncio
-    async def test_generate_pdf_with_items(
-        self, mock_invoice, mock_business_profile, db_session
-    ):
+    async def test_generate_pdf_with_items(self, mock_invoice, mock_business_profile, db_session):
         """PDF generation includes line items."""
         mock_items = [
             MagicMock(
@@ -274,9 +271,7 @@ class TestGeneratePDF:
                         assert pdf_file.stat().st_size > 0
 
     @pytest.mark.asyncio
-    async def test_generate_pdf_with_tax(
-        self, mock_invoice, mock_business_profile, db_session
-    ):
+    async def test_generate_pdf_with_tax(self, mock_invoice, mock_business_profile, db_session):
         """PDF generation handles tax correctly."""
         mock_invoice.tax_enabled = 1
         mock_invoice.tax_rate = Decimal("8.25")
@@ -309,9 +304,7 @@ class TestGeneratePDF:
                         assert result == "pdfs/20250115-1-1.pdf"
 
     @pytest.mark.asyncio
-    async def test_generate_pdf_quote(
-        self, mock_invoice, mock_business_profile, db_session
-    ):
+    async def test_generate_pdf_quote(self, mock_invoice, mock_business_profile, db_session):
         """PDF generation works for quotes."""
         mock_invoice.document_type = "quote"
         mock_invoice.invoice_number = "Q-20250115-1"
@@ -484,9 +477,7 @@ class TestStoreInvoicePDF:
         assert len(renders) == 2
 
     @pytest.mark.asyncio
-    async def test_force_always_rerenders(
-        self, db_session, invoice_with_client, business_profile
-    ):
+    async def test_force_always_rerenders(self, db_session, invoice_with_client, business_profile):
         """The explicit regenerate action bypasses the freshness check."""
         from invoice_machine.pdf.generator import store_invoice_pdf
 
@@ -503,7 +494,7 @@ class TestStoreInvoicePDF:
         assert len(renders) == 2
 
     def test_filenames_are_unique_across_punctuation_variants(self):
-        """"INV.001" and "INV001" must not share a PDF file.
+        """ "INV.001" and "INV001" must not share a PDF file.
 
         sanitize_filename_component drops dots, so a number-only filename let one
         invoice's PDF be served (and emailed) for a different invoice.

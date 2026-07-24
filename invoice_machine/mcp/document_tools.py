@@ -11,6 +11,7 @@ from .context import get_session, mcp
 
 settings = get_settings()
 
+
 @mcp.tool()
 async def generate_pdf(invoice_id: int) -> dict:
     """
@@ -78,13 +79,15 @@ async def list_trash() -> list:
             days_left = settings.trash_retention_days - int(
                 (now - deleted_at).total_seconds() / 86400
             )
-            items.append({
-                "type": "client",
-                "id": row.id,
-                "name": row.business_name or row.name or "Unknown Client",
-                "deleted_at": deleted_at.isoformat(),
-                "days_until_purge": days_left,
-            })
+            items.append(
+                {
+                    "type": "client",
+                    "id": row.id,
+                    "name": row.business_name or row.name or "Unknown Client",
+                    "deleted_at": deleted_at.isoformat(),
+                    "days_until_purge": days_left,
+                }
+            )
 
         invoice_rows = await session.execute(
             select(Invoice.id, Invoice.invoice_number, Invoice.deleted_at).where(
@@ -98,13 +101,15 @@ async def list_trash() -> list:
             days_left = settings.trash_retention_days - int(
                 (now - deleted_at).total_seconds() / 86400
             )
-            items.append({
-                "type": "invoice",
-                "id": row.id,
-                "name": row.invoice_number,
-                "deleted_at": deleted_at.isoformat(),
-                "days_until_purge": days_left,
-            })
+            items.append(
+                {
+                    "type": "invoice",
+                    "id": row.id,
+                    "name": row.invoice_number,
+                    "deleted_at": deleted_at.isoformat(),
+                    "days_until_purge": days_left,
+                }
+            )
 
         items.sort(key=lambda x: x["deleted_at"], reverse=True)
         return items
@@ -112,5 +117,3 @@ async def list_trash() -> list:
 
 # Note: empty_trash is intentionally not exposed via MCP for security reasons.
 # Trash emptying is handled automatically by the scheduled cleanup task or via the web UI.
-
-

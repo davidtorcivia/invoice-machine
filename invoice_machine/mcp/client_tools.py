@@ -24,7 +24,9 @@ async def list_clients(
         List of clients with their details
     """
     async with get_session() as session:
-        clients = await ClientService.list_clients(session, search=search, include_deleted=include_deleted)
+        clients = await ClientService.list_clients(
+            session, search=search, include_deleted=include_deleted
+        )
         return [serialize_client(client, json_ready=True) for client in clients]
 
 
@@ -109,6 +111,7 @@ async def create_client(
         }
         if tax_rate is not None:
             from decimal import Decimal
+
             kwargs["tax_rate"] = Decimal(str(tax_rate))
 
         client = await ClientService.create_client(session, **kwargs)
@@ -165,11 +168,20 @@ async def update_client(
         # Build updates dict, handling tax_rate Decimal conversion
         updates = {}
         local_vars = {
-            "name": name, "business_name": business_name,
-            "address_line1": address_line1, "address_line2": address_line2,
-            "city": city, "state": state, "postal_code": postal_code, "country": country,
-            "email": email, "phone": phone, "payment_terms_days": payment_terms_days,
-            "notes": notes, "tax_enabled": tax_enabled, "tax_name": tax_name,
+            "name": name,
+            "business_name": business_name,
+            "address_line1": address_line1,
+            "address_line2": address_line2,
+            "city": city,
+            "state": state,
+            "postal_code": postal_code,
+            "country": country,
+            "email": email,
+            "phone": phone,
+            "payment_terms_days": payment_terms_days,
+            "notes": notes,
+            "tax_enabled": tax_enabled,
+            "tax_name": tax_name,
         }
         for k, v in local_vars.items():
             if v is not None:
@@ -177,6 +189,7 @@ async def update_client(
 
         if tax_rate is not None:
             from decimal import Decimal
+
             updates["tax_rate"] = Decimal(str(tax_rate))
 
         client = await ClientService.update_client(session, client_id, **updates)
@@ -214,4 +227,3 @@ async def restore_client(client_id: int) -> bool:
     """
     async with get_session() as session:
         return await ClientService.restore_client(session, client_id)
-

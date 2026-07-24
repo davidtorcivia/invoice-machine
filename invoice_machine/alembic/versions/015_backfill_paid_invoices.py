@@ -20,6 +20,7 @@ Revises: 014_payments_reporting
 Create Date: 2026-07-24
 
 """
+
 from collections.abc import Sequence
 
 import sqlalchemy as sa

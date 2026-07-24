@@ -96,9 +96,10 @@ class BackupService:
         try:
             _snapshot_database(db_path, snapshot_path)
             if compress:
-                with open(snapshot_path, "rb") as src, gzip.open(
-                    backup_path, "wb", compresslevel=6
-                ) as dst:
+                with (
+                    open(snapshot_path, "rb") as src,
+                    gzip.open(backup_path, "wb", compresslevel=6) as dst,
+                ):
                     shutil.copyfileobj(src, dst)
             else:
                 shutil.copy2(snapshot_path, backup_path)
@@ -151,13 +152,15 @@ class BackupService:
                 created = _parse_backup_timestamp(path.name) or datetime.fromtimestamp(
                     stat.st_mtime, tz=UTC
                 )
-                backups.append({
-                    "filename": path.name,
-                    "path": str(path),
-                    "size_bytes": stat.st_size,
-                    "created_at": created.isoformat(),
-                    "compressed": path.suffix == ".gz",
-                })
+                backups.append(
+                    {
+                        "filename": path.name,
+                        "path": str(path),
+                        "size_bytes": stat.st_size,
+                        "created_at": created.isoformat(),
+                        "compressed": path.suffix == ".gz",
+                    }
+                )
 
         backups.sort(key=lambda backup: backup["created_at"], reverse=True)
         return backups
@@ -299,7 +302,9 @@ class BackupService:
 
         db_path = settings.data_dir / "invoice_machine.db"
         pre_restore_filename = None
-        tmp_path = db_path.with_name(f"{db_path.name}.restore-{utc_now().strftime('%Y%m%d%H%M%S%f')}.tmp")
+        tmp_path = db_path.with_name(
+            f"{db_path.name}.restore-{utc_now().strftime('%Y%m%d%H%M%S%f')}.tmp"
+        )
 
         try:
             if backup_path.suffix == ".gz":
@@ -381,12 +386,14 @@ class BackupService:
                 if filename.startswith("invoice_machine_backup_") or filename.startswith(
                     "invoicely_backup_"
                 ):
-                    backups.append({
-                        "filename": filename,
-                        "size_bytes": obj["Size"],
-                        "created_at": obj["LastModified"].isoformat(),
-                        "location": "s3",
-                    })
+                    backups.append(
+                        {
+                            "filename": filename,
+                            "size_bytes": obj["Size"],
+                            "created_at": obj["LastModified"].isoformat(),
+                            "location": "s3",
+                        }
+                    )
 
             backups.sort(key=lambda backup: backup["created_at"], reverse=True)
             return backups

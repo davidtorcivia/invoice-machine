@@ -5,6 +5,7 @@ Revises: 006_search_indexes
 Create Date: 2026-01-19
 
 """
+
 from collections.abc import Sequence
 
 import sqlalchemy as sa
@@ -20,6 +21,7 @@ depends_on: str | Sequence[str] | None = None
 def upgrade() -> None:
     # Check if column already exists (make migration idempotent)
     from sqlalchemy import inspect
+
     conn = op.get_bind()
     inspector = inspect(conn)
 

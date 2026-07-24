@@ -100,9 +100,7 @@ class TestReminderSending:
         return invoice
 
     @pytest.mark.asyncio
-    async def test_reminder_is_sent_and_recorded(
-        self, db_session, business_profile, test_client
-    ):
+    async def test_reminder_is_sent_and_recorded(self, db_session, business_profile, test_client):
         invoice = await self._reminder_setup(db_session, business_profile, test_client)
 
         with patch(
@@ -174,9 +172,7 @@ class TestReminderSending:
         assert len(results) == 1
 
     @pytest.mark.asyncio
-    async def test_disabled_reminders_do_nothing(
-        self, db_session, business_profile, test_client
-    ):
+    async def test_disabled_reminders_do_nothing(self, db_session, business_profile, test_client):
         await self._reminder_setup(db_session, business_profile, test_client)
         business_profile.reminders_enabled = 0
         await db_session.commit()
@@ -254,9 +250,7 @@ class TestCsvExport:
         assert "150.00" in csv_text
 
     @pytest.mark.asyncio
-    async def test_fields_with_commas_are_quoted(
-        self, db_session, business_profile, test_client
-    ):
+    async def test_fields_with_commas_are_quoted(self, db_session, business_profile, test_client):
         await InvoiceService.create_invoice(
             db_session,
             client_id=test_client.id,
@@ -272,9 +266,7 @@ class TestCsvExport:
             await export_csv_text(db_session, "nonsense")
 
     @pytest.mark.asyncio
-    async def test_max_rows_truncates_and_says_so(
-        self, db_session, business_profile, test_client
-    ):
+    async def test_max_rows_truncates_and_says_so(self, db_session, business_profile, test_client):
         for _ in range(5):
             await InvoiceService.create_invoice(db_session, client_id=test_client.id)
 

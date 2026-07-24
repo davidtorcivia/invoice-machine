@@ -25,6 +25,7 @@ env = Environment(
     autoescape=select_autoescape(["html"]),
 )
 
+
 # Register custom filters
 def strftime_filter(date_obj, format_str="%m/%d/%y"):
     """Format a date object as a string."""
@@ -34,15 +35,18 @@ def strftime_filter(date_obj, format_str="%m/%d/%y"):
         return date_obj.strftime(format_str)
     return str(date_obj)
 
+
 def zfill_filter(value, width):
     """Pad a value with zeros to the specified width."""
     return str(value).zfill(width)
+
 
 def quantity_filter(value):
     """Render a quantity without trailing zeros (2, 1.5, 0.25)."""
     from invoice_machine.service.common import format_quantity
 
     return format_quantity(value)
+
 
 env.filters["strftime"] = strftime_filter
 env.filters["zfill"] = zfill_filter
@@ -237,7 +241,9 @@ async def generate_pdf(session: AsyncSession, invoice: Invoice) -> str:
 
     # Determine if we should show payment section
     # Show if we have payment instructions (from selected methods or default)
-    show_payment_section = bool(payment_instructions and (selected_payment_methods or show_payment_instructions))
+    show_payment_section = bool(
+        payment_instructions and (selected_payment_methods or show_payment_instructions)
+    )
 
     # Render HTML
     html = template.render(
@@ -250,9 +256,7 @@ async def generate_pdf(session: AsyncSession, invoice: Invoice) -> str:
         show_payment_instructions=show_payment_section,
         payment_instructions=payment_instructions,
         # A quote is not a bill: never invite payment or show a balance on one.
-        payment_link_url=(
-            invoice.payment_link_url if invoice.document_type != "quote" else None
-        ),
+        payment_link_url=(invoice.payment_link_url if invoice.document_type != "quote" else None),
         amount_paid=invoice.amount_paid or Decimal("0.00"),
         amount_due=invoice.amount_due,
     )
@@ -267,9 +271,7 @@ async def generate_pdf(session: AsyncSession, invoice: Invoice) -> str:
     return f"pdfs/{pdf_filename}"
 
 
-async def store_invoice_pdf(
-    session: AsyncSession, invoice: Invoice, *, force: bool = False
-) -> str:
+async def store_invoice_pdf(session: AsyncSession, invoice: Invoice, *, force: bool = False) -> str:
     """Render the invoice PDF when it is missing or stale and persist the stamp.
 
     Every caller (REST, MCP, the email flow) must go through this so the

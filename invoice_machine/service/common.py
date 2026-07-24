@@ -17,6 +17,7 @@ def is_auto_invoice_number(number: str | None) -> bool:
     """Return True if a number looks auto-generated (vs. a manual override)."""
     return bool(number) and _AUTO_INVOICE_NUMBER_RE.fullmatch(number) is not None
 
+
 # All monetary values are rounded to 2 decimal places. SQLite does not enforce
 # DECIMAL(10,2) scale, so quantization must happen in Python before persisting.
 CENTS = Decimal("0.01")
@@ -32,7 +33,9 @@ def quantize_money(amount: Decimal | float | int | str) -> Decimal:
     return Decimal(str(amount)).quantize(CENTS, rounding=ROUND_HALF_UP)
 
 
-def line_item_total(unit_price: Decimal | float | int | str, quantity: Decimal | float | int | str) -> Decimal:
+def line_item_total(
+    unit_price: Decimal | float | int | str, quantity: Decimal | float | int | str
+) -> Decimal:
     """Compute a line-item total, quantized to cents."""
     return quantize_money(Decimal(str(unit_price)) * Decimal(str(quantity)))
 
@@ -268,9 +271,7 @@ def _align_to_quarter_month(target_date: date, quarter_month: int, schedule_day:
     return _replace_with_valid_day(aligned, schedule_day)
 
 
-def _align_to_year_month(
-    target_date: date, schedule_month: int | None, schedule_day: int
-) -> date:
+def _align_to_year_month(target_date: date, schedule_month: int | None, schedule_day: int) -> date:
     """Move a date to the configured calendar month for a yearly schedule."""
     if schedule_month is None:
         return _replace_with_valid_day(target_date, schedule_day)
@@ -289,9 +290,7 @@ def validate_recurring_schedule(
 ) -> None:
     """Validate recurring schedule cadence and financial fields."""
     if frequency not in VALID_RECURRING_FREQUENCIES:
-        raise ValueError(
-            f"Invalid frequency. Must be one of: {list(VALID_RECURRING_FREQUENCIES)}"
-        )
+        raise ValueError(f"Invalid frequency. Must be one of: {list(VALID_RECURRING_FREQUENCIES)}")
 
     if frequency == "weekly" and not (0 <= schedule_day <= 6):
         raise ValueError("For weekly frequency, schedule_day must be 0-6 (Monday-Sunday)")

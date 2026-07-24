@@ -28,8 +28,7 @@ from invoice_machine.email import (
 
 # Skip marker for tests requiring Python 3.10+ (due to codebase using union type syntax)
 requires_python_310 = pytest.mark.skipif(
-    sys.version_info < (3, 10),
-    reason="Requires Python 3.10+ (codebase uses union type syntax)"
+    sys.version_info < (3, 10), reason="Requires Python 3.10+ (codebase uses union type syntax)"
 )
 
 
@@ -165,9 +164,7 @@ class TestTemplateExpansion:
     # Edge cases
 
     @pytest.mark.asyncio
-    async def test_expand_missing_client_name_uses_default(
-        self, db_session, business_profile
-    ):
+    async def test_expand_missing_client_name_uses_default(self, db_session, business_profile):
         """Missing client name defaults to 'Client'."""
         invoice = Invoice(
             invoice_number="20250120-2",
@@ -187,9 +184,7 @@ class TestTemplateExpansion:
         assert result == "Dear Client,"
 
     @pytest.mark.asyncio
-    async def test_expand_missing_due_date_shows_upon_receipt(
-        self, db_session, business_profile
-    ):
+    async def test_expand_missing_due_date_shows_upon_receipt(self, db_session, business_profile):
         """Missing due date shows 'Upon receipt'."""
         invoice = Invoice(
             invoice_number="20250120-3",
@@ -252,33 +247,23 @@ class TestTemplateExpansion:
         assert result == template
 
     @pytest.mark.asyncio
-    async def test_expand_multiple_same_placeholder(
-        self, business_profile, invoice_with_client
-    ):
+    async def test_expand_multiple_same_placeholder(self, business_profile, invoice_with_client):
         """Multiple instances of same placeholder are all expanded."""
         template = "{invoice_number} - {invoice_number}"
         result = expand_template(template, invoice_with_client, business_profile)
         assert result == "20250120-1 - 20250120-1"
 
     @pytest.mark.asyncio
-    async def test_default_subject_template_expands(
-        self, business_profile, invoice_with_client
-    ):
+    async def test_default_subject_template_expands(self, business_profile, invoice_with_client):
         """Default subject template expands correctly."""
-        result = expand_template(
-            DEFAULT_SUBJECT_TEMPLATE, invoice_with_client, business_profile
-        )
+        result = expand_template(DEFAULT_SUBJECT_TEMPLATE, invoice_with_client, business_profile)
         assert "Invoice" in result
         assert "20250120-1" in result
 
     @pytest.mark.asyncio
-    async def test_default_body_template_expands(
-        self, business_profile, invoice_with_client
-    ):
+    async def test_default_body_template_expands(self, business_profile, invoice_with_client):
         """Default body template expands correctly."""
-        result = expand_template(
-            DEFAULT_BODY_TEMPLATE, invoice_with_client, business_profile
-        )
+        result = expand_template(DEFAULT_BODY_TEMPLATE, invoice_with_client, business_profile)
         assert "John Doe" in result
         assert "20250120-1" in result
         assert "$100.00" in result
@@ -290,9 +275,7 @@ class TestTemplateExpansion:
         self, business_profile, invoice_with_items
     ):
         """Default body template expands line items correctly."""
-        result = expand_template(
-            DEFAULT_BODY_TEMPLATE, invoice_with_items, business_profile
-        )
+        result = expand_template(DEFAULT_BODY_TEMPLATE, invoice_with_items, business_profile)
         assert "Website Development, Logo Design" in result
 
 
@@ -437,6 +420,7 @@ class TestEmailTemplatesEndpoints:
     async def test_get_templates_requires_authentication(self):
         """Endpoint requires authentication."""
         from invoice_machine.main import app
+
         client = AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
         response = await client.get("/api/settings/email-templates")
         assert response.status_code == 401
@@ -527,6 +511,7 @@ class TestEmailTemplatesEndpoints:
     async def test_update_requires_authentication(self):
         """Update endpoint requires authentication."""
         from invoice_machine.main import app
+
         client = AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
         response = await client.put(
             "/api/settings/email-templates",
@@ -612,6 +597,7 @@ class TestEmailTemplatesEndpoints:
     async def test_preview_requires_authentication(self):
         """Preview endpoint requires authentication."""
         from invoice_machine.main import app
+
         client = AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
         response = await client.post("/api/invoices/1/email-preview", json={})
         assert response.status_code == 401
@@ -689,9 +675,7 @@ class TestEmailTemplateMCPTools:
         """update_email_templates updates body."""
         from invoice_machine.mcp.email_tools import update_email_templates
 
-        result = await update_email_templates(
-            email_body_template="MCP Body for {client_name}"
-        )
+        result = await update_email_templates(email_body_template="MCP Body for {client_name}")
 
         assert result["email_body_template"] == "MCP Body for {client_name}"
 
@@ -758,9 +742,7 @@ class TestEmailTemplateSecurity:
     """Security tests for email templates."""
 
     @pytest.mark.asyncio
-    async def test_template_expansion_handles_special_chars(
-        self, db_session, business_profile
-    ):
+    async def test_template_expansion_handles_special_chars(self, db_session, business_profile):
         """Template expansion handles special characters in data."""
         invoice = Invoice(
             invoice_number="20250120-SEC",
@@ -787,6 +769,7 @@ class TestEmailTemplateSecurity:
     async def test_template_api_requires_auth(self):
         """All template API endpoints require authentication."""
         from invoice_machine.main import app
+
         client = AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
 
         # GET

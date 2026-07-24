@@ -8,6 +8,7 @@ from invoice_machine.database import Client, Invoice, InvoiceItem
 
 logger = logging.getLogger(__name__)
 
+
 def _like_pattern(query: str) -> str:
     """Build a contains-pattern with LIKE wildcards escaped.
 
@@ -16,7 +17,6 @@ def _like_pattern(query: str) -> str:
     """
     escaped = query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
     return f"%{escaped}%"
-
 
 
 class SearchService:
@@ -256,11 +256,15 @@ class SearchService:
             await session.commit()
 
             if invoices_count > 0:
-                await session.execute(text("INSERT INTO invoices_fts(invoices_fts) VALUES('rebuild')"))
+                await session.execute(
+                    text("INSERT INTO invoices_fts(invoices_fts) VALUES('rebuild')")
+                )
                 result["invoices_indexed"] = invoices_count
 
             if clients_count > 0:
-                await session.execute(text("INSERT INTO clients_fts(clients_fts) VALUES('rebuild')"))
+                await session.execute(
+                    text("INSERT INTO clients_fts(clients_fts) VALUES('rebuild')")
+                )
                 result["clients_indexed"] = clients_count
 
             if line_items_count > 0:
@@ -332,18 +336,20 @@ class SearchService:
                     issue_date = row.issue_date
                     if issue_date and hasattr(issue_date, "isoformat"):
                         issue_date = issue_date.isoformat()
-                    results["invoices"].append({
-                        "id": row.id,
-                        "invoice_number": row.invoice_number,
-                        "client_name": row.client_name,
-                        "client_business": row.client_business,
-                        "status": row.status,
-                        "total": str(row.total),
-                        "currency_code": row.currency_code,
-                        "issue_date": issue_date,
-                        "is_deleted": row.deleted_at is not None,
-                        "match_snippet": row.match_snippet,
-                    })
+                    results["invoices"].append(
+                        {
+                            "id": row.id,
+                            "invoice_number": row.invoice_number,
+                            "client_name": row.client_name,
+                            "client_business": row.client_business,
+                            "status": row.status,
+                            "total": str(row.total),
+                            "currency_code": row.currency_code,
+                            "issue_date": issue_date,
+                            "is_deleted": row.deleted_at is not None,
+                            "match_snippet": row.match_snippet,
+                        }
+                    )
             except Exception:
                 logger.warning(
                     "FTS unavailable for invoice search; falling back to a LIKE scan. "
@@ -371,16 +377,18 @@ class SearchService:
                     {"query": fts_query, "limit": limit},
                 )
                 for row in result.fetchall():
-                    results["clients"].append({
-                        "id": row.id,
-                        "name": row.name,
-                        "business_name": row.business_name,
-                        "display_name": row.business_name or row.name or "Unknown",
-                        "email": row.email,
-                        "phone": row.phone,
-                        "is_deleted": row.deleted_at is not None,
-                        "match_snippet": row.match_snippet,
-                    })
+                    results["clients"].append(
+                        {
+                            "id": row.id,
+                            "name": row.name,
+                            "business_name": row.business_name,
+                            "display_name": row.business_name or row.name or "Unknown",
+                            "email": row.email,
+                            "phone": row.phone,
+                            "is_deleted": row.deleted_at is not None,
+                            "match_snippet": row.match_snippet,
+                        }
+                    )
             except Exception:
                 logger.warning(
                     "FTS unavailable for client search; falling back to a LIKE scan. "
@@ -414,22 +422,24 @@ class SearchService:
                     issue_date = row.issue_date
                     if issue_date and hasattr(issue_date, "isoformat"):
                         issue_date = issue_date.isoformat()
-                    results["line_items"].append({
-                        "id": row.id,
-                        "invoice_id": row.invoice_id,
-                        "description": row.description,
-                        "quantity": row.quantity,
-                        "unit_type": row.unit_type,
-                        "unit_price": str(row.unit_price),
-                        "total": str(row.total),
-                        "invoice_number": row.invoice_number,
-                        "client_name": row.client_name,
-                        "client_business": row.client_business,
-                        "invoice_status": row.status,
-                        "currency_code": row.currency_code,
-                        "issue_date": issue_date,
-                        "is_deleted": row.deleted_at is not None,
-                    })
+                    results["line_items"].append(
+                        {
+                            "id": row.id,
+                            "invoice_id": row.invoice_id,
+                            "description": row.description,
+                            "quantity": row.quantity,
+                            "unit_type": row.unit_type,
+                            "unit_price": str(row.unit_price),
+                            "total": str(row.total),
+                            "invoice_number": row.invoice_number,
+                            "client_name": row.client_name,
+                            "client_business": row.client_business,
+                            "invoice_status": row.status,
+                            "currency_code": row.currency_code,
+                            "issue_date": issue_date,
+                            "is_deleted": row.deleted_at is not None,
+                        }
+                    )
             except Exception:
                 logger.warning(
                     "FTS unavailable for line_items search; falling back to a LIKE scan. "
@@ -443,9 +453,7 @@ class SearchService:
         return results
 
     @staticmethod
-    async def _fallback_invoice_search(
-        session: AsyncSession, query: str, limit: int
-    ) -> list:
+    async def _fallback_invoice_search(session: AsyncSession, query: str, limit: int) -> list:
         """Fallback LIKE-based search for invoices when FTS5 is unavailable."""
         from sqlalchemy import or_, select
 
@@ -478,9 +486,7 @@ class SearchService:
         ]
 
     @staticmethod
-    async def _fallback_client_search(
-        session: AsyncSession, query: str, limit: int
-    ) -> list:
+    async def _fallback_client_search(session: AsyncSession, query: str, limit: int) -> list:
         """Fallback LIKE-based search for clients when FTS5 is unavailable."""
         from sqlalchemy import or_, select
 
@@ -511,9 +517,7 @@ class SearchService:
         ]
 
     @staticmethod
-    async def _fallback_line_items_search(
-        session: AsyncSession, query: str, limit: int
-    ) -> list:
+    async def _fallback_line_items_search(session: AsyncSession, query: str, limit: int) -> list:
         """Fallback LIKE-based search for line items when FTS5 is unavailable."""
         from sqlalchemy import select
         from sqlalchemy.orm import selectinload

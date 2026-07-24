@@ -24,9 +24,7 @@ settings = get_settings()
 
 
 # Email validation regex (RFC 5322 simplified)
-EMAIL_REGEX = re.compile(
-    r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$"
-)
+EMAIL_REGEX = re.compile(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$")
 
 
 def _validate_smtp_target(host: str, port: int) -> None:
@@ -181,9 +179,7 @@ def expand_template(template: str, invoice: "Invoice", profile: "BusinessProfile
         line_items_text = "services rendered"
 
     amount_due_formatted = format_currency(invoice.amount_due, invoice.currency_code)
-    amount_paid_formatted = format_currency(
-        invoice.amount_paid or 0, invoice.currency_code
-    )
+    amount_paid_formatted = format_currency(invoice.amount_paid or 0, invoice.currency_code)
     # A quote is not a bill, so never surface a pay-now link on one.
     payment_link = (
         invoice.payment_link_url or ""
@@ -328,9 +324,7 @@ class EmailService:
         if use_tls and port == 465:
             # SSL connection (port 465)
             context = ssl.create_default_context()
-            with smtplib.SMTP_SSL(
-                self.profile.smtp_host, port, context=context
-            ) as server:
+            with smtplib.SMTP_SSL(self.profile.smtp_host, port, context=context) as server:
                 if self.profile.smtp_username and smtp_password:
                     server.login(self.profile.smtp_username, smtp_password)
                 server.send_message(msg)
@@ -447,21 +441,15 @@ class EmailService:
 
                 if use_tls and port == 465:
                     context = ssl.create_default_context()
-                    with smtplib.SMTP_SSL(
-                        self.profile.smtp_host, port, context=context
-                    ) as server:
+                    with smtplib.SMTP_SSL(self.profile.smtp_host, port, context=context) as server:
                         if self.profile.smtp_username and smtp_password:
-                            server.login(
-                                self.profile.smtp_username, smtp_password
-                            )
+                            server.login(self.profile.smtp_username, smtp_password)
                 else:
                     with smtplib.SMTP(self.profile.smtp_host, port) as server:
                         if use_tls:
                             server.starttls()
                         if self.profile.smtp_username and smtp_password:
-                            server.login(
-                                self.profile.smtp_username, smtp_password
-                            )
+                            server.login(self.profile.smtp_username, smtp_password)
 
             await run_in_threadpool(_test_sync)
             return {

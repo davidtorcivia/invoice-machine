@@ -9,6 +9,7 @@ Revises: 015_backfill_paid
 Create Date: 2026-07-24
 
 """
+
 from collections.abc import Sequence
 
 import sqlalchemy as sa
@@ -22,9 +23,7 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    columns = {
-        col["name"] for col in sa.inspect(op.get_bind()).get_columns("business_profile")
-    }
+    columns = {col["name"] for col in sa.inspect(op.get_bind()).get_columns("business_profile")}
     if "business_timezone" not in columns:
         op.add_column(
             "business_profile",
@@ -38,9 +37,7 @@ def upgrade() -> None:
     if "reminder_send_hour" not in columns:
         op.add_column(
             "business_profile",
-            sa.Column(
-                "reminder_send_hour", sa.Integer(), nullable=False, server_default="9"
-            ),
+            sa.Column("reminder_send_hour", sa.Integer(), nullable=False, server_default="9"),
         )
 
 

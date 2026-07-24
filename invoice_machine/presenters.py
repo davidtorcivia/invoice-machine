@@ -106,7 +106,9 @@ def serialize_client(client: Client, *, json_ready: bool = False) -> dict:
         "notes": client.notes,
         "tax_enabled": client.tax_enabled,
         "tax_rate": (
-            float(client.tax_rate) if json_ready and client.tax_rate is not None else client.tax_rate
+            float(client.tax_rate)
+            if json_ready and client.tax_rate is not None
+            else client.tax_rate
         ),
         "tax_name": client.tax_name,
         "preferred_currency": client.preferred_currency,
@@ -208,7 +210,9 @@ def serialize_invoice(
         "currency_code": invoice.currency_code,
         "subtotal": str(invoice.subtotal),
         "tax_enabled": bool(getattr(invoice, "tax_enabled", 0)),
-        "tax_rate": str(getattr(invoice, "tax_rate", 0)) if getattr(invoice, "tax_rate", None) else "0",
+        "tax_rate": str(getattr(invoice, "tax_rate", 0))
+        if getattr(invoice, "tax_rate", None)
+        else "0",
         "tax_name": getattr(invoice, "tax_name", "Tax") or "Tax",
         "tax_amount": (
             str(getattr(invoice, "tax_amount", 0))

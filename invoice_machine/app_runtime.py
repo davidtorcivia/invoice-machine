@@ -216,7 +216,10 @@ async def lifespan(app: FastAPI):
 
     # Run time-sensitive jobs once at startup so a restart doesn't skip a day.
     # Both are idempotent (recurring catches up missed periods exactly once).
-    for name, job in (("Overdue check", _overdue_check_job), ("Recurring invoices", _recurring_invoice_job)):
+    for name, job in (
+        ("Overdue check", _overdue_check_job),
+        ("Recurring invoices", _recurring_invoice_job),
+    ):
         try:
             await job()
         except Exception as exc:
@@ -233,10 +236,14 @@ async def lifespan(app: FastAPI):
         logger.info("Starting background tasks...")
         tasks = [
             asyncio.create_task(_run_hourly_task(app, "Session cleanup", _session_cleanup_job)),
-            asyncio.create_task(_run_daily_task(app, 0, "Scheduled backup task", _scheduled_backup_job)),
+            asyncio.create_task(
+                _run_daily_task(app, 0, "Scheduled backup task", _scheduled_backup_job)
+            ),
             asyncio.create_task(_run_daily_task(app, 3, "Trash cleanup task", _trash_cleanup_job)),
             asyncio.create_task(_run_daily_task(app, 1, "Overdue check task", _overdue_check_job)),
-            asyncio.create_task(_run_daily_task(app, 2, "Recurring invoice task", _recurring_invoice_job)),
+            asyncio.create_task(
+                _run_daily_task(app, 2, "Recurring invoice task", _recurring_invoice_job)
+            ),
             # Hourly, because the send time is the user's local hour rather than
             # a fixed UTC one. The job itself decides whether this hour qualifies.
             asyncio.create_task(

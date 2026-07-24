@@ -77,9 +77,7 @@ async def test_update_kwargs_cannot_set_computed_totals(db_session, test_client)
     """The kwargs allow-list must not let callers overwrite computed money fields."""
     from decimal import Decimal
 
-    inv = await InvoiceService.create_invoice(
-        db_session, client_id=test_client.id, items=_items()
-    )
+    inv = await InvoiceService.create_invoice(db_session, client_id=test_client.id, items=_items())
     assert inv.total == Decimal("100.00")
 
     # Attempt to inject a bogus total via kwargs — must be ignored.

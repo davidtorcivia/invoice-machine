@@ -1,6 +1,5 @@
 """MCP remote-access endpoints (Streamable HTTP + legacy SSE)."""
 
-
 from contextlib import asynccontextmanager
 
 from starlette.requests import Request
@@ -151,9 +150,7 @@ class MCPSseHandler:
         sse, mcp_server = get_sse_transport()
 
         async with sse.connect_sse(scope, receive, send) as streams:
-            await mcp_server.run(
-                streams[0], streams[1], mcp_server.create_initialization_options()
-            )
+            await mcp_server.run(streams[0], streams[1], mcp_server.create_initialization_options())
 
 
 class MCPMessagesHandler:
@@ -178,18 +175,16 @@ class MCPStatusHandler:
         import json
 
         api_key_hash = await get_mcp_api_key_hash()
-        body = json.dumps({
-            "enabled": bool(api_key_hash),
-            "endpoint": "/mcp",
-            "transport": "streamable-http",
-            "legacy_sse_endpoint": "/mcp/sse",
-        })
-
-        response = StarletteResponse(
-            content=body,
-            status_code=200,
-            media_type="application/json"
+        body = json.dumps(
+            {
+                "enabled": bool(api_key_hash),
+                "endpoint": "/mcp",
+                "transport": "streamable-http",
+                "legacy_sse_endpoint": "/mcp/sse",
+            }
         )
+
+        response = StarletteResponse(content=body, status_code=200, media_type="application/json")
         await response(scope, receive, send)
 
 

@@ -136,6 +136,7 @@ async def create_invoice(
 
         # Convert tax_rate to Decimal if provided
         from decimal import Decimal
+
         tax_rate_decimal = Decimal(str(tax_rate)) if tax_rate is not None else None
 
         invoice = await InvoiceService.create_invoice(
@@ -391,8 +392,9 @@ async def update_invoice_item(
         Updated line item or null if not found
     """
     async with get_session() as session:
-        updates = {k: v for k, v in locals().items()
-                   if v is not None and k not in ("item_id", "session")}
+        updates = {
+            k: v for k, v in locals().items() if v is not None and k not in ("item_id", "session")
+        }
 
         item = await InvoiceService.update_item(session, item_id, **updates)
 
@@ -415,6 +417,3 @@ async def remove_invoice_item(item_id: int) -> bool:
     """
     async with get_session() as session:
         return await InvoiceService.remove_item(session, item_id)
-
-
-

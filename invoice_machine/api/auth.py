@@ -69,11 +69,7 @@ def hash_password(password: str) -> str:
     salt = secrets.token_bytes(32)
     # PBKDF2 with SHA-256, 600k iterations (OWASP recommended)
     hash_bytes = hashlib.pbkdf2_hmac(
-        'sha256',
-        password.encode('utf-8'),
-        salt,
-        iterations=600_000,
-        dklen=32
+        "sha256", password.encode("utf-8"), salt, iterations=600_000, dklen=32
     )
     # Format: salt$iterations$hash (all hex encoded)
     return f"{salt.hex()}$600000${hash_bytes.hex()}"
@@ -97,11 +93,7 @@ def verify_password(password: str, password_hash: str) -> bool:
             iterations = int(iterations_str)
 
             hash_bytes = hashlib.pbkdf2_hmac(
-                'sha256',
-                password.encode('utf-8'),
-                salt,
-                iterations=iterations,
-                dklen=32
+                "sha256", password.encode("utf-8"), salt, iterations=iterations, dklen=32
             )
             return secrets.compare_digest(hash_bytes.hex(), stored_hash)
         else:

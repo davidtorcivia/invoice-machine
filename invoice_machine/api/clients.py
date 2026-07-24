@@ -110,9 +110,7 @@ async def list_clients(
     session: AsyncSession = Depends(get_session),
 ) -> list[Client]:
     """List all clients (unpaginated; used for selectors/dropdowns)."""
-    return await ClientService.list_clients(
-        session, search=search, include_deleted=include_deleted
-    )
+    return await ClientService.list_clients(session, search=search, include_deleted=include_deleted)
 
 
 # NOTE: must be declared before "/{client_id}" so it isn't matched as an id.

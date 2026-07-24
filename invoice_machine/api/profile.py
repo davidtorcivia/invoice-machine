@@ -175,10 +175,10 @@ def _delete_logo_file(logo_filename: str | None) -> None:
 # WebP is intentionally absent here: a bare ``RIFF`` prefix also matches AVI/WAV
 # containers, so it is validated separately by its full RIFF....WEBP signature.
 IMAGE_SIGNATURES = {
-    b"\x89PNG\r\n\x1a\n": ".png",        # PNG
-    b"\xff\xd8\xff": ".jpg",             # JPEG
-    b"GIF87a": ".gif",                   # GIF87a
-    b"GIF89a": ".gif",                   # GIF89a
+    b"\x89PNG\r\n\x1a\n": ".png",  # PNG
+    b"\xff\xd8\xff": ".jpg",  # JPEG
+    b"GIF87a": ".gif",  # GIF87a
+    b"GIF89a": ".gif",  # GIF89a
 }
 
 
@@ -275,7 +275,7 @@ async def upload_logo(
     if ext.lower() not in settings.allowed_logo_extensions:
         raise HTTPException(
             status_code=400,
-            detail=f"Invalid file type. Allowed: {', '.join(settings.allowed_logo_extensions)}"
+            detail=f"Invalid file type. Allowed: {', '.join(settings.allowed_logo_extensions)}",
         )
 
     # Validate file type (content-type header check + basic validation)
@@ -290,7 +290,7 @@ async def upload_logo(
         if len(buffer) > max_bytes:
             raise HTTPException(
                 status_code=400,
-                detail=f"File too large. Maximum size: {settings.max_logo_size_mb}MB"
+                detail=f"File too large. Maximum size: {settings.max_logo_size_mb}MB",
             )
     contents = bytes(buffer)
 
@@ -302,10 +302,7 @@ async def upload_logo(
     # extension from the content rather than the client-supplied filename.
     detected_ext = detect_image_extension(contents)
     if detected_ext is None:
-        raise HTTPException(
-            status_code=400,
-            detail="File does not appear to be a valid image"
-        )
+        raise HTTPException(status_code=400, detail="File does not appear to be a valid image")
 
     unique_filename = f"logo-{uuid.uuid4().hex}{detected_ext}"
 

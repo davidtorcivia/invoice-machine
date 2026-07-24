@@ -64,13 +64,13 @@ def _get_encryption_key() -> bytes:
                 raise EncryptionKeyError(
                     "INVOICE_MACHINE_ENCRYPTION_KEY must be a 32-byte base64 value or 64 hex characters. "
                     f"Got {len(decoded)} bytes. Generate a new key with: "
-                    "python -c \"from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())\""
+                    'python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"'
                 )
         except (ValueError, TypeError) as e:
             raise EncryptionKeyError(
                 f"INVOICE_MACHINE_ENCRYPTION_KEY has invalid format: {e}. "
                 "Generate a new key with: "
-                "python -c \"from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())\""
+                'python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"'
             )
 
     # No key found - behavior depends on environment
@@ -78,7 +78,7 @@ def _get_encryption_key() -> bytes:
         raise EncryptionKeyError(
             "INVOICE_MACHINE_ENCRYPTION_KEY environment variable is REQUIRED in production. "
             "Generate a key with: "
-            "python -c \"from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())\""
+            'python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"'
         )
 
     # Development mode: generate a deterministic key with warning
@@ -184,6 +184,7 @@ def is_encrypted(value: str) -> bool:
 
 
 # MCP API Key hashing
+
 
 def hash_api_key(api_key: str) -> str:
     """

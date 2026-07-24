@@ -1,4 +1,3 @@
-
 import pytest
 
 
@@ -131,6 +130,3 @@ class TestEmailEndpoints:
         )
         # Should return 400 - SMTP not enabled
         assert response.status_code == 400
-
-
-

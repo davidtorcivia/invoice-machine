@@ -1,4 +1,3 @@
-
 import pytest
 from httpx import ASGITransport, AsyncClient
 
@@ -140,9 +139,7 @@ class TestMcpStreamableHttp:
             await mcp_client.aclose()
 
         assert init_response.status_code == 200
-        assert (
-            init_response.json()["result"]["serverInfo"]["name"] == "invoice-machine"
-        )
+        assert init_response.json()["result"]["serverInfo"]["name"] == "invoice-machine"
 
         assert list_response.status_code == 200
         tool_names = {t["name"] for t in list_response.json()["result"]["tools"]}
@@ -265,7 +262,6 @@ class TestBotApiKeyAuth:
             await bot_client.aclose()
 
 
-
 class TestTaxSettingsEndpoints:
     """Tests for tax settings in profile API."""
 
@@ -297,4 +293,3 @@ class TestTaxSettingsEndpoints:
         assert data["default_tax_enabled"] is True
         assert data["default_tax_rate"] == "8.25"
         assert data["default_tax_name"] == "Sales Tax"
-

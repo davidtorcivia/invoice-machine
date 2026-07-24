@@ -8,6 +8,7 @@ Revises: 012_paid_at_email_templates
 Create Date: 2026-05-28
 
 """
+
 from collections.abc import Sequence
 
 import sqlalchemy as sa

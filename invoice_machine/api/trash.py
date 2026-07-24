@@ -53,9 +53,7 @@ async def list_trash(
         deleted_at = ensure_utc(row.deleted_at)
         if not deleted_at:
             continue
-        days_left = settings.trash_retention_days - int(
-            (now - deleted_at).total_seconds() / 86400
-        )
+        days_left = settings.trash_retention_days - int((now - deleted_at).total_seconds() / 86400)
         items.append(
             TrashedItemSchema(
                 type="client",
@@ -75,9 +73,7 @@ async def list_trash(
         deleted_at = ensure_utc(row.deleted_at)
         if not deleted_at:
             continue
-        days_left = settings.trash_retention_days - int(
-            (now - deleted_at).total_seconds() / 86400
-        )
+        days_left = settings.trash_retention_days - int((now - deleted_at).total_seconds() / 86400)
         items.append(
             TrashedItemSchema(
                 type="invoice",

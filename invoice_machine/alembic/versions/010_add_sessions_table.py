@@ -11,6 +11,7 @@ Revises: 009_recurring_enhancements
 Create Date: 2026-01-21
 
 """
+
 from collections.abc import Sequence
 
 import sqlalchemy as sa

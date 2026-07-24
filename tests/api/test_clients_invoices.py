@@ -1,4 +1,3 @@
-
 import pytest
 
 
@@ -67,9 +66,7 @@ class TestClientEndpoints:
     @pytest.mark.asyncio
     async def test_create_minimal_client(self, test_client):
         """Create client with minimal data."""
-        response = await test_client.post(
-            "/api/clients", json={"business_name": "Minimal Corp"}
-        )
+        response = await test_client.post("/api/clients", json={"business_name": "Minimal Corp"})
         assert response.status_code == 201
 
         data = response.json()
@@ -102,9 +99,7 @@ class TestClientEndpoints:
     async def test_update_client(self, test_client):
         """Update client."""
         # Create a client
-        create_response = await test_client.post(
-            "/api/clients", json={"name": "Original Name"}
-        )
+        create_response = await test_client.post("/api/clients", json={"name": "Original Name"})
         client_id = create_response.json()["id"]
 
         # Update it
@@ -121,9 +116,7 @@ class TestClientEndpoints:
     async def test_delete_client(self, test_client):
         """Delete client (soft delete)."""
         # Create a client
-        create_response = await test_client.post(
-            "/api/clients", json={"name": "To Delete"}
-        )
+        create_response = await test_client.post("/api/clients", json={"name": "To Delete"})
         client_id = create_response.json()["id"]
 
         # Delete it
@@ -138,9 +131,7 @@ class TestClientEndpoints:
     async def test_restore_client(self, test_client):
         """Restore deleted client."""
         # Create and delete a client
-        create_response = await test_client.post(
-            "/api/clients", json={"name": "To Restore"}
-        )
+        create_response = await test_client.post("/api/clients", json={"name": "To Restore"})
         client_id = create_response.json()["id"]
 
         await test_client.delete(f"/api/clients/{client_id}")
@@ -170,9 +161,7 @@ class TestInvoiceEndpoints:
         await test_client.post("/api/invoices", json={"issue_date": "2025-01-10"})
         await test_client.post("/api/invoices", json={"issue_date": "2025-01-01"})
 
-        response = await test_client.get(
-            "/api/invoices?sort_by=issue_date&sort_dir=asc&limit=10"
-        )
+        response = await test_client.get("/api/invoices?sort_by=issue_date&sort_dir=asc&limit=10")
         assert response.status_code == 200
         data = response.json()
         assert len(data) == 2
@@ -280,9 +269,7 @@ class TestInvoiceEndpoints:
         client_id = client_response.json()["id"]
 
         # Create invoice with client
-        response = await test_client.post(
-            "/api/invoices", json={"client_id": client_id}
-        )
+        response = await test_client.post("/api/invoices", json={"client_id": client_id})
         assert response.status_code == 201
 
         data = response.json()
@@ -311,9 +298,7 @@ class TestInvoiceEndpoints:
         invoice_id = create_response.json()["id"]
 
         # Update status
-        response = await test_client.put(
-            f"/api/invoices/{invoice_id}", json={"status": "sent"}
-        )
+        response = await test_client.put(f"/api/invoices/{invoice_id}", json={"status": "sent"})
         assert response.status_code == 200
 
         data = response.json()
@@ -429,6 +414,3 @@ class TestInvoiceEndpoints:
         # Check invoice total is now 0
         get_response = await test_client.get(f"/api/invoices/{invoice_id}")
         assert get_response.json()["total"] == "0.00"
-
-
-

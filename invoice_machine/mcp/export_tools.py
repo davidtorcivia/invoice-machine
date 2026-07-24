@@ -40,9 +40,7 @@ async def export_csv(
         {kind, csv, truncated} — or an error dict for an unknown kind
     """
     if kind not in EXPORT_KINDS:
-        return {
-            "error": f"Unknown export kind '{kind}'. Available: {list(EXPORT_KINDS)}"
-        }
+        return {"error": f"Unknown export kind '{kind}'. Available: {list(EXPORT_KINDS)}"}
 
     limit = max(1, min(int(max_rows), _MCP_MAX_ROWS))
 
@@ -61,7 +59,5 @@ async def export_csv(
         "kind": kind,
         "csv": csv_text,
         "truncated": "# truncated at" in csv_text,
-        "note": (
-            "Use the REST endpoint /api/export/{kind}.csv for a full, unbounded export."
-        ),
+        "note": ("Use the REST endpoint /api/export/{kind}.csv for a full, unbounded export."),
     }

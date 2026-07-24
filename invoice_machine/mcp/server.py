@@ -56,9 +56,7 @@ def run_sse_server(host: str = "0.0.0.0", port: int = 8081):
         if not await verify_mcp_auth(request):
             return Response("Unauthorized", status_code=401)
 
-        async with sse.connect_sse(
-            request.scope, request.receive, request._send
-        ) as streams:
+        async with sse.connect_sse(request.scope, request.receive, request._send) as streams:
             await mcp._mcp_server.run(
                 streams[0], streams[1], mcp._mcp_server.create_initialization_options()
             )

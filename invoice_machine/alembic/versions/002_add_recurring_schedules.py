@@ -5,6 +5,7 @@ Revises: 001_initial
 Create Date: 2025-01-17
 
 """
+
 from collections.abc import Sequence
 
 import sqlalchemy as sa
@@ -20,6 +21,7 @@ depends_on: str | Sequence[str] | None = None
 def upgrade() -> None:
     # Get existing tables to make migration idempotent
     from sqlalchemy import inspect
+
     conn = op.get_bind()
     inspector = inspect(conn)
     existing_tables = set(inspector.get_table_names())

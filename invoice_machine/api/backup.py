@@ -27,6 +27,7 @@ router = APIRouter(prefix="/api/backups", tags=["backups"])
 
 class BackupSchema(BaseModel):
     """Backup file information."""
+
     filename: str
     size_bytes: int
     created_at: str
@@ -36,6 +37,7 @@ class BackupSchema(BaseModel):
 
 class BackupResult(BaseModel):
     """Result of a backup operation."""
+
     filename: str
     path: str
     size_bytes: int
@@ -47,6 +49,7 @@ class BackupResult(BaseModel):
 
 class RestoreResult(BaseModel):
     """Result of a restore operation."""
+
     restored_from: str
     pre_restore_backup: str | None
     timestamp: str
@@ -55,6 +58,7 @@ class RestoreResult(BaseModel):
 
 class BackupSettingsSchema(BaseModel):
     """Backup settings."""
+
     backup_enabled: bool
     backup_retention_days: int
     backup_s3_enabled: bool
@@ -67,6 +71,7 @@ class BackupSettingsSchema(BaseModel):
 
 class BackupSettingsUpdate(BaseModel):
     """Backup settings update."""
+
     backup_enabled: bool | None = None
     backup_retention_days: int | None = Field(None, ge=1, le=365)
     backup_s3_enabled: bool | None = None
@@ -240,26 +245,30 @@ async def list_backups(
     # blocking; run them off the event loop.
     backups = []
     for b in await asyncio.to_thread(backup_service.list_backups):
-        backups.append(BackupSchema(
-            filename=b["filename"],
-            size_bytes=b["size_bytes"],
-            created_at=b["created_at"],
-            compressed=b.get("compressed", True),
-            location="local",
-        ))
+        backups.append(
+            BackupSchema(
+                filename=b["filename"],
+                size_bytes=b["size_bytes"],
+                created_at=b["created_at"],
+                compressed=b.get("compressed", True),
+                location="local",
+            )
+        )
 
     # Get S3 backups if requested
     if include_s3:
         for b in await asyncio.to_thread(backup_service.list_s3_backups):
             # Check if already in local list
             if not any(lb.filename == b["filename"] for lb in backups):
-                backups.append(BackupSchema(
-                    filename=b["filename"],
-                    size_bytes=b["size_bytes"],
-                    created_at=b["created_at"],
-                    compressed=True,
-                    location="s3",
-                ))
+                backups.append(
+                    BackupSchema(
+                        filename=b["filename"],
+                        size_bytes=b["size_bytes"],
+                        created_at=b["created_at"],
+                        compressed=True,
+                        location="s3",
+                    )
+                )
 
     # Sort by date
     backups.sort(key=lambda x: x.created_at, reverse=True)
@@ -343,7 +352,9 @@ async def restore_backup(
             raise HTTPException(status_code=400, detail="Invalid backup file")
         except Exception as e:
             logger.error(f"Restore failed: {e}", exc_info=True)
-            raise HTTPException(status_code=500, detail="Restore failed. Check server logs for details.")
+            raise HTTPException(
+                status_code=500, detail="Restore failed. Check server logs for details."
+            )
         finally:
             # Always clear the flag, even if re-opening the DB fails — otherwise
             # the restore guard would 503 every request until a container restart.
@@ -456,10 +467,12 @@ async def test_s3_connection(
         return {"success": True, "message": f"Successfully connected to bucket: {bucket}"}
     except ImportError:
         raise HTTPException(
-            status_code=500,
-            detail="boto3 is not installed. Run: pip install boto3"
+            status_code=500, detail="boto3 is not installed. Run: pip install boto3"
         )
     except Exception as e:
         logger.error(f"S3 connection failed: {e}", exc_info=True)
         # Don't expose detailed S3 error messages which may contain bucket names, regions, etc.
-        raise HTTPException(status_code=400, detail="S3 connection failed. Check your credentials and configuration.")
+        raise HTTPException(
+            status_code=400,
+            detail="S3 connection failed. Check your credentials and configuration.",
+        )

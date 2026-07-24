@@ -36,18 +36,16 @@ class ClientService:
                 Client.email,
                 Invoice.currency_code.label("currency"),
                 func.coalesce(
-                    func.sum(
-                        case((Invoice.status.in_(BILLED_STATUSES), Invoice.total), else_=0)
-                    ),
+                    func.sum(case((Invoice.status.in_(BILLED_STATUSES), Invoice.total), else_=0)),
                     0,
                 ).label("total_invoiced"),
                 func.coalesce(
                     func.sum(case((Invoice.status == "paid", Invoice.total), else_=0)), 0
                 ).label("total_paid"),
                 func.count(Invoice.id).label("invoice_count"),
-                func.coalesce(
-                    func.sum(case((Invoice.status == "paid", 1), else_=0)), 0
-                ).label("paid_invoice_count"),
+                func.coalesce(func.sum(case((Invoice.status == "paid", 1), else_=0)), 0).label(
+                    "paid_invoice_count"
+                ),
                 func.min(Invoice.issue_date).label("first_invoice"),
                 func.max(Invoice.issue_date).label("last_invoice"),
             )
@@ -119,10 +117,14 @@ class ClientService:
                 dominant = default_cur
             entry["currency"] = dominant
             entry["total_invoiced"] = (
-                Decimal(by_currency[dominant]["invoiced"]) if dominant in by_currency else Decimal("0.00")
+                Decimal(by_currency[dominant]["invoiced"])
+                if dominant in by_currency
+                else Decimal("0.00")
             )
             entry["total_paid"] = (
-                Decimal(by_currency[dominant]["paid"]) if dominant in by_currency else Decimal("0.00")
+                Decimal(by_currency[dominant]["paid"])
+                if dominant in by_currency
+                else Decimal("0.00")
             )
 
         ordered = sorted(
@@ -242,9 +244,7 @@ class ClientService:
         return client
 
     @staticmethod
-    async def update_client(
-        session: AsyncSession, client_id: int, **kwargs
-    ) -> Client | None:
+    async def update_client(session: AsyncSession, client_id: int, **kwargs) -> Client | None:
         """Update a client in place.
 
         An explicitly-supplied null clears a nullable field — previously any None

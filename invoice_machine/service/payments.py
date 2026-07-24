@@ -64,9 +64,7 @@ async def recalculate_invoice_payments(session: AsyncSession, invoice: Invoice) 
             # Reverted (payment deleted or invoice total raised): fall back to
             # overdue when past due, otherwise sent.
             today = utc_now().date()
-            invoice.status = (
-                "overdue" if invoice.due_date and invoice.due_date < today else "sent"
-            )
+            invoice.status = "overdue" if invoice.due_date and invoice.due_date < today else "sent"
             invoice.paid_at = None
 
     invoice.updated_at = utc_now()
@@ -97,9 +95,7 @@ class PaymentService:
     ) -> Payment | None:
         """Look up a provider-created payment, for webhook idempotency."""
         result = await session.execute(
-            select(Payment).where(
-                Payment.provider == provider, Payment.external_id == external_id
-            )
+            select(Payment).where(Payment.provider == provider, Payment.external_id == external_id)
         )
         return result.scalar_one_or_none()
 
@@ -285,19 +281,21 @@ class PaymentService:
             entry["total_outstanding"] += outstanding
             entry["invoice_count"] += 1
 
-            invoices.append({
-                "invoice_id": row.id,
-                "invoice_number": row.invoice_number,
-                "client_id": row.client_id,
-                "client_name": row.client_business or row.client_name,
-                "currency_code": currency,
-                "due_date": row.due_date.isoformat() if row.due_date else None,
-                "days_overdue": max(days_overdue, 0),
-                "bucket": bucket,
-                "total": str(quantize_money(row.total or 0)),
-                "amount_paid": str(quantize_money(row.amount_paid or 0)),
-                "amount_due": str(outstanding),
-            })
+            invoices.append(
+                {
+                    "invoice_id": row.id,
+                    "invoice_number": row.invoice_number,
+                    "client_id": row.client_id,
+                    "client_name": row.client_business or row.client_name,
+                    "currency_code": currency,
+                    "due_date": row.due_date.isoformat() if row.due_date else None,
+                    "days_overdue": max(days_overdue, 0),
+                    "bucket": bucket,
+                    "total": str(quantize_money(row.total or 0)),
+                    "amount_paid": str(quantize_money(row.amount_paid or 0)),
+                    "amount_due": str(outstanding),
+                }
+            )
 
         invoices.sort(key=lambda item: (-item["days_overdue"], item["invoice_number"]))
 

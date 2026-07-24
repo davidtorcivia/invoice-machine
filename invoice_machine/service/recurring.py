@@ -113,9 +113,7 @@ class RecurringService:
         return schedule
 
     @staticmethod
-    async def get_schedule(
-        session: AsyncSession, schedule_id: int
-    ) -> RecurringSchedule | None:
+    async def get_schedule(session: AsyncSession, schedule_id: int) -> RecurringSchedule | None:
         """Get a recurring schedule by ID."""
         result = await session.execute(
             select(RecurringSchedule).where(RecurringSchedule.id == schedule_id)
@@ -167,8 +165,16 @@ class RecurringService:
 
     # Fields that may legitimately be set back to NULL ("inherit the default").
     _NULLABLE_FIELDS = frozenset(  # noqa: RUF012
-        {"notes", "tax_enabled", "tax_rate", "tax_name", "schedule_month",
-         "selected_payment_methods", "email_subject_template", "email_body_template"}
+        {
+            "notes",
+            "tax_enabled",
+            "tax_rate",
+            "tax_name",
+            "schedule_month",
+            "selected_payment_methods",
+            "email_subject_template",
+            "email_body_template",
+        }
     )
 
     @staticmethod
@@ -478,13 +484,15 @@ class RecurringService:
                     exc,
                     exc_info=True,
                 )
-                results.append({
-                    "schedule_id": schedule_id,
-                    "schedule_name": schedule_name,
-                    "invoices_generated": generated,
-                    "success": False,
-                    "error": str(exc),
-                })
+                results.append(
+                    {
+                        "schedule_id": schedule_id,
+                        "schedule_name": schedule_name,
+                        "invoices_generated": generated,
+                        "success": False,
+                        "error": str(exc),
+                    }
+                )
 
         return results
 
@@ -497,9 +505,7 @@ class RecurringService:
 
         today = utc_now().date()
         try:
-            invoice = await RecurringService._create_invoice_from_schedule(
-                session, schedule, today
-            )
+            invoice = await RecurringService._create_invoice_from_schedule(session, schedule, today)
 
             schedule.last_invoice_id = invoice.id
             # Advance only if this manual run covers the pending period; otherwise
@@ -521,9 +527,7 @@ class RecurringService:
                 "invoice_number": invoice.invoice_number,
                 "next_invoice_date": schedule.next_invoice_date.isoformat(),
             }
-            email_result = await RecurringService._auto_email_invoice(
-                session, schedule, invoice.id
-            )
+            email_result = await RecurringService._auto_email_invoice(session, schedule, invoice.id)
             if email_result is not None:
                 result["emailed"] = bool(email_result.get("success"))
                 if not email_result.get("success"):
@@ -532,5 +536,7 @@ class RecurringService:
         except Exception as exc:
             # Leave the session usable for the caller / next request.
             await session.rollback()
-            logger.error("Manual trigger of schedule %s failed: %s", schedule_id, exc, exc_info=True)
+            logger.error(
+                "Manual trigger of schedule %s failed: %s", schedule_id, exc, exc_info=True
+            )
             return {"success": False, "error": str(exc)}

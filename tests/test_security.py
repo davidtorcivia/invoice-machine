@@ -173,7 +173,12 @@ class TestInputValidation:
 
         with pytest.raises(ValueError, match="Invalid unit type"):
             await InvoiceService.add_item(
-                db_session, invoice.id, description="Test", quantity=1, unit_price=100, unit_type="invalid"
+                db_session,
+                invoice.id,
+                description="Test",
+                quantity=1,
+                unit_price=100,
+                unit_type="invalid",
             )
 
     @pytest.mark.asyncio

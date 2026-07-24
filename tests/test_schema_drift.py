@@ -47,8 +47,7 @@ def test_alembic_head_has_all_model_columns():
         try:
             cur = conn.cursor()
             db_tables = {
-                row[0]
-                for row in cur.execute("SELECT name FROM sqlite_master WHERE type='table'")
+                row[0] for row in cur.execute("SELECT name FROM sqlite_master WHERE type='table'")
             }
             missing: list[str] = []
             for table in Base.metadata.tables.values():

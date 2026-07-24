@@ -5,6 +5,7 @@ Revises: 007_default_currency
 Create Date: 2026-01-19
 
 """
+
 from collections.abc import Sequence
 
 import sqlalchemy as sa

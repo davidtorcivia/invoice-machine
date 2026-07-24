@@ -40,8 +40,22 @@ WEBHOOK_TOLERANCE_SECONDS = 300
 
 # Currencies with no minor unit: the amount is passed as-is, not multiplied.
 _ZERO_DECIMAL_CURRENCIES = {
-    "BIF", "CLP", "DJF", "GNF", "JPY", "KMF", "KRW", "MGA",
-    "PYG", "RWF", "UGX", "VND", "VUV", "XAF", "XOF", "XPF",
+    "BIF",
+    "CLP",
+    "DJF",
+    "GNF",
+    "JPY",
+    "KMF",
+    "KRW",
+    "MGA",
+    "PYG",
+    "RWF",
+    "UGX",
+    "VND",
+    "VUV",
+    "XAF",
+    "XOF",
+    "XPF",
 }
 # Currencies with 1000 minor units to the major unit. Treating these as 2-decimal
 # undercharges the customer by a factor of ten.
@@ -280,9 +294,7 @@ def verify_webhook_signature(
         raise ValueError("Stripe webhook timestamp outside the tolerance window")
 
     signed_payload = timestamp.encode() + b"." + payload
-    expected = hmac.new(
-        webhook_secret.encode(), signed_payload, hashlib.sha256
-    ).hexdigest()
+    expected = hmac.new(webhook_secret.encode(), signed_payload, hashlib.sha256).hexdigest()
 
     if not any(hmac.compare_digest(expected, candidate) for candidate in signatures):
         raise ValueError("Stripe webhook signature verification failed")

@@ -174,9 +174,7 @@ class TestCreateBackup:
             with patch("invoice_machine.service.backups.get_settings") as mock_settings:
                 mock_settings.return_value.data_dir = mock_db_file.parent
 
-                with patch.object(
-                    service, "_upload_to_s3", side_effect=Exception("S3 error")
-                ):
+                with patch.object(service, "_upload_to_s3", side_effect=Exception("S3 error")):
                     result = service.create_backup()
 
                     # Backup should still succeed locally
@@ -269,9 +267,7 @@ class TestListBackups:
             backup_dir.mkdir()
 
             # Create valid backup
-            (backup_dir / "invoice_machine_backup_20250115_120000.db.gz").write_bytes(
-                b"backup"
-            )
+            (backup_dir / "invoice_machine_backup_20250115_120000.db.gz").write_bytes(b"backup")
             # Create other files that should be ignored
             (backup_dir / "random_file.txt").write_bytes(b"text")
             (backup_dir / "other_backup.db").write_bytes(b"other")
@@ -545,9 +541,7 @@ class TestRestoreBackup:
             with patch("invoice_machine.service.backups.get_settings") as mock_settings:
                 mock_settings.return_value.data_dir = data_dir
 
-                service.restore_backup(
-                    "invoice_machine_backup_20250115_120000.db", validate=False
-                )
+                service.restore_backup("invoice_machine_backup_20250115_120000.db", validate=False)
 
             assert db_file.read_bytes() == backup_content
             assert list(data_dir.glob("invoice_machine.db.restore-*.tmp")) == []
@@ -564,12 +558,14 @@ class TestS3ConfigResolution:
         from invoice_machine.api.backup import get_backup_service
 
         business_profile.backup_s3_enabled = 1
-        business_profile.backup_s3_config = json.dumps({
-            "endpoint_url": "https://example.com",
-            "bucket": "b",
-            "access_key_id": "plaintext-not-encrypted",
-            "secret_access_key": "plaintext-not-encrypted",
-        })
+        business_profile.backup_s3_config = json.dumps(
+            {
+                "endpoint_url": "https://example.com",
+                "bucket": "b",
+                "access_key_id": "plaintext-not-encrypted",
+                "secret_access_key": "plaintext-not-encrypted",
+            }
+        )
         await db_session.commit()
 
         with patch(
@@ -597,11 +593,13 @@ class TestS3ConfigResolution:
         from invoice_machine.api.backup import get_backup_service
 
         business_profile.backup_s3_enabled = 1
-        business_profile.backup_s3_config = json.dumps({
-            "bucket": "b",
-            "access_key_id": encrypt_credential("AKIA-test"),
-            "secret_access_key": encrypt_credential("secret-test"),
-        })
+        business_profile.backup_s3_config = json.dumps(
+            {
+                "bucket": "b",
+                "access_key_id": encrypt_credential("AKIA-test"),
+                "secret_access_key": encrypt_credential("secret-test"),
+            }
+        )
         await db_session.commit()
 
         service = await get_backup_service(db_session)

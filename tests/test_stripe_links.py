@@ -150,9 +150,7 @@ class TestEventExtraction:
         assert extract_payment_from_event(event)["invoice_id"] == 7
 
     def test_zero_decimal_currency_is_not_divided(self):
-        details = extract_payment_from_event(
-            self._session_event(currency="jpy", amount_total=5000)
-        )
+        details = extract_payment_from_event(self._session_event(currency="jpy", amount_total=5000))
         assert details["amount"] == Decimal("5000")
 
 

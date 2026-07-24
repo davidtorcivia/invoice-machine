@@ -367,9 +367,7 @@ class TestEmailService:
             with patch("invoice_machine.email.settings") as mock_settings:
                 mock_settings.data_dir = data_dir
 
-                with patch.object(
-                    service, "_send_email_sync", return_value=True
-                ):
+                with patch.object(service, "_send_email_sync", return_value=True):
                     with patch(
                         "invoice_machine.email.run_in_threadpool",
                         side_effect=lambda fn, *args, **kwargs: fn(*args, **kwargs),
@@ -381,9 +379,7 @@ class TestEmailService:
                         assert result["invoice_number"] == "20250115-1"
 
     @pytest.mark.asyncio
-    async def test_send_invoice_with_override_recipient(
-        self, mock_profile, mock_invoice
-    ):
+    async def test_send_invoice_with_override_recipient(self, mock_profile, mock_invoice):
         """Send invoice to override recipient."""
         service = EmailService(mock_profile)
 
@@ -397,9 +393,7 @@ class TestEmailService:
             with patch("invoice_machine.email.settings") as mock_settings:
                 mock_settings.data_dir = data_dir
 
-                with patch.object(
-                    service, "_send_email_sync", return_value=True
-                ):
+                with patch.object(service, "_send_email_sync", return_value=True):
                     with patch(
                         "invoice_machine.email.run_in_threadpool",
                         side_effect=lambda fn, *args, **kwargs: fn(*args, **kwargs),
@@ -492,9 +486,7 @@ class TestEmailService:
         mock_profile.smtp_password = "enc:encrypted_data"
         service = EmailService(mock_profile)
 
-        with patch(
-            "invoice_machine.email.decrypt_credential", return_value="decrypted_password"
-        ):
+        with patch("invoice_machine.email.decrypt_credential", return_value="decrypted_password"):
             result = service._get_smtp_password()
             assert result == "decrypted_password"
 
@@ -557,8 +549,9 @@ class TestFromHeaderConstruction:
             def send_message(self, msg):
                 captured["msg"] = msg
 
-        with patch("invoice_machine.email._validate_smtp_target"), patch(
-            "invoice_machine.email.smtplib.SMTP", return_value=_FakeServer()
+        with (
+            patch("invoice_machine.email._validate_smtp_target"),
+            patch("invoice_machine.email.smtplib.SMTP", return_value=_FakeServer()),
         ):
             service._send_email_sync("client@example.com", "Subject", "Body")
         return captured["msg"]

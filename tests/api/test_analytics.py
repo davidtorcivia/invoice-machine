@@ -358,9 +358,7 @@ class TestAnalyticsEndpoints:
     async def test_get_client_lifetime_values_with_data(self, test_client):
         """Get client lifetime values with paid invoices."""
         # Create a client
-        client_response = await test_client.post(
-            "/api/clients", json={"name": "LTV Client"}
-        )
+        client_response = await test_client.post("/api/clients", json={"name": "LTV Client"})
         client_id = client_response.json()["id"]
 
         # Create a paid invoice for the client
@@ -517,6 +515,3 @@ class TestAnalyticsEndpoints:
         # Formatted strings use the right symbol, not a hardcoded $
         assert data["by_currency"]["EUR"]["invoiced_formatted"].endswith("EUR")
         assert data["by_currency"]["USD"]["invoiced_formatted"].startswith("$")
-
-
-

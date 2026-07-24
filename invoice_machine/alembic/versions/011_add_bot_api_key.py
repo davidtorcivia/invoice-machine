@@ -5,6 +5,7 @@ Revises: 010_add_sessions
 Create Date: 2026-02-07
 
 """
+
 from collections.abc import Sequence
 
 import sqlalchemy as sa

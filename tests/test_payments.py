@@ -60,9 +60,7 @@ class TestPartialPayments:
         self, db_session, business_profile, test_client
     ):
         invoice = await _invoice(db_session, test_client)
-        payment = await PaymentService.record_payment(
-            db_session, invoice.id, amount="1000.00"
-        )
+        payment = await PaymentService.record_payment(db_session, invoice.id, amount="1000.00")
         await db_session.refresh(invoice)
         assert invoice.status == "paid"
 
@@ -81,9 +79,7 @@ class TestPartialPayments:
         invoice.due_date = utc_now().date() - timedelta(days=5)
         await db_session.commit()
 
-        payment = await PaymentService.record_payment(
-            db_session, invoice.id, amount="1000.00"
-        )
+        payment = await PaymentService.record_payment(db_session, invoice.id, amount="1000.00")
         await PaymentService.delete_payment(db_session, payment.id)
         await db_session.refresh(invoice)
 
@@ -197,9 +193,7 @@ class TestAgingReport:
         assert report["by_currency"]["USD"]["buckets"]["1_30"] == "750.00"
 
     @pytest.mark.asyncio
-    async def test_aging_never_mixes_currencies(
-        self, db_session, business_profile, test_client
-    ):
+    async def test_aging_never_mixes_currencies(self, db_session, business_profile, test_client):
         for currency in ("USD", "EUR"):
             invoice = await InvoiceService.create_invoice(
                 db_session,
@@ -291,9 +285,7 @@ class TestQuoteConversion:
         assert invoice.total == Decimal("1100.00")
 
     @pytest.mark.asyncio
-    async def test_double_conversion_is_refused(
-        self, db_session, business_profile, test_client
-    ):
+    async def test_double_conversion_is_refused(self, db_session, business_profile, test_client):
         quote = await InvoiceService.create_invoice(
             db_session, client_id=test_client.id, document_type="quote"
         )

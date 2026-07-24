@@ -186,9 +186,7 @@ async def revenue_summary(
                 Invoice.currency_code.label("currency"),
                 func.count(Invoice.id).label("invoice_count"),
                 func.coalesce(
-                    func.sum(
-                        case((Invoice.status.in_(BILLED_STATUSES), Invoice.total), else_=0)
-                    ),
+                    func.sum(case((Invoice.status.in_(BILLED_STATUSES), Invoice.total), else_=0)),
                     0,
                 ).label("total_invoiced"),
                 func.coalesce(
@@ -263,9 +261,7 @@ async def revenue_summary(
                 period_expr.label("period"),
                 func.count(Invoice.id).label("count"),
                 func.coalesce(
-                    func.sum(
-                        case((Invoice.status.in_(BILLED_STATUSES), Invoice.total), else_=0)
-                    ),
+                    func.sum(case((Invoice.status.in_(BILLED_STATUSES), Invoice.total), else_=0)),
                     0,
                 ).label("invoiced"),
                 func.coalesce(
@@ -387,9 +383,7 @@ async def client_lifetime_values(
     limit: int = 20,
 ) -> list[dict]:
     """Per-client lifetime value in the client's dominant currency."""
-    stats = await ClientService.get_client_invoice_stats(
-        session, client_id=client_id, limit=limit
-    )
+    stats = await ClientService.get_client_invoice_stats(session, client_id=client_id, limit=limit)
     return [
         {
             "client_id": stat["client_id"],

@@ -368,9 +368,7 @@ class TestInvoiceService:
     @pytest.mark.asyncio
     async def test_create_invoice_backdated(self, db_session):
         """Backdated invoice gets correct number."""
-        invoice = await InvoiceService.create_invoice(
-            db_session, issue_date=date(2024, 12, 15)
-        )
+        invoice = await InvoiceService.create_invoice(db_session, issue_date=date(2024, 12, 15))
 
         assert invoice.invoice_number == "20241215-1"
 
@@ -379,9 +377,7 @@ class TestInvoiceService:
         """Updates invoice status."""
         invoice = await InvoiceService.create_invoice(db_session)
 
-        updated = await InvoiceService.update_invoice(
-            db_session, invoice.id, status="sent"
-        )
+        updated = await InvoiceService.update_invoice(db_session, invoice.id, status="sent")
 
         assert updated.status == "sent"
 

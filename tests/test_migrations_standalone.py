@@ -40,12 +40,15 @@ def test_fallback_adds_preferred_currency():
             )
         """)
         # Insert test data
-        cursor.execute("INSERT INTO clients (id, name, email) VALUES (1, 'Test Client', 'test@example.com')")
+        cursor.execute(
+            "INSERT INTO clients (id, name, email) VALUES (1, 'Test Client', 'test@example.com')"
+        )
         conn.commit()
         conn.close()
 
         # Run the fallback migration
         from invoice_machine.migrations.add_new_fields import migrate
+
         migrate(db_path)
 
         # Verify the column was added
@@ -133,6 +136,7 @@ def test_fallback_skips_existing_columns():
 
         # Should not raise an error
         from invoice_machine.migrations.add_new_fields import migrate
+
         migrate(db_path)
 
         # Verify no errors and columns still exist
@@ -159,7 +163,9 @@ def test_alembic_version_detection_empty():
         conn.commit()
 
         # Check detection logic
-        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='alembic_version'")
+        cursor.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='alembic_version'"
+        )
         has_alembic_table = cursor.fetchone() is not None
         assert has_alembic_table is True, "Should detect alembic_version table"
 
@@ -262,18 +268,29 @@ def test_data_preservation():
         cursor.execute("CREATE TABLE alembic_version (version_num VARCHAR(32))")
 
         # Insert test data
-        cursor.execute("INSERT INTO users (id, username, password_hash) VALUES (1, 'admin', 'hashed')")
-        cursor.execute("INSERT INTO business_profile (id, name, email) VALUES (1, 'Owner', 'owner@test.com')")
+        cursor.execute(
+            "INSERT INTO users (id, username, password_hash) VALUES (1, 'admin', 'hashed')"
+        )
+        cursor.execute(
+            "INSERT INTO business_profile (id, name, email) VALUES (1, 'Owner', 'owner@test.com')"
+        )
         cursor.execute("INSERT INTO clients (id, name, email) VALUES (1, 'Client A', 'a@test.com')")
         cursor.execute("INSERT INTO clients (id, name, email) VALUES (2, 'Client B', 'b@test.com')")
-        cursor.execute("INSERT INTO invoices (id, invoice_number, client_id, status, total) VALUES (1, 'INV-001', 1, 'paid', 1000.00)")
-        cursor.execute("INSERT INTO invoices (id, invoice_number, client_id, status, total) VALUES (2, 'INV-002', 2, 'draft', 500.00)")
-        cursor.execute("INSERT INTO invoice_items (id, invoice_id, description, quantity, unit_price, total) VALUES (1, 1, 'Service', 10, 100.00, 1000.00)")
+        cursor.execute(
+            "INSERT INTO invoices (id, invoice_number, client_id, status, total) VALUES (1, 'INV-001', 1, 'paid', 1000.00)"
+        )
+        cursor.execute(
+            "INSERT INTO invoices (id, invoice_number, client_id, status, total) VALUES (2, 'INV-002', 2, 'draft', 500.00)"
+        )
+        cursor.execute(
+            "INSERT INTO invoice_items (id, invoice_id, description, quantity, unit_price, total) VALUES (1, 1, 'Service', 10, 100.00, 1000.00)"
+        )
         conn.commit()
         conn.close()
 
         # Run the fallback migration
         from invoice_machine.migrations.add_new_fields import migrate
+
         migrate(db_path)
 
         # Verify all data is preserved
@@ -333,7 +350,9 @@ def test_migration_001_table_check():
                 created_at DATETIME
             )
         """)
-        cursor.execute("INSERT INTO users (id, username, password_hash) VALUES (1, 'admin', 'hash123')")
+        cursor.execute(
+            "INSERT INTO users (id, username, password_hash) VALUES (1, 'admin', 'hash123')"
+        )
         conn.commit()
 
         # Check table existence (simulating migration check)

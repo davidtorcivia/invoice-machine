@@ -102,9 +102,7 @@ class InvoiceCreate(BaseModel):
     client_reference: str | None = Field(None, max_length=100)
     show_payment_instructions: bool = True
     selected_payment_methods: str | None = Field(None, max_length=1000)
-    invoice_number_override: str | None = Field(
-        None, max_length=50, pattern=INVOICE_NUMBER_REGEX
-    )
+    invoice_number_override: str | None = Field(None, max_length=50, pattern=INVOICE_NUMBER_REGEX)
     # Tax settings. Default None (not 0) so an omitted value inherits the client's
     # or business profile's tax setting; 0 would force tax OFF and silently produce
     # tax-free invoices for callers (e.g. the bot API) that don't send the field.
@@ -572,6 +570,7 @@ async def get_invoice_pdf(
     # Extract just the filename (basename) to prevent directory traversal
     # PDF paths are stored as "pdfs/{filename}.pdf"
     import os
+
     safe_filename = os.path.basename(invoice.pdf_path)
 
     # Validate filename contains only safe characters

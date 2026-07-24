@@ -64,13 +64,32 @@ async def _export_invoices(
     include_deleted: bool,
     document_type: str | None,
 ) -> AsyncIterator[str]:
-    yield UTF8_BOM + _csv_line([
-        "invoice_number", "document_type", "status", "issue_date", "due_date",
-        "client_name", "client_business", "client_email", "client_reference",
-        "currency_code", "subtotal", "tax_name", "tax_rate", "tax_amount",
-        "total", "amount_paid", "amount_due", "paid_at", "exchange_rate",
-        "base_currency_code", "notes", "deleted_at",
-    ])
+    yield UTF8_BOM + _csv_line(
+        [
+            "invoice_number",
+            "document_type",
+            "status",
+            "issue_date",
+            "due_date",
+            "client_name",
+            "client_business",
+            "client_email",
+            "client_reference",
+            "currency_code",
+            "subtotal",
+            "tax_name",
+            "tax_rate",
+            "tax_amount",
+            "total",
+            "amount_paid",
+            "amount_due",
+            "paid_at",
+            "exchange_rate",
+            "base_currency_code",
+            "notes",
+            "deleted_at",
+        ]
+    )
 
     conditions = _invoice_conditions(from_date, to_date, include_deleted, document_type)
     query = select(Invoice).order_by(Invoice.issue_date, Invoice.id)
@@ -80,30 +99,32 @@ async def _export_invoices(
     # yield_per streams rows instead of materializing the whole result set.
     result = await session.stream(query.execution_options(yield_per=200))
     async for invoice in result.scalars():
-        yield _csv_line([
-            invoice.invoice_number,
-            invoice.document_type,
-            invoice.status,
-            _date_str(invoice.issue_date),
-            _date_str(invoice.due_date),
-            invoice.client_name,
-            invoice.client_business,
-            invoice.client_email,
-            invoice.client_reference,
-            invoice.currency_code,
-            str(quantize_money(invoice.subtotal or 0)),
-            invoice.tax_name,
-            str(invoice.tax_rate or 0),
-            str(quantize_money(invoice.tax_amount or 0)),
-            str(quantize_money(invoice.total or 0)),
-            str(quantize_money(invoice.amount_paid or 0)),
-            str(invoice.amount_due),
-            _date_str(invoice.paid_at),
-            str(invoice.exchange_rate) if invoice.exchange_rate is not None else "",
-            invoice.base_currency_code,
-            invoice.notes,
-            _date_str(invoice.deleted_at),
-        ])
+        yield _csv_line(
+            [
+                invoice.invoice_number,
+                invoice.document_type,
+                invoice.status,
+                _date_str(invoice.issue_date),
+                _date_str(invoice.due_date),
+                invoice.client_name,
+                invoice.client_business,
+                invoice.client_email,
+                invoice.client_reference,
+                invoice.currency_code,
+                str(quantize_money(invoice.subtotal or 0)),
+                invoice.tax_name,
+                str(invoice.tax_rate or 0),
+                str(quantize_money(invoice.tax_amount or 0)),
+                str(quantize_money(invoice.total or 0)),
+                str(quantize_money(invoice.amount_paid or 0)),
+                str(invoice.amount_due),
+                _date_str(invoice.paid_at),
+                str(invoice.exchange_rate) if invoice.exchange_rate is not None else "",
+                invoice.base_currency_code,
+                invoice.notes,
+                _date_str(invoice.deleted_at),
+            ]
+        )
 
 
 async def _export_line_items(
@@ -113,11 +134,21 @@ async def _export_line_items(
     include_deleted: bool,
     document_type: str | None,
 ) -> AsyncIterator[str]:
-    yield UTF8_BOM + _csv_line([
-        "invoice_number", "document_type", "status", "issue_date", "client_name",
-        "currency_code", "description", "quantity", "unit_type", "unit_price",
-        "line_total",
-    ])
+    yield UTF8_BOM + _csv_line(
+        [
+            "invoice_number",
+            "document_type",
+            "status",
+            "issue_date",
+            "client_name",
+            "currency_code",
+            "description",
+            "quantity",
+            "unit_type",
+            "unit_price",
+            "line_total",
+        ]
+    )
 
     conditions = _invoice_conditions(from_date, to_date, include_deleted, document_type)
     query = (
@@ -130,19 +161,21 @@ async def _export_line_items(
 
     result = await session.stream(query.execution_options(yield_per=200))
     async for item, invoice in result:
-        yield _csv_line([
-            invoice.invoice_number,
-            invoice.document_type,
-            invoice.status,
-            _date_str(invoice.issue_date),
-            invoice.client_business or invoice.client_name,
-            invoice.currency_code,
-            item.description,
-            format_quantity(item.quantity),
-            item.unit_type,
-            str(item.unit_price),
-            str(item.total),
-        ])
+        yield _csv_line(
+            [
+                invoice.invoice_number,
+                invoice.document_type,
+                invoice.status,
+                _date_str(invoice.issue_date),
+                invoice.client_business or invoice.client_name,
+                invoice.currency_code,
+                item.description,
+                format_quantity(item.quantity),
+                item.unit_type,
+                str(item.unit_price),
+                str(item.total),
+            ]
+        )
 
 
 async def _export_payments(
@@ -154,10 +187,20 @@ async def _export_payments(
 ) -> AsyncIterator[str]:
     del document_type  # payments belong to invoices, not quotes
 
-    yield UTF8_BOM + _csv_line([
-        "payment_date", "invoice_number", "client_name", "currency_code",
-        "amount", "method", "reference", "provider", "external_id", "notes",
-    ])
+    yield UTF8_BOM + _csv_line(
+        [
+            "payment_date",
+            "invoice_number",
+            "client_name",
+            "currency_code",
+            "amount",
+            "method",
+            "reference",
+            "provider",
+            "external_id",
+            "notes",
+        ]
+    )
 
     conditions = []
     if not include_deleted:
@@ -177,18 +220,20 @@ async def _export_payments(
 
     result = await session.stream(query.execution_options(yield_per=200))
     async for payment, invoice in result:
-        yield _csv_line([
-            _date_str(payment.payment_date),
-            invoice.invoice_number,
-            invoice.client_business or invoice.client_name,
-            payment.currency_code,
-            str(quantize_money(payment.amount)),
-            payment.method,
-            payment.reference,
-            payment.provider,
-            payment.external_id,
-            payment.notes,
-        ])
+        yield _csv_line(
+            [
+                _date_str(payment.payment_date),
+                invoice.invoice_number,
+                invoice.client_business or invoice.client_name,
+                payment.currency_code,
+                str(quantize_money(payment.amount)),
+                payment.method,
+                payment.reference,
+                payment.provider,
+                payment.external_id,
+                payment.notes,
+            ]
+        )
 
 
 async def _export_clients(
@@ -200,12 +245,28 @@ async def _export_clients(
 ) -> AsyncIterator[str]:
     del from_date, to_date, document_type  # not meaningful for the client list
 
-    yield UTF8_BOM + _csv_line([
-        "name", "business_name", "email", "phone", "address_line1", "address_line2",
-        "city", "state", "postal_code", "country", "payment_terms_days",
-        "preferred_currency", "tax_enabled", "tax_rate", "tax_name", "notes",
-        "created_at", "deleted_at",
-    ])
+    yield UTF8_BOM + _csv_line(
+        [
+            "name",
+            "business_name",
+            "email",
+            "phone",
+            "address_line1",
+            "address_line2",
+            "city",
+            "state",
+            "postal_code",
+            "country",
+            "payment_terms_days",
+            "preferred_currency",
+            "tax_enabled",
+            "tax_rate",
+            "tax_name",
+            "notes",
+            "created_at",
+            "deleted_at",
+        ]
+    )
 
     query = select(Client).order_by(Client.id)
     if not include_deleted:
@@ -213,26 +274,28 @@ async def _export_clients(
 
     result = await session.stream(query.execution_options(yield_per=200))
     async for client in result.scalars():
-        yield _csv_line([
-            client.name,
-            client.business_name,
-            client.email,
-            client.phone,
-            client.address_line1,
-            client.address_line2,
-            client.city,
-            client.state,
-            client.postal_code,
-            client.country,
-            client.payment_terms_days,
-            client.preferred_currency,
-            "" if client.tax_enabled is None else bool(client.tax_enabled),
-            str(client.tax_rate) if client.tax_rate is not None else "",
-            client.tax_name,
-            client.notes,
-            _date_str(client.created_at),
-            _date_str(client.deleted_at),
-        ])
+        yield _csv_line(
+            [
+                client.name,
+                client.business_name,
+                client.email,
+                client.phone,
+                client.address_line1,
+                client.address_line2,
+                client.city,
+                client.state,
+                client.postal_code,
+                client.country,
+                client.payment_terms_days,
+                client.preferred_currency,
+                "" if client.tax_enabled is None else bool(client.tax_enabled),
+                str(client.tax_rate) if client.tax_rate is not None else "",
+                client.tax_name,
+                client.notes,
+                _date_str(client.created_at),
+                _date_str(client.deleted_at),
+            ]
+        )
 
 
 _EXPORTERS = {

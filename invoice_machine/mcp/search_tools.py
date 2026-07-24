@@ -39,6 +39,3 @@ async def search(
             search_line_items=search_line_items,
             limit=limit,
         )
-
-
-

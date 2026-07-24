@@ -8,6 +8,7 @@ Revises: 008_line_items_fts
 Create Date: 2026-01-20
 
 """
+
 from collections.abc import Sequence
 
 import sqlalchemy as sa
@@ -23,6 +24,7 @@ depends_on: str | Sequence[str] | None = None
 def upgrade() -> None:
     # Check existing columns to make migration idempotent
     from sqlalchemy import inspect
+
     conn = op.get_bind()
     inspector = inspect(conn)
     columns = [col["name"] for col in inspector.get_columns("recurring_schedules")]
@@ -44,7 +46,9 @@ def upgrade() -> None:
     if "show_payment_instructions" not in columns:
         op.add_column(
             "recurring_schedules",
-            sa.Column("show_payment_instructions", sa.Integer(), server_default="1", nullable=False),
+            sa.Column(
+                "show_payment_instructions", sa.Integer(), server_default="1", nullable=False
+            ),
         )
 
     if "selected_payment_methods" not in columns:

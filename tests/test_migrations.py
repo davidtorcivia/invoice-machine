@@ -41,12 +41,15 @@ class TestFallbackMigration:
             )
         """)
         # Insert test data
-        cursor.execute("INSERT INTO clients (id, name, email) VALUES (1, 'Test Client', 'test@example.com')")
+        cursor.execute(
+            "INSERT INTO clients (id, name, email) VALUES (1, 'Test Client', 'test@example.com')"
+        )
         conn.commit()
         conn.close()
 
         # Run the fallback migration
         from invoice_machine.migrations.add_new_fields import migrate
+
         migrate(db_path)
 
         # Verify the column was added
@@ -127,6 +130,7 @@ class TestFallbackMigration:
 
         # Should not raise an error
         from invoice_machine.migrations.add_new_fields import migrate
+
         migrate(db_path)
 
         # Verify no errors and columns still exist
@@ -153,7 +157,9 @@ class TestAlembicVersionDetection:
         conn.commit()
 
         # Check detection logic
-        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='alembic_version'")
+        cursor.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='alembic_version'"
+        )
         has_alembic_table = cursor.fetchone() is not None
         assert has_alembic_table is True
 
@@ -199,7 +205,9 @@ class TestAlembicVersionDetection:
         cursor.execute("CREATE TABLE users (id INTEGER PRIMARY KEY)")
         conn.commit()
 
-        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='alembic_version'")
+        cursor.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='alembic_version'"
+        )
         has_alembic_table = cursor.fetchone() is not None
         assert has_alembic_table is False
 
@@ -224,7 +232,9 @@ class TestIdempotentMigrations:
                 created_at DATETIME
             )
         """)
-        cursor.execute("INSERT INTO users (id, username, password_hash) VALUES (1, 'admin', 'hash123')")
+        cursor.execute(
+            "INSERT INTO users (id, username, password_hash) VALUES (1, 'admin', 'hash123')"
+        )
         conn.commit()
         conn.close()
 
@@ -256,7 +266,9 @@ class TestIdempotentMigrations:
                 preferred_currency VARCHAR(3)
             )
         """)
-        cursor.execute("INSERT INTO clients (id, name, preferred_currency) VALUES (1, 'Test', 'EUR')")
+        cursor.execute(
+            "INSERT INTO clients (id, name, preferred_currency) VALUES (1, 'Test', 'EUR')"
+        )
         conn.commit()
         conn.close()
 
@@ -361,18 +373,29 @@ class TestDataPreservation:
         cursor.execute("CREATE TABLE alembic_version (version_num VARCHAR(32))")
 
         # Insert test data
-        cursor.execute("INSERT INTO users (id, username, password_hash) VALUES (1, 'admin', 'hashed')")
-        cursor.execute("INSERT INTO business_profile (id, name, email) VALUES (1, 'Owner', 'owner@test.com')")
+        cursor.execute(
+            "INSERT INTO users (id, username, password_hash) VALUES (1, 'admin', 'hashed')"
+        )
+        cursor.execute(
+            "INSERT INTO business_profile (id, name, email) VALUES (1, 'Owner', 'owner@test.com')"
+        )
         cursor.execute("INSERT INTO clients (id, name, email) VALUES (1, 'Client A', 'a@test.com')")
         cursor.execute("INSERT INTO clients (id, name, email) VALUES (2, 'Client B', 'b@test.com')")
-        cursor.execute("INSERT INTO invoices (id, invoice_number, client_id, status, total) VALUES (1, 'INV-001', 1, 'paid', 1000.00)")
-        cursor.execute("INSERT INTO invoices (id, invoice_number, client_id, status, total) VALUES (2, 'INV-002', 2, 'draft', 500.00)")
-        cursor.execute("INSERT INTO invoice_items (id, invoice_id, description, quantity, unit_price, total) VALUES (1, 1, 'Service', 10, 100.00, 1000.00)")
+        cursor.execute(
+            "INSERT INTO invoices (id, invoice_number, client_id, status, total) VALUES (1, 'INV-001', 1, 'paid', 1000.00)"
+        )
+        cursor.execute(
+            "INSERT INTO invoices (id, invoice_number, client_id, status, total) VALUES (2, 'INV-002', 2, 'draft', 500.00)"
+        )
+        cursor.execute(
+            "INSERT INTO invoice_items (id, invoice_id, description, quantity, unit_price, total) VALUES (1, 1, 'Service', 10, 100.00, 1000.00)"
+        )
         conn.commit()
         conn.close()
 
         # Run the fallback migration
         from invoice_machine.migrations.add_new_fields import migrate
+
         migrate(db_path)
 
         # Verify all data is preserved
@@ -440,7 +463,9 @@ class TestMigrationFlowIntegration:
         conn = sqlite3.connect(str(db_path))
         cursor = conn.cursor()
 
-        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='alembic_version'")
+        cursor.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='alembic_version'"
+        )
         has_alembic_table = cursor.fetchone() is not None
 
         has_valid_version = False
@@ -519,8 +544,11 @@ def test_migration_015_backfills_invoices_settled_before_payment_tracking():
             "command.upgrade(Config('alembic.ini'), '014_payments_reporting')"
         )
         result = subprocess.run(
-            [sys.executable, "-c", step], cwd=str(project_root), env=env,
-            capture_output=True, text=True,
+            [sys.executable, "-c", step],
+            cwd=str(project_root),
+            env=env,
+            capture_output=True,
+            text=True,
         )
         assert result.returncode == 0, result.stderr
 
@@ -543,8 +571,11 @@ def test_migration_015_backfills_invoices_settled_before_payment_tracking():
             "command.upgrade(Config('alembic.ini'), 'head')"
         )
         result = subprocess.run(
-            [sys.executable, "-c", step], cwd=str(project_root), env=env,
-            capture_output=True, text=True,
+            [sys.executable, "-c", step],
+            cwd=str(project_root),
+            env=env,
+            capture_output=True,
+            text=True,
         )
         assert result.returncode == 0, result.stderr
 

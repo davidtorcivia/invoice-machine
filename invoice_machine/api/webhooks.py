@@ -71,9 +71,7 @@ async def stripe_webhook(
     # Idempotency: Stripe retries until it gets a 2xx, so the same event id can
     # arrive several times. The unique (provider, external_id) index and this
     # pre-check together ensure one event records at most one payment.
-    existing = await PaymentService.find_by_external_id(
-        session, "stripe", details["external_id"]
-    )
+    existing = await PaymentService.find_by_external_id(session, "stripe", details["external_id"])
     if existing is not None:
         return {"received": True, "handled": True, "duplicate": True}
 

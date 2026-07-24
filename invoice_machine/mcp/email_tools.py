@@ -192,6 +192,3 @@ async def preview_invoice_email(
             "subject_template_used": subj_tmpl,
             "body_template_used": body_tmpl,
         }
-
-
-

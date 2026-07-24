@@ -54,6 +54,7 @@ def business_now(profile: BusinessProfile | None):
         zone = ZoneInfo("UTC")
     return utc_now().astimezone(zone)
 
+
 DEFAULT_REMINDER_SUBJECT = "Reminder: {document_type} {invoice_number} ({due_status})"
 DEFAULT_REMINDER_BODY = """Dear {client_name},
 
@@ -83,9 +84,7 @@ def validate_reminder_offsets(offsets: list[int]) -> list[int]:
         except (TypeError, ValueError):
             raise ValueError("Reminder offsets must be whole numbers of days") from None
         if not (MIN_OFFSET <= offset <= MAX_OFFSET):
-            raise ValueError(
-                f"Reminder offsets must be between {MIN_OFFSET} and {MAX_OFFSET} days"
-            )
+            raise ValueError(f"Reminder offsets must be between {MIN_OFFSET} and {MAX_OFFSET} days")
         normalized.add(offset)
     return sorted(normalized)
 
@@ -144,11 +143,7 @@ def due_offsets_for(invoice: Invoice, offsets: list[int], today: date) -> list[i
     already_sent = set(invoice.reminders_sent_list)
     days_relative = (today - invoice.due_date).days
 
-    return [
-        offset
-        for offset in offsets
-        if offset not in already_sent and offset <= days_relative
-    ]
+    return [offset for offset in offsets if offset not in already_sent and offset <= days_relative]
 
 
 async def send_due_reminders(session: AsyncSession, today: date | None = None) -> list[dict]:
@@ -171,15 +166,19 @@ async def send_due_reminders(session: AsyncSession, today: date | None = None) -
     offsets = profile.reminder_offsets_list or list(DEFAULT_REMINDER_OFFSETS)
 
     candidates = (
-        await session.execute(
-            select(Invoice).where(
-                Invoice.document_type == "invoice",
-                Invoice.deleted_at.is_(None),
-                Invoice.status.in_(REMINDABLE_STATUSES),
-                Invoice.due_date.is_not(None),
+        (
+            await session.execute(
+                select(Invoice).where(
+                    Invoice.document_type == "invoice",
+                    Invoice.deleted_at.is_(None),
+                    Invoice.status.in_(REMINDABLE_STATUSES),
+                    Invoice.due_date.is_not(None),
+                )
             )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
 
     results: list[dict] = []
     for invoice in candidates:
@@ -202,21 +201,19 @@ async def send_due_reminders(session: AsyncSession, today: date | None = None) -
 
         try:
             subject, body = build_reminder_content(invoice, profile, days_relative)
-            result = await send_invoice_email(
-                session, invoice_id, subject=subject, body=body
-            )
+            result = await send_invoice_email(session, invoice_id, subject=subject, body=body)
         except Exception as exc:
             await session.rollback()
-            logger.error(
-                "Reminder for invoice %s failed: %s", invoice_number, exc, exc_info=True
+            logger.error("Reminder for invoice %s failed: %s", invoice_number, exc, exc_info=True)
+            results.append(
+                {
+                    "invoice_id": invoice_id,
+                    "invoice_number": invoice_number,
+                    "offset": offset,
+                    "success": False,
+                    "error": str(exc),
+                }
             )
-            results.append({
-                "invoice_id": invoice_id,
-                "invoice_number": invoice_number,
-                "offset": offset,
-                "success": False,
-                "error": str(exc),
-            })
             continue
 
         if result.get("success"):
@@ -227,15 +224,17 @@ async def send_due_reminders(session: AsyncSession, today: date | None = None) -
             invoice.last_reminder_sent_at = utc_now()
             await session.commit()
 
-        results.append({
-            "invoice_id": invoice_id,
-            "invoice_number": invoice_number,
-            "offset": offset,
-            "superseded_offsets": superseded,
-            "days_relative": days_relative,
-            "recipient": result.get("recipient"),
-            "success": bool(result.get("success")),
-            **({"error": result["error"]} if result.get("error") else {}),
-        })
+        results.append(
+            {
+                "invoice_id": invoice_id,
+                "invoice_number": invoice_number,
+                "offset": offset,
+                "superseded_offsets": superseded,
+                "days_relative": days_relative,
+                "recipient": result.get("recipient"),
+                "success": bool(result.get("success")),
+                **({"error": result["error"]} if result.get("error") else {}),
+            }
+        )
 
     return results

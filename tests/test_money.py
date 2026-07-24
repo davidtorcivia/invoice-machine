@@ -58,7 +58,12 @@ async def test_fractional_hours_quantity(db_session, test_client):
         db_session,
         client_id=test_client.id,
         items=[
-            {"description": "Consulting", "quantity": "1.5", "unit_type": "hours", "unit_price": "100"}
+            {
+                "description": "Consulting",
+                "quantity": "1.5",
+                "unit_type": "hours",
+                "unit_price": "100",
+            }
         ],
     )
     assert invoice.items[0].quantity == Decimal("1.500")

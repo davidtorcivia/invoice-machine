@@ -51,6 +51,7 @@ class User(Base):
     async def get_by_username(cls, session: "AsyncSession", username: str) -> Optional["User"]:
         """Get user by username (case-insensitive)."""
         from sqlalchemy import func, select
+
         result = await session.execute(
             select(cls).where(func.lower(cls.username) == username.lower())
         )
@@ -60,6 +61,7 @@ class User(Base):
     async def count(cls, session: "AsyncSession") -> int:
         """Count total users."""
         from sqlalchemy import func, select
+
         result = await session.execute(select(func.count(cls.id)))
         return result.scalar() or 0
 
@@ -120,9 +122,7 @@ class BusinessProfile(Base):
     email_body_template: Mapped[str | None] = mapped_column(Text, nullable=True)
     # IANA timezone the business operates in. Reminder timing and "days until
     # due" are computed against this, not UTC.
-    business_timezone: Mapped[str] = mapped_column(
-        String(64), default="UTC", server_default="UTC"
-    )
+    business_timezone: Mapped[str] = mapped_column(String(64), default="UTC", server_default="UTC")
     # Automated payment reminders
     reminders_enabled: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     # Local hour (0-23) at which the daily reminder sweep runs.
@@ -140,9 +140,7 @@ class BusinessProfile(Base):
     # JSON object of currency code -> rate into default_currency_code.
     fx_rates: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime, default=utc_now, onupdate=utc_now
-    )
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now, onupdate=utc_now)
 
     @classmethod
     async def get(cls, session: AsyncSession) -> Optional["BusinessProfile"]:
@@ -234,9 +232,7 @@ class Client(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     name: Mapped[str | None] = mapped_column(String(255), nullable=True)  # Contact name
-    business_name: Mapped[str | None] = mapped_column(
-        String(255), nullable=True
-    )  # Company
+    business_name: Mapped[str | None] = mapped_column(String(255), nullable=True)  # Company
     address_line1: Mapped[str | None] = mapped_column(Text, nullable=True)
     address_line2: Mapped[str | None] = mapped_column(Text, nullable=True)
     city: Mapped[str | None] = mapped_column(String(100), nullable=True)
@@ -254,9 +250,7 @@ class Client(Base):
     # Per-client currency preference (None = use global default)
     preferred_currency: Mapped[str | None] = mapped_column(String(3), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime, default=utc_now, onupdate=utc_now
-    )
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now, onupdate=utc_now)
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     invoices: Mapped[list["Invoice"]] = relationship(
@@ -297,9 +291,7 @@ class Invoice(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     invoice_number: Mapped[str] = mapped_column(String(50), nullable=False, unique=True)
-    client_id: Mapped[int | None] = mapped_column(
-        Integer, ForeignKey("clients.id"), nullable=True
-    )
+    client_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("clients.id"), nullable=True)
 
     # Denormalized client snapshot
     client_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
@@ -317,7 +309,9 @@ class Invoice(Base):
         DECIMAL(10, 2), default=Decimal("0.00"), server_default="0"
     )
     document_type: Mapped[str] = mapped_column(String(20), default="invoice")  # invoice/quote
-    client_reference: Mapped[str | None] = mapped_column(String(100), nullable=True)  # PO/job number
+    client_reference: Mapped[str | None] = mapped_column(
+        String(100), nullable=True
+    )  # PO/job number
     show_payment_instructions: Mapped[int] = mapped_column(Integer, default=1)
     # JSON array of payment method IDs selected for this invoice
     selected_payment_methods: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -361,9 +355,7 @@ class Invoice(Base):
     payment_link_created_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime, default=utc_now, onupdate=utc_now
-    )
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now, onupdate=utc_now)
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     client: Mapped[Optional["Client"]] = relationship(
@@ -484,9 +476,7 @@ class InvoiceItem(Base):
     total: Mapped[Decimal] = mapped_column(DECIMAL(10, 2), nullable=False)
     sort_order: Mapped[int] = mapped_column(Integer, default=0)
 
-    invoice: Mapped["Invoice"] = relationship(
-        "Invoice", back_populates="items", lazy="selectin"
-    )
+    invoice: Mapped["Invoice"] = relationship("Invoice", back_populates="items", lazy="selectin")
 
     __table_args__ = (Index("idx_items_invoice", "invoice_id"),)
 
@@ -516,9 +506,7 @@ class Payment(Base):
     provider: Mapped[str | None] = mapped_column(String(30), nullable=True)
     external_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime, default=utc_now, onupdate=utc_now
-    )
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now, onupdate=utc_now)
 
     invoice: Mapped["Invoice"] = relationship("Invoice", back_populates="payments")
 
@@ -612,9 +600,7 @@ class Session(Base):
         """Delete all expired sessions. Returns count of deleted sessions."""
         from sqlalchemy import delete
 
-        result = await session.execute(
-            delete(cls).where(cls.expires_at <= utc_now())
-        )
+        result = await session.execute(delete(cls).where(cls.expires_at <= utc_now()))
         await session.commit()
         return result.rowcount
 
@@ -634,9 +620,7 @@ class RecurringSchedule(Base):
     __tablename__ = "recurring_schedules"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    client_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("clients.id"), nullable=False
-    )
+    client_id: Mapped[int] = mapped_column(Integer, ForeignKey("clients.id"), nullable=False)
     # Schedule name/description
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     # Frequency: daily, weekly, monthly, quarterly, yearly
@@ -657,9 +641,7 @@ class RecurringSchedule(Base):
     # JSON array of line items: [{description, quantity, unit_price, unit_type}]
     line_items: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Payment-instruction settings copied onto each generated invoice.
-    show_payment_instructions: Mapped[int] = mapped_column(
-        Integer, default=1, server_default="1"
-    )
+    show_payment_instructions: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
     # JSON array of payment method IDs
     selected_payment_methods: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Email each generated invoice to the client automatically.
@@ -678,9 +660,7 @@ class RecurringSchedule(Base):
     )
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime, default=utc_now, onupdate=utc_now
-    )
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now, onupdate=utc_now)
 
     client: Mapped["Client"] = relationship("Client", lazy="selectin")
     last_invoice: Mapped[Optional["Invoice"]] = relationship(
@@ -729,6 +709,7 @@ settings = get_settings()
 db_url = settings.database_url
 if db_url.startswith("sqlite://"):
     db_url = db_url.replace("sqlite://", "sqlite+aiosqlite://", 1)
+
 
 def _apply_sqlite_pragmas(dbapi_connection) -> None:
     """Apply required PRAGMAs to a raw SQLite DBAPI connection.

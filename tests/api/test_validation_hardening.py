@@ -29,17 +29,13 @@ async def test_out_of_range_default_tax_rate_is_rejected(test_client):
 @pytest.mark.asyncio
 async def test_malformed_payment_methods_json_is_rejected(test_client):
     """Unparseable payment_methods used to be stored, then silently read as []."""
-    response = await test_client.put(
-        "/api/profile", json={"payment_methods": "{not json at all"}
-    )
+    response = await test_client.put("/api/profile", json={"payment_methods": "{not json at all"})
     assert response.status_code == 422
 
     response = await test_client.put("/api/profile", json={"payment_methods": '{"a": 1}'})
     assert response.status_code == 422, "must be a JSON array"
 
-    response = await test_client.put(
-        "/api/profile", json={"payment_methods": '[{"name": "Bank"}]'}
-    )
+    response = await test_client.put("/api/profile", json={"payment_methods": '[{"name": "Bank"}]'})
     assert response.status_code == 422, "entries need an id"
 
     good = '[{"id": "pm-1", "name": "Bank Transfer", "instructions": "Acct 1"}]'
@@ -60,14 +56,10 @@ async def test_add_item_to_missing_invoice_returns_404(test_client):
 @pytest.mark.asyncio
 async def test_duplicate_custom_invoice_number_returns_400(test_client):
     """A colliding invoice number is caller error, not a 500."""
-    first = await test_client.post(
-        "/api/invoices", json={"invoice_number_override": "CUSTOM-1"}
-    )
+    first = await test_client.post("/api/invoices", json={"invoice_number_override": "CUSTOM-1"})
     assert first.status_code in (200, 201)
 
-    second = await test_client.post(
-        "/api/invoices", json={"invoice_number_override": "CUSTOM-1"}
-    )
+    second = await test_client.post("/api/invoices", json={"invoice_number_override": "CUSTOM-1"})
     assert second.status_code == 400
     assert "already exists" in second.json()["detail"]
 

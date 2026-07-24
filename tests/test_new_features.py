@@ -238,7 +238,9 @@ class TestRecurringInvoices:
             )
 
     @pytest.mark.asyncio
-    async def test_update_schedule_recalculates_next_date(self, db_session, test_client, monkeypatch):
+    async def test_update_schedule_recalculates_next_date(
+        self, db_session, test_client, monkeypatch
+    ):
         """Changing schedule cadence recalculates the stored next invoice date."""
 
         monkeypatch.setattr(
@@ -254,9 +256,7 @@ class TestRecurringInvoices:
             next_invoice_date=date(2025, 1, 15),
         )
 
-        updated = await RecurringService.update_schedule(
-            db_session, schedule.id, schedule_day=20
-        )
+        updated = await RecurringService.update_schedule(db_session, schedule.id, schedule_day=20)
 
         # Day 20 hasn't passed yet (today is the 10th), so the recalculated date is
         # this month's 20th — the current period is not skipped.
@@ -480,9 +480,7 @@ class TestSearch:
     async def test_search_line_items_by_description(self, db_session, business_profile):
         """Search finds line items by description."""
         # Create a client
-        client = await ClientService.create_client(
-            db_session, name="Line Item Test Client"
-        )
+        client = await ClientService.create_client(db_session, name="Line Item Test Client")
         # Create an invoice with a specific line item description
         invoice = await InvoiceService.create_invoice(
             db_session,
@@ -508,9 +506,7 @@ class TestSearch:
     async def test_search_only_line_items(self, db_session, business_profile):
         """Search can be limited to line items only."""
         # Create a client
-        client = await ClientService.create_client(
-            db_session, name="Line Items Only Client"
-        )
+        client = await ClientService.create_client(db_session, name="Line Items Only Client")
         # Create an invoice with a line item
         await InvoiceService.create_invoice(
             db_session,
@@ -530,9 +526,7 @@ class TestSearch:
     async def test_search_excludes_line_items(self, db_session, business_profile):
         """Search can exclude line items."""
         # Create a client
-        client = await ClientService.create_client(
-            db_session, name="Exclude Line Items Client"
-        )
+        client = await ClientService.create_client(db_session, name="Exclude Line Items Client")
         # Create an invoice with a line item
         await InvoiceService.create_invoice(
             db_session,
@@ -627,8 +621,8 @@ class TestRecurringScheduleFields:
             db_session,
             schedule.id,
             name="Renamed Retainer",
-            frequency="monthly",   # unchanged, but always submitted
-            schedule_day=15,       # unchanged, but always submitted
+            frequency="monthly",  # unchanged, but always submitted
+            schedule_day=15,  # unchanged, but always submitted
         )
 
         assert updated.name == "Renamed Retainer"
@@ -661,7 +655,7 @@ class TestRecurringScheduleFields:
 
     @pytest.mark.asyncio
     async def test_quarterly_schedule_honours_month_in_quarter(self, db_session, test_client):
-        """"2nd month of the quarter" must mean Feb/May/Aug/Nov."""
+        """ "2nd month of the quarter" must mean Feb/May/Aug/Nov."""
         schedule = await RecurringService.create_schedule(
             db_session,
             client_id=test_client.id,
@@ -814,8 +808,9 @@ class TestSearchFallbackRobustness:
         await db_session.commit()
 
         with caplog.at_level(logging.WARNING, logger="invoice_machine.service.search"):
-            await SearchService.search(db_session, "anything", search_clients=False,
-                                       search_line_items=False)
+            await SearchService.search(
+                db_session, "anything", search_clients=False, search_line_items=False
+            )
 
         assert any("FTS unavailable" in r.message for r in caplog.records), (
             "falling back to a LIKE scan should be logged"

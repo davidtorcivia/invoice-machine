@@ -263,9 +263,7 @@ class InvoiceService:
                 await session.rollback()
                 last_error = exc
                 if override:
-                    raise ValueError(
-                        f"Invoice number '{override_number}' already exists"
-                    ) from exc
+                    raise ValueError(f"Invoice number '{override_number}' already exists") from exc
                 # Re-resolve objects expired by the rollback before retrying.
                 business = await BusinessProfile.get_or_create(session)
                 client = await session.get(Client, client_id) if client_id else None
@@ -274,9 +272,7 @@ class InvoiceService:
             await session.refresh(invoice)
             return invoice
 
-        raise ValueError(
-            "Could not allocate a unique invoice number; please retry"
-        ) from last_error
+        raise ValueError("Could not allocate a unique invoice number; please retry") from last_error
 
     @staticmethod
     async def update_invoice(
@@ -382,9 +378,7 @@ class InvoiceService:
             # auto-number regenerated into an existing slot) is caller error, not
             # a server fault.
             await session.rollback()
-            raise ValueError(
-                f"Invoice number '{invoice.invoice_number}' already exists"
-            ) from exc
+            raise ValueError(f"Invoice number '{invoice.invoice_number}' already exists") from exc
         await session.refresh(invoice)
         return invoice
 
@@ -634,7 +628,9 @@ class InvoiceService:
                 "total_requested": len(invoice_ids),
                 "successful": 0,
                 "failed": len(invoice_ids),
-                "errors": [{"id": invoice_id, "reason": "Invalid action"} for invoice_id in invoice_ids],
+                "errors": [
+                    {"id": invoice_id, "reason": "Invalid action"} for invoice_id in invoice_ids
+                ],
             }
 
         result = await session.execute(
@@ -651,10 +647,12 @@ class InvoiceService:
 
             invoice = invoices[invoice_id]
             if invoice.status not in valid_transitions[action]:
-                errors.append({
-                    "id": invoice_id,
-                    "reason": f"Invalid status transition: {invoice.status} cannot be {action.replace('_', ' ')}",
-                })
+                errors.append(
+                    {
+                        "id": invoice_id,
+                        "reason": f"Invalid status transition: {invoice.status} cannot be {action.replace('_', ' ')}",
+                    }
+                )
                 continue
 
             valid_ids.append(invoice_id)

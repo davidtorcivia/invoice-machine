@@ -120,9 +120,7 @@ async def get_client_invoice_context(
         # are never a mix of currencies.
         cur_counts = Counter(inv.currency_code for inv in all_invoices)
         dominant_currency = (
-            cur_counts.most_common(1)[0][0]
-            if cur_counts
-            else (client.preferred_currency or "USD")
+            cur_counts.most_common(1)[0][0] if cur_counts else (client.preferred_currency or "USD")
         )
         scoped = [inv for inv in all_invoices if inv.currency_code == dominant_currency]
         billable = [inv for inv in scoped if inv.status in BILLED_STATUSES]
@@ -176,9 +174,6 @@ async def get_client_invoice_context(
                 "average_invoice_formatted": format_currency(average_invoice, dominant_currency),
             },
         }
-
-
-
 
 
 @mcp.tool()

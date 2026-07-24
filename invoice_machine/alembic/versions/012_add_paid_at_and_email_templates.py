@@ -11,6 +11,7 @@ Revises: 011_add_bot_api_key
 Create Date: 2026-05-28
 
 """
+
 from collections.abc import Sequence
 
 import sqlalchemy as sa

@@ -1,6 +1,5 @@
 """Email templates API endpoints."""
 
-
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession

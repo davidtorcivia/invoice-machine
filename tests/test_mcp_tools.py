@@ -110,11 +110,13 @@ async def test_update_business_profile_rejects_bad_accent_color(mcp_db):
 async def test_list_invoices_document_type_filter(mcp_db):
     client = await client_tools.create_client(name="Mixed")
     await invoice_tools.create_invoice(
-        client_id=client["id"], document_type="invoice",
+        client_id=client["id"],
+        document_type="invoice",
         items=[{"description": "inv", "quantity": 1, "unit_price": 10}],
     )
     await invoice_tools.create_invoice(
-        client_id=client["id"], document_type="quote",
+        client_id=client["id"],
+        document_type="quote",
         items=[{"description": "quo", "quantity": 1, "unit_price": 20}],
     )
 
@@ -129,12 +131,17 @@ async def test_recurring_schedule_validates_items(mcp_db):
     # A bad unit_price must be rejected at save time, not at generation time.
     with pytest.raises(ValueError):
         await recurring_tools.create_recurring_schedule(
-            client_id=client["id"], name="Bad", frequency="monthly",
+            client_id=client["id"],
+            name="Bad",
+            frequency="monthly",
             items=[{"description": "x", "quantity": 1, "unit_price": "not-a-number"}],
         )
 
     good = await recurring_tools.create_recurring_schedule(
-        client_id=client["id"], name="Good", frequency="monthly", schedule_day=15,
+        client_id=client["id"],
+        name="Good",
+        frequency="monthly",
+        schedule_day=15,
         items=[{"description": "Retainer", "quantity": 1, "unit_price": 500}],
     )
     triggered = await recurring_tools.trigger_recurring_schedule(good["id"])
@@ -145,12 +152,14 @@ async def test_recurring_schedule_validates_items(mcp_db):
 async def test_client_invoice_context_excludes_quotes_and_scopes_currency(mcp_db):
     client = await client_tools.create_client(name="Ctx")
     inv = await invoice_tools.create_invoice(
-        client_id=client["id"], document_type="invoice",
+        client_id=client["id"],
+        document_type="invoice",
         items=[{"description": "billed", "quantity": 1, "unit_price": 300}],
     )
     await invoice_tools.update_invoice(inv["id"], status="sent")
     await invoice_tools.create_invoice(
-        client_id=client["id"], document_type="quote",
+        client_id=client["id"],
+        document_type="quote",
         items=[{"description": "quote", "quantity": 1, "unit_price": 999}],
     )
 
@@ -166,4 +175,6 @@ async def test_email_templates_roundtrip_and_search(mcp_db):
 
     await client_tools.create_client(name="Searchable Co", business_name="Searchable Co")
     results = await search_tools.search("Searchable")
-    assert any("Searchable" in (c.get("business_name") or c.get("name") or "") for c in results["clients"])
+    assert any(
+        "Searchable" in (c.get("business_name") or c.get("name") or "") for c in results["clients"]
+    )
