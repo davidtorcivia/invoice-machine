@@ -14,7 +14,7 @@ RUN npm run build
 # Stage 2: build Python dependencies into a venv (compilers live here only).
 # Dependencies come from pyproject.toml (single source of truth).
 # ---------------------------------------------------------------------------
-FROM python:3.11-slim-bookworm AS builder
+FROM python:3.14-slim-bookworm AS builder
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     python3-dev \
@@ -35,7 +35,7 @@ RUN pip install --no-cache-dir .
 # ---------------------------------------------------------------------------
 # Stage 3: slim runtime image (no compilers, no Node, no build cruft).
 # ---------------------------------------------------------------------------
-FROM python:3.11-slim-bookworm AS runtime
+FROM python:3.14-slim-bookworm AS runtime
 
 # Runtime-only libraries for WeasyPrint + gosu for privilege drop.
 RUN apt-get update && apt-get install -y --no-install-recommends \
