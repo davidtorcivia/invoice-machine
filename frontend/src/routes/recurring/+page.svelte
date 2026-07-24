@@ -1,6 +1,6 @@
 <script>
   import { onMount } from 'svelte';
-  import { recurringApi, clientsApi, profileApi } from '$lib/api';
+  import { recurringApi, clientsApi, profileApi, emailApi } from '$lib/api';
   import { parseJsonArray } from '$lib/json';
   import { toast } from '$lib/stores';
   import Header from '$lib/components/Header.svelte';
@@ -16,11 +16,14 @@
 
   let schedules = $state([]);
   let clients = $state([]);
-  let profile = $state(/** @type {any} */ (null));
+  let profile = $state(/** @type {import('$lib/types').BusinessProfile|null} */ (null));
+  // GET /api/profile deliberately omits SMTP settings, so the auto-email
+  // toggle has to ask the endpoint that actually exposes them.
+  let smtpEnabled = $state(false);
   let loading = $state(true);
   let saving = $state(false);
   let showModal = $state(false);
-  let editingSchedule = $state(/** @type {any} */ (null));
+  let editingSchedule = $state(/** @type {import('$lib/types').RecurringSchedule|null} */ (null));
   let formData = $state(createScheduleFormData());
 
   let showDeleteModal = $state(false);
@@ -59,6 +62,14 @@
       profile = await profileApi.get();
     } catch (error) {
       console.error('Failed to load profile:', error);
+    }
+
+    try {
+      smtpEnabled = !!(await emailApi.getSmtpSettings()).smtp_enabled;
+    } catch (error) {
+      // Without this the auto-email option simply stays hidden, which is the
+      // safe default: offering it while mail is unconfigured would be worse.
+      console.error('Failed to load SMTP settings:', error);
     }
   }
 
@@ -208,7 +219,7 @@
   {clients}
   {availablePaymentMethods}
   {defaultNotesText}
-  smtpEnabled={profile?.smtp_enabled}
+  {smtpEnabled}
   {saving}
   onclose={closeModal}
   onsave={saveSchedule}

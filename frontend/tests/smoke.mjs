@@ -162,6 +162,18 @@ async function seed() {
     cookies,
   );
 
+  // Enable SMTP so the recurring modal's auto-email option becomes reachable.
+  await api(
+    'PUT',
+    '/api/settings/smtp',
+    {
+      smtp_enabled: true,
+      smtp_host: 'smtp.example.test',
+      smtp_from_email: 'billing@example.test',
+    },
+    cookies,
+  );
+
   return { invoiceId };
 }
 
@@ -432,6 +444,28 @@ check(
     /^\d+$/.test(navigated.slice('/invoices/'.length)),
   String(navigated),
 );
+
+// Options gated on another endpoint's state. The auto-email toggle reads SMTP
+// status, which `GET /api/profile` does not return; sourcing it from there left
+// the option permanently hidden however SMTP was configured, with nothing to
+// show for it in the UI or the logs.
+await goto('/recurring');
+const autoEmail = await evaluate(`(async () => {
+  const btn = [...document.querySelectorAll('button')]
+    .find((b) => /new schedule/i.test(b.textContent));
+  if (!btn) return 'no New Schedule button';
+  btn.click();
+  await new Promise((r) => setTimeout(r, 1200));
+  if (!document.querySelector('[role=dialog]')) return 'modal did not open';
+  const visible = document.body.innerText.includes('Automatically email invoice');
+  const close = [...document.querySelectorAll('[role=dialog] button')]
+    .find((b) => /cancel|close/i.test(b.textContent + (b.getAttribute('aria-label') || '')));
+  close?.click();
+  await new Promise((r) => setTimeout(r, 500));
+  return visible ? 'offered' : 'hidden despite SMTP being enabled';
+})()`);
+drainEvents();
+check('auto-email option appears once SMTP is configured', autoEmail === 'offered', String(autoEmail));
 
 // ConfirmModal backs every destructive action, so its cancel path is worth a check.
 await goto('/recurring');

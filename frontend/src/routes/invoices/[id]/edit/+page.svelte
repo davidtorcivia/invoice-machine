@@ -24,8 +24,8 @@
    * @typedef {{ id?: number|string, description: string, quantity: number, unit_type: string, unit_price: string|number }} InvoiceItemDraft
    */
 
-  let invoice = $state(/** @type {any} */ (null));
-  let profile = $state(/** @type {any} */ (null));
+  let invoice = $state(/** @type {import('$lib/types').Invoice|null} */ (null));
+  let profile = $state(/** @type {import('$lib/types').BusinessProfile|null} */ (null));
   let loading = $state(true);
   let saving = $state(false);
   let showDiscardModal = $state(false);
@@ -187,7 +187,7 @@
       });
 
       // Delete removed items
-      const originalItemIds = new Set((invoice.items || []).map((item) => item.id));
+      const originalItemIds = new Set((invoice?.items || []).map((item) => item.id));
       const currentItemIds = new Set(items.filter((item) => item.id).map((item) => item.id));
 
       for (const itemId of originalItemIds) {

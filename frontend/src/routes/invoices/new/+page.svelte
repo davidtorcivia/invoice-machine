@@ -28,7 +28,7 @@
 
   /** @type {ClientSummary[]} */
   let clients = $state([]);
-  let profile = $state(/** @type {any} */ (null));
+  let profile = $state(/** @type {import('$lib/types').BusinessProfile|null} */ (null));
   let loading = $state(false);
   let saving = $state(false);
   // Warn before navigating away from a partially-filled form.
@@ -106,25 +106,15 @@
 
   async function loadProfile() {
     try {
-      profile = await profileApi.get();
-      // Set defaults from profile
-      if (profile.default_payment_terms_days) {
-        paymentTermsDays = profile.default_payment_terms_days;
-      }
-      // Set default currency from profile
-      if (profile.default_currency_code) {
-        currencyCode = profile.default_currency_code;
-      }
-      // Set tax defaults from profile
-      if (profile.default_tax_enabled) {
-        taxEnabled = true;
-      }
-      if (profile.default_tax_rate) {
-        taxRate = profile.default_tax_rate;
-      }
-      if (profile.default_tax_name) {
-        taxName = profile.default_tax_name;
-      }
+      const loaded = await profileApi.get();
+      profile = loaded;
+
+      // Seed the form from the business defaults.
+      if (loaded.default_payment_terms_days) paymentTermsDays = loaded.default_payment_terms_days;
+      if (loaded.default_currency_code) currencyCode = loaded.default_currency_code;
+      if (loaded.default_tax_enabled) taxEnabled = true;
+      if (loaded.default_tax_rate) taxRate = loaded.default_tax_rate;
+      if (loaded.default_tax_name) taxName = loaded.default_tax_name;
     } catch (error) {
       console.error('Failed to load profile');
     }

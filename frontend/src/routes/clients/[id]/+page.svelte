@@ -13,7 +13,7 @@
   import ClientStatsGrid from '$lib/components/clients/ClientStatsGrid.svelte';
 
 
-  let client = $state(/** @type {any} */ (null));
+  let client = $state(/** @type {import('$lib/types').Client|null} */ (null));
   let invoices = $state([]);
   let loading = $state(true);
   let showDeleteModal = $state(false);
@@ -63,7 +63,7 @@
   });
 </script>
 
-<Header title={client ? (client.business_name || client.name) : 'Client'} />
+<Header title={client?.business_name || client?.name || 'Client'} />
 
 <div class="page-content">
   {#if loading}

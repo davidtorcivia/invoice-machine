@@ -20,7 +20,7 @@
 
   let clientId = $derived($page.params.id || '');
 
-  let client = $state(/** @type {any} */ (null));
+  let client = $state(/** @type {import('$lib/types').Client|null} */ (null));
   let loading = $state(true);
   let saving = $state(false);
   let showDiscardModal = $state(false);

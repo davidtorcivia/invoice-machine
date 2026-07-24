@@ -17,7 +17,7 @@
   import SendInvoiceEmailModal from '$lib/components/invoices/SendInvoiceEmailModal.svelte';
 
 
-  let invoice = $state(/** @type {any} */ (null));
+  let invoice = $state(/** @type {import('$lib/types').Invoice|null} */ (null));
   let items = $state([]);
   let loading = $state(true);
   let loadError = false;
