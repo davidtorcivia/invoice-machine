@@ -2,17 +2,28 @@
   import { createEventDispatcher } from 'svelte';
   import CollapsibleSection from '$lib/components/CollapsibleSection.svelte';
 
-  /** @type {{ payments_enabled: boolean, stripe_secret_key_set: boolean, stripe_webhook_secret_set: boolean, webhook_url: string|null }} */
-  export let settings = {
+  
+  
+  /**
+   * @typedef {Object} Props
+   * @property {{ payments_enabled: boolean, stripe_secret_key_set: boolean, stripe_webhook_secret_set: boolean, webhook_url: string|null }} [settings]
+   * @property {string} [secretKey] - Write-only fields; blank means "leave the stored value alone".
+   * @property {string} [webhookSecret]
+   * @property {boolean} [testing]
+   */
+
+  /** @type {Props} */
+  let {
+    settings = $bindable({
     payments_enabled: false,
     stripe_secret_key_set: false,
     stripe_webhook_secret_set: false,
     webhook_url: null
-  };
-  /** Write-only fields; blank means "leave the stored value alone". */
-  export let secretKey = '';
-  export let webhookSecret = '';
-  export let testing = false;
+  }),
+    secretKey = $bindable(''),
+    webhookSecret = $bindable(''),
+    testing = false
+  } = $props();
 
   const dispatch = createEventDispatcher();
 
@@ -87,7 +98,7 @@
       <span class="label">Webhook endpoint</span>
       <div class="webhook-row">
         <code class="webhook-url">{settings.webhook_url}</code>
-        <button type="button" class="btn btn-secondary btn-sm" on:click={copyWebhookUrl}>
+        <button type="button" class="btn btn-secondary btn-sm" onclick={copyWebhookUrl}>
           Copy
         </button>
       </div>
@@ -101,7 +112,7 @@
   <button
     type="button"
     class="btn btn-secondary btn-sm"
-    on:click={() => dispatch('test')}
+    onclick={() => dispatch('test')}
     disabled={testing || !settings.stripe_secret_key_set}
   >
     {testing ? 'Checking...' : 'Test credentials'}

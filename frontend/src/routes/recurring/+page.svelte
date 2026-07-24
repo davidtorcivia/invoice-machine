@@ -14,22 +14,22 @@
     createScheduleFormDataFromSchedule
   } from '$lib/recurring/form';
 
-  let schedules = [];
-  let clients = [];
-  let profile = null;
-  let loading = true;
-  let saving = false;
-  let showModal = false;
-  let editingSchedule = null;
-  let formData = createScheduleFormData();
+  let schedules = $state([]);
+  let clients = $state([]);
+  let profile = $state(/** @type {any} */ (null));
+  let loading = $state(true);
+  let saving = $state(false);
+  let showModal = $state(false);
+  let editingSchedule = $state(/** @type {any} */ (null));
+  let formData = $state(createScheduleFormData());
 
-  let showDeleteModal = false;
-  let deleteTarget = null;
-  let deleting = false;
-  let triggering = null;
+  let showDeleteModal = $state(false);
+  let deleteTarget = $state(/** @type {any} */ (null));
+  let deleting = $state(false);
+  let triggering = $state(/** @type {any} */ (null));
 
-  $: availablePaymentMethods = parseJsonArray(profile?.payment_methods);
-  $: defaultNotesText = profile?.default_notes || '';
+  let availablePaymentMethods = $derived(parseJsonArray(profile?.payment_methods));
+  let defaultNotesText = $derived(profile?.default_notes || '');
 
   onMount(async () => {
     await Promise.all([loadSchedules(), loadClients(), loadProfile()]);
@@ -163,7 +163,7 @@
       <h1>Recurring Invoices</h1>
       <p class="page-subtitle">{schedules.length} schedule{schedules.length !== 1 ? 's' : ''}</p>
     </div>
-    <button class="btn btn-primary" on:click={openCreateModal}>
+    <button class="btn btn-primary" onclick={openCreateModal}>
       <Icon name="plus" size="sm" />
       New Schedule
     </button>
@@ -180,7 +180,7 @@
       </div>
       <h3>No Recurring Schedules</h3>
       <p>Create a recurring schedule to automatically generate invoices on a regular basis.</p>
-      <button class="btn btn-primary" on:click={openCreateModal}>
+      <button class="btn btn-primary" onclick={openCreateModal}>
         <Icon name="plus" size="sm" />
         Create First Schedule
       </button>

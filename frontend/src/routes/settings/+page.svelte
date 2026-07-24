@@ -48,43 +48,43 @@
   import SettingsFxRatesSection from '$lib/components/settings/SettingsFxRatesSection.svelte';
 
   let profile = null;
-  let loading = true;
-  let openSections = { ...DEFAULT_SETTINGS_SECTIONS };
-  let profileForm = createProfileForm();
-  let smtpForm = createSmtpForm();
-  let backupForm = createBackupForm();
-  let apiAccess = createApiAccessState();
+  let loading = $state(true);
+  let openSections = $state({ ...DEFAULT_SETTINGS_SECTIONS });
+  let profileForm = $state(createProfileForm());
+  let smtpForm = $state(createSmtpForm());
+  let backupForm = $state(createBackupForm());
+  let apiAccess = $state(createApiAccessState());
 
-  let paymentMethods = [];
-  let editingMethod = null;
-  let paymentMethodDraft = createPaymentMethodDraft();
-  let showPaymentMethodModal = false;
+  let paymentMethods = $state([]);
+  let editingMethod = $state(/** @type {any} */ (null));
+  let paymentMethodDraft = $state(createPaymentMethodDraft());
+  let showPaymentMethodModal = $state(false);
 
-  let logoPreview = null;
-  let logoUploading = false;
-  let showDeleteLogoModal = false;
-  let deletingLogo = false;
+  let logoPreview = $state(/** @type {any} */ (null));
+  let logoUploading = $state(false);
+  let showDeleteLogoModal = $state(false);
+  let deletingLogo = $state(false);
 
-  let loadingBackups = false;
-  let backups = [];
-  let creatingBackup = false;
-  let restoringBackup = null;
-  let testingS3 = false;
-  let showRestoreModal = false;
-  let restoreTarget = null;
-  let showDeleteBackupModal = false;
-  let deleteBackupTarget = null;
-  let deletingBackup = false;
+  let loadingBackups = $state(false);
+  let backups = $state([]);
+  let creatingBackup = $state(false);
+  let restoringBackup = $state(/** @type {any} */ (null));
+  let testingS3 = $state(false);
+  let showRestoreModal = $state(false);
+  let restoreTarget = $state(/** @type {any} */ (null));
+  let showDeleteBackupModal = $state(false);
+  let deleteBackupTarget = $state(/** @type {any} */ (null));
+  let deletingBackup = $state(false);
 
-  let testingSmtp = false;
-  let showDeleteMcpModal = false;
-  let deletingMcpKey = false;
-  let showDeleteBotModal = false;
-  let deletingBotKey = false;
-  let generatingMcpKey = false;
-  let generatingBotKey = false;
+  let testingSmtp = $state(false);
+  let showDeleteMcpModal = $state(false);
+  let deletingMcpKey = $state(false);
+  let showDeleteBotModal = $state(false);
+  let deletingBotKey = $state(false);
+  let generatingMcpKey = $state(false);
+  let generatingBotKey = $state(false);
 
-  $: mcpEndpointUrl = apiAccess.appBaseUrl || (typeof window !== 'undefined' ? window.location.origin : '');
+  let mcpEndpointUrl = $derived(apiAccess.appBaseUrl || (typeof window !== 'undefined' ? window.location.origin : ''));
 
   // Deferred-save state. The page has three independent deferred-save forms
   // (business profile incl. payment methods + app URL, SMTP, backup). Each is
@@ -93,25 +93,25 @@
   // dirty forms at once. Immediate actions (logo, API keys) are not tracked.
   // The dirty expressions must reference the form variables directly — Svelte
   // does not trace dependencies through helper-function bodies.
-  let savingAll = false;
-  let profileSnapshot = '';
-  let smtpSnapshot = '';
-  let backupSnapshot = '';
+  let savingAll = $state(false);
+  let profileSnapshot = $state('');
+  let smtpSnapshot = $state('');
+  let backupSnapshot = $state('');
 
   // Online payments, reminders and FX rates.
-  let paymentsForm = {
+  let paymentsForm = $state({
     payments_enabled: false,
     stripe_secret_key_set: false,
     stripe_webhook_secret_set: false,
     webhook_url: null
-  };
+  });
   // Write-only: blank means "keep the stored credential".
-  let stripeSecretKey = '';
-  let stripeWebhookSecret = '';
-  let testingPayments = false;
-  let paymentsSnapshot = '';
+  let stripeSecretKey = $state('');
+  let stripeWebhookSecret = $state('');
+  let testingPayments = $state(false);
+  let paymentsSnapshot = $state('');
 
-  let remindersForm = {
+  let remindersForm = $state({
     reminders_enabled: false,
     reminder_offsets: [-3, 1, 7, 14],
     reminder_subject_template: '',
@@ -122,41 +122,41 @@
     smtp_enabled: false,
     default_subject: '',
     default_body: ''
-  };
-  let runningReminders = false;
-  let remindersSnapshot = '';
+  });
+  let runningReminders = $state(false);
+  let remindersSnapshot = $state('');
 
-  let fxRates = { base_currency_code: 'USD', rates: {} };
-  let fxSnapshot = '';
+  let fxRates = $state({ base_currency_code: 'USD', rates: {} });
+  let fxSnapshot = $state('');
 
   const profileState = () =>
     JSON.stringify({ profileForm, paymentMethods, appBaseUrl: apiAccess.appBaseUrl });
   const smtpState = () => JSON.stringify(smtpForm);
   const backupState = () => JSON.stringify(backupForm);
 
-  $: profileDirty =
-    profileSnapshot !== '' &&
-    JSON.stringify({ profileForm, paymentMethods, appBaseUrl: apiAccess.appBaseUrl }) !== profileSnapshot;
-  $: smtpDirty = smtpSnapshot !== '' && JSON.stringify(smtpForm) !== smtpSnapshot;
-  $: backupDirty = backupSnapshot !== '' && JSON.stringify(backupForm) !== backupSnapshot;
-  $: paymentsDirty =
-    paymentsSnapshot !== '' &&
+  let profileDirty =
+    $derived(profileSnapshot !== '' &&
+    JSON.stringify({ profileForm, paymentMethods, appBaseUrl: apiAccess.appBaseUrl }) !== profileSnapshot);
+  let smtpDirty = $derived(smtpSnapshot !== '' && JSON.stringify(smtpForm) !== smtpSnapshot);
+  let backupDirty = $derived(backupSnapshot !== '' && JSON.stringify(backupForm) !== backupSnapshot);
+  let paymentsDirty =
+    $derived(paymentsSnapshot !== '' &&
     (JSON.stringify(paymentsForm) !== paymentsSnapshot ||
       !!stripeSecretKey ||
-      !!stripeWebhookSecret);
-  $: remindersDirty =
-    remindersSnapshot !== '' && JSON.stringify(remindersForm) !== remindersSnapshot;
-  $: fxDirty = fxSnapshot !== '' && JSON.stringify(fxRates) !== fxSnapshot;
-  $: settingsDirty =
-    profileDirty || smtpDirty || backupDirty || paymentsDirty || remindersDirty || fxDirty;
-  $: dirtySectionLabels = [
+      !!stripeWebhookSecret));
+  let remindersDirty =
+    $derived(remindersSnapshot !== '' && JSON.stringify(remindersForm) !== remindersSnapshot);
+  let fxDirty = $derived(fxSnapshot !== '' && JSON.stringify(fxRates) !== fxSnapshot);
+  let settingsDirty =
+    $derived(profileDirty || smtpDirty || backupDirty || paymentsDirty || remindersDirty || fxDirty);
+  let dirtySectionLabels = $derived([
     profileDirty && 'Business profile',
     smtpDirty && 'Email (SMTP)',
     backupDirty && 'Backup',
     paymentsDirty && 'Online payments',
     remindersDirty && 'Payment reminders',
     fxDirty && 'Exchange rates'
-  ].filter(Boolean);
+  ].filter(Boolean));
 
   beforeNavigate((nav) => {
     if (settingsDirty && !savingAll) {
@@ -793,10 +793,10 @@
           <span class="save-bar-sections">{dirtySectionLabels.join(' · ')}</span>
         </span>
         <div class="save-bar-actions">
-          <button type="button" class="btn btn-secondary" on:click={discardChanges} disabled={savingAll}>
+          <button type="button" class="btn btn-secondary" onclick={discardChanges} disabled={savingAll}>
             Discard
           </button>
-          <button type="button" class="btn btn-primary" on:click={saveAll} disabled={savingAll}>
+          <button type="button" class="btn btn-primary" onclick={saveAll} disabled={savingAll}>
             {#if savingAll}
               <span class="spinner-sm"></span>
               Saving...

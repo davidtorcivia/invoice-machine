@@ -1,12 +1,12 @@
-<script>
+<script lang="ts">
   import CollapsibleSection from '$lib/components/CollapsibleSection.svelte';
   import Icon from '$lib/components/Icons.svelte';
   import ConfirmModal from '$lib/components/ConfirmModal.svelte';
 
   // Regenerating a key immediately invalidates the existing one, breaking every
   // configured integration — confirm first, like the other destructive actions.
-  let showRegenerateMcpModal = false;
-  let showRegenerateBotModal = false;
+  let showRegenerateMcpModal = $state(false);
+  let showRegenerateBotModal = $state(false);
 
   function confirmRegenerateMcp() {
     showRegenerateMcpModal = false;
@@ -18,22 +18,43 @@
     generateBotKey();
   }
 
-  export let mcpOpen = false;
-  export let botOpen = false;
-  export let appBaseUrl = '';
-  export let mcpEndpointUrl = '';
-  export let mcpApiKeyConfigured = false;
-  export let mcpApiKey = '';
-  export let generatingMcpKey = false;
-  export let copyMcpKey;
-  export let openDeleteMcpModal;
-  export let generateMcpKey;
-  export let botApiKeyConfigured = false;
-  export let botApiKey = '';
-  export let generatingBotKey = false;
-  export let copyBotKey;
-  export let openDeleteBotModal;
-  export let generateBotKey;
+  interface Props {
+    mcpOpen?: boolean;
+    botOpen?: boolean;
+    appBaseUrl?: string;
+    mcpEndpointUrl?: string;
+    mcpApiKeyConfigured?: boolean;
+    mcpApiKey?: string;
+    generatingMcpKey?: boolean;
+    copyMcpKey: any;
+    openDeleteMcpModal: any;
+    generateMcpKey: any;
+    botApiKeyConfigured?: boolean;
+    botApiKey?: string;
+    generatingBotKey?: boolean;
+    copyBotKey: any;
+    openDeleteBotModal: any;
+    generateBotKey: any;
+  }
+
+  let {
+    mcpOpen = $bindable(false),
+    botOpen = $bindable(false),
+    appBaseUrl = $bindable(''),
+    mcpEndpointUrl = '',
+    mcpApiKeyConfigured = false,
+    mcpApiKey = '',
+    generatingMcpKey = false,
+    copyMcpKey,
+    openDeleteMcpModal,
+    generateMcpKey,
+    botApiKeyConfigured = false,
+    botApiKey = '',
+    generatingBotKey = false,
+    copyBotKey,
+    openDeleteBotModal,
+    generateBotKey
+  }: Props = $props();
 </script>
 
 <CollapsibleSection title="MCP Integration" subtitle="Claude Desktop remote access" icon="settings" bind:open={mcpOpen}>
@@ -72,7 +93,7 @@
       <label class="label" for="mcp-api-key">API Key</label>
       <div class="mcp-key-row">
         <input id="mcp-api-key" type="password" class="input" value={mcpApiKey || '••••••••••••••••'} readonly />
-        <button type="button" class="btn btn-secondary" on:click={copyMcpKey} disabled={!mcpApiKey}>
+        <button type="button" class="btn btn-secondary" onclick={copyMcpKey} disabled={!mcpApiKey}>
           <Icon name="copy" size="sm" />
           Copy
         </button>
@@ -83,11 +104,11 @@
     </div>
 
     <div class="mcp-actions">
-      <button type="button" class="btn btn-secondary" on:click={() => (showRegenerateMcpModal = true)} disabled={generatingMcpKey}>
+      <button type="button" class="btn btn-secondary" onclick={() => (showRegenerateMcpModal = true)} disabled={generatingMcpKey}>
         <Icon name="refresh" size="sm" />
         Regenerate Key
       </button>
-      <button type="button" class="btn btn-ghost btn-danger-text" on:click={openDeleteMcpModal}>
+      <button type="button" class="btn btn-ghost btn-danger-text" onclick={openDeleteMcpModal}>
         <Icon name="trash" size="sm" />
         Disable Remote Access
       </button>
@@ -103,7 +124,7 @@
       </div>
     </div>
 
-    <button type="button" class="btn btn-primary" on:click={generateMcpKey} disabled={generatingMcpKey}>
+    <button type="button" class="btn btn-primary" onclick={generateMcpKey} disabled={generatingMcpKey}>
       <Icon name="plus" size="sm" />
       {generatingMcpKey ? 'Generating...' : 'Generate API Key'}
     </button>
@@ -159,7 +180,7 @@
       <label class="label" for="bot-api-key">Bot API Key</label>
       <div class="mcp-key-row">
         <input id="bot-api-key" type="password" class="input" value={botApiKey || '••••••••••••••••'} readonly />
-        <button type="button" class="btn btn-secondary" on:click={copyBotKey} disabled={!botApiKey}>
+        <button type="button" class="btn btn-secondary" onclick={copyBotKey} disabled={!botApiKey}>
           <Icon name="copy" size="sm" />
           Copy
         </button>
@@ -170,11 +191,11 @@
     </div>
 
     <div class="mcp-actions">
-      <button type="button" class="btn btn-secondary" on:click={() => (showRegenerateBotModal = true)} disabled={generatingBotKey}>
+      <button type="button" class="btn btn-secondary" onclick={() => (showRegenerateBotModal = true)} disabled={generatingBotKey}>
         <Icon name="refresh" size="sm" />
         Regenerate Key
       </button>
-      <button type="button" class="btn btn-ghost btn-danger-text" on:click={openDeleteBotModal}>
+      <button type="button" class="btn btn-ghost btn-danger-text" onclick={openDeleteBotModal}>
         <Icon name="trash" size="sm" />
         Disable Bot API Access
       </button>
@@ -190,7 +211,7 @@
       </div>
     </div>
 
-    <button type="button" class="btn btn-primary" on:click={generateBotKey} disabled={generatingBotKey}>
+    <button type="button" class="btn btn-primary" onclick={generateBotKey} disabled={generatingBotKey}>
       <Icon name="plus" size="sm" />
       {generatingBotKey ? 'Generating...' : 'Generate Bot API Key'}
     </button>

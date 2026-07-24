@@ -3,8 +3,8 @@
   import { goto } from '$app/navigation';
   import Icon from '$lib/components/Icons.svelte';
 
-  $: status = $page.status;
-  $: message = $page.error?.message;
+  let status = $derived($page.status);
+  let message = $derived($page.error?.message);
 
   // Error configurations based on status code
   const errorConfigs = {
@@ -38,13 +38,13 @@
     }
   };
 
-  $: config = errorConfigs[status] || {
+  let config = $derived(errorConfigs[status] || {
     title: 'Error',
     description: message || 'An unexpected error occurred.',
     icon: 'warning',
     action: 'Go Home',
     actionPath: '/'
-  };
+  });
 
   function handleAction() {
     if (config.actionPath) {
@@ -83,13 +83,13 @@
 
     <!-- Actions -->
     <div class="error-actions">
-      <button class="btn btn-primary" on:click={handleAction}>
+      <button class="btn btn-primary" onclick={handleAction}>
         <Icon name={config.actionPath === '/login' ? 'user' : config.actionPath ? 'home' : 'refresh'} size="sm" />
         {config.action}
       </button>
 
       {#if config.actionPath !== '/'}
-        <button class="btn btn-secondary" on:click={() => goto('/')}>
+        <button class="btn btn-secondary" onclick={() => goto('/')}>
           <Icon name="home" size="sm" />
           Go Home
         </button>

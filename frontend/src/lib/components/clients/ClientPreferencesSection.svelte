@@ -1,8 +1,17 @@
-<script>
-  export let paymentTermsDays = 30;
-  export let preferredCurrency = '';
-  export let notes = '';
-  export let currencies = [];
+<script lang="ts">
+  interface Props {
+    paymentTermsDays?: number;
+    preferredCurrency?: string;
+    notes?: string;
+    currencies?: any;
+  }
+
+  let {
+    paymentTermsDays = $bindable(30),
+    preferredCurrency = $bindable(''),
+    notes = $bindable(''),
+    currencies = []
+  }: Props = $props();
 </script>
 
 <div class="card">

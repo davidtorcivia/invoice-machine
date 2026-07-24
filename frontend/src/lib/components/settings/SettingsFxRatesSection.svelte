@@ -2,16 +2,22 @@
   import CollapsibleSection from '$lib/components/CollapsibleSection.svelte';
   import { currencies } from "$lib/data/currencies";
 
-  /** @type {{ base_currency_code: string, rates: Record<string, string> }} */
-  export let fxRates = { base_currency_code: 'USD', rates: {} };
+  
+  /**
+   * @typedef {Object} Props
+   * @property {{ base_currency_code: string, rates: Record<string, string> }} [fxRates]
+   */
 
-  let newCurrency = 'EUR';
-  let newRate = '';
+  /** @type {Props} */
+  let { fxRates = $bindable({ base_currency_code: 'USD', rates: {} }) } = $props();
 
-  $: entries = Object.entries(fxRates.rates || {}).sort(([a], [b]) => a.localeCompare(b));
-  $: available = (currencies || []).filter(
+  let newCurrency = $state('EUR');
+  let newRate = $state('');
+
+  let entries = $derived(Object.entries(fxRates.rates || {}).sort(([a], [b]) => a.localeCompare(b)));
+  let available = $derived((currencies || []).filter(
     (currency) => currency.code !== fxRates.base_currency_code
-  );
+  ));
 
   function addRate() {
     const rate = parseFloat(newRate);
@@ -54,7 +60,7 @@
           <button
             type="button"
             class="btn-danger-text"
-            on:click={() => removeRate(code)}
+            onclick={() => removeRate(code)}
             aria-label="Remove {code} rate"
           >Remove</button>
         </li>
@@ -81,7 +87,7 @@
       placeholder="1.0850"
     />
 
-    <button type="button" class="btn btn-secondary btn-sm" on:click={addRate}>Add</button>
+    <button type="button" class="btn btn-secondary btn-sm" onclick={addRate}>Add</button>
   </div>
 </CollapsibleSection>
 

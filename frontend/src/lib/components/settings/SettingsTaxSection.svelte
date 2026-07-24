@@ -1,10 +1,19 @@
-<script>
+<script lang="ts">
   import CollapsibleSection from '$lib/components/CollapsibleSection.svelte';
 
-  export let open = false;
-  export let defaultTaxEnabled = false;
-  export let defaultTaxName = 'Tax';
-  export let defaultTaxRate = '';
+  interface Props {
+    open?: boolean;
+    defaultTaxEnabled?: boolean;
+    defaultTaxName?: string;
+    defaultTaxRate?: string;
+  }
+
+  let {
+    open = $bindable(false),
+    defaultTaxEnabled = $bindable(false),
+    defaultTaxName = $bindable('Tax'),
+    defaultTaxRate = $bindable('')
+  }: Props = $props();
 </script>
 
 <CollapsibleSection title="Tax Settings" subtitle="Default tax configuration" icon="invoice" bind:open={open}>

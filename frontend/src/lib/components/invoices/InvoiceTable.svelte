@@ -1,15 +1,29 @@
-<script>
+<script lang="ts">
+  import { createBubbler, stopPropagation } from 'svelte/legacy';
+
+  const bubble = createBubbler();
   import { createEventDispatcher } from 'svelte';
   import Icon from '$lib/components/Icons.svelte';
   import { formatDate, formatCurrency } from '$lib/stores';
   import { getEffectiveStatus, isOverdue } from '$lib/invoices/list';
 
-  export let invoices = [];
-  export let selectedIds = new Set();
-  export let allSelected = false;
-  export let sortBy = 'issue_date';
-  export let sortDir = 'desc';
-  export let statusConfig = {};
+  interface Props {
+    invoices?: any;
+    selectedIds?: any;
+    allSelected?: boolean;
+    sortBy?: string;
+    sortDir?: string;
+    statusConfig?: any;
+  }
+
+  let {
+    invoices = [],
+    selectedIds = new Set(),
+    allSelected = false,
+    sortBy = 'issue_date',
+    sortDir = 'desc',
+    statusConfig = {}
+  }: Props = $props();
 
   const dispatch = createEventDispatcher();
 </script>
@@ -19,10 +33,10 @@
     <thead>
       <tr>
         <th class="checkbox-col">
-          <input type="checkbox" checked={allSelected} on:change={() => dispatch('toggleselectall')} aria-label="Select all invoices" />
+          <input type="checkbox" checked={allSelected} onchange={() => dispatch('toggleselectall')} aria-label="Select all invoices" />
         </th>
         <th>
-          <button class="sortable-header" class:active={sortBy === 'invoice_number'} on:click={() => dispatch('sort', 'invoice_number')}>
+          <button class="sortable-header" class:active={sortBy === 'invoice_number'} onclick={() => dispatch('sort', 'invoice_number')}>
             Invoice
             {#if sortBy === 'invoice_number'}
               <Icon name={sortDir === 'asc' ? 'chevronUp' : 'chevronDown'} size="xs" />
@@ -30,7 +44,7 @@
           </button>
         </th>
         <th>
-          <button class="sortable-header" class:active={sortBy === 'client'} on:click={() => dispatch('sort', 'client')}>
+          <button class="sortable-header" class:active={sortBy === 'client'} onclick={() => dispatch('sort', 'client')}>
             Client
             {#if sortBy === 'client'}
               <Icon name={sortDir === 'asc' ? 'chevronUp' : 'chevronDown'} size="xs" />
@@ -39,7 +53,7 @@
         </th>
         <th>Line Items</th>
         <th>
-          <button class="sortable-header" class:active={sortBy === 'issue_date'} on:click={() => dispatch('sort', 'issue_date')}>
+          <button class="sortable-header" class:active={sortBy === 'issue_date'} onclick={() => dispatch('sort', 'issue_date')}>
             Date
             {#if sortBy === 'issue_date'}
               <Icon name={sortDir === 'asc' ? 'chevronUp' : 'chevronDown'} size="xs" />
@@ -47,7 +61,7 @@
           </button>
         </th>
         <th>
-          <button class="sortable-header" class:active={sortBy === 'due_date'} on:click={() => dispatch('sort', 'due_date')}>
+          <button class="sortable-header" class:active={sortBy === 'due_date'} onclick={() => dispatch('sort', 'due_date')}>
             Due Date
             {#if sortBy === 'due_date'}
               <Icon name={sortDir === 'asc' ? 'chevronUp' : 'chevronDown'} size="xs" />
@@ -55,7 +69,7 @@
           </button>
         </th>
         <th>
-          <button class="sortable-header" class:active={sortBy === 'status'} on:click={() => dispatch('sort', 'status')}>
+          <button class="sortable-header" class:active={sortBy === 'status'} onclick={() => dispatch('sort', 'status')}>
             Status
             {#if sortBy === 'status'}
               <Icon name={sortDir === 'asc' ? 'chevronUp' : 'chevronDown'} size="xs" />
@@ -63,7 +77,7 @@
           </button>
         </th>
         <th class="text-right">
-          <button class="sortable-header justify-end" class:active={sortBy === 'total'} on:click={() => dispatch('sort', 'total')}>
+          <button class="sortable-header justify-end" class:active={sortBy === 'total'} onclick={() => dispatch('sort', 'total')}>
             Total
             {#if sortBy === 'total'}
               <Icon name={sortDir === 'asc' ? 'chevronUp' : 'chevronDown'} size="xs" />
@@ -78,16 +92,16 @@
         {@const effectiveStatus = getEffectiveStatus(invoice)}
         {@const overdue = isOverdue(invoice)}
         <tr
-          on:click={() => dispatch('navigate', invoice.id)}
+          onclick={() => dispatch('navigate', invoice.id)}
           class="clickable-row"
           class:row-overdue={overdue}
           class:row-selected={selectedIds.has(invoice.id)}
         >
-          <td class="checkbox-col" on:click|stopPropagation>
+          <td class="checkbox-col" onclick={stopPropagation(bubble('click'))}>
             <input
               type="checkbox"
               checked={selectedIds.has(invoice.id)}
-              on:change={() => dispatch('toggleselect', invoice.id)}
+              onchange={() => dispatch('toggleselect', invoice.id)}
               aria-label="Select invoice {invoice.invoice_number}"
             />
           </td>
@@ -95,7 +109,7 @@
             <a
               class="invoice-number font-mono row-link"
               href={`/invoices/${invoice.id}`}
-              on:click|stopPropagation
+              onclick={stopPropagation(bubble('click'))}
             >#{invoice.invoice_number}</a>
           </td>
           <td><span class="client-name">{invoice.client_business || invoice.client_name || '---'}</span></td>
@@ -124,11 +138,11 @@
           <td class="actions-col">
             <div class="action-buttons">
               {#if invoice.document_type !== 'quote' && (invoice.status === 'sent' || invoice.status === 'overdue')}
-                <button class="btn btn-ghost btn-icon btn-sm" on:click={(event) => { event.stopPropagation(); dispatch('markpaid', invoice.id); }} title="Mark as paid">
+                <button class="btn btn-ghost btn-icon btn-sm" onclick={(event) => { event.stopPropagation(); dispatch('markpaid', invoice.id); }} title="Mark as paid">
                   <Icon name="check" size="sm" />
                 </button>
               {/if}
-              <button class="btn btn-ghost btn-icon btn-sm" on:click={(event) => { event.stopPropagation(); dispatch('delete', invoice); }} title="Delete">
+              <button class="btn btn-ghost btn-icon btn-sm" onclick={(event) => { event.stopPropagation(); dispatch('delete', invoice); }} title="Delete">
                 <Icon name="trash" size="sm" />
               </button>
             </div>

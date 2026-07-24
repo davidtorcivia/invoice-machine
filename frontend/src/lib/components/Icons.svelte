@@ -4,12 +4,18 @@
    * Clean, consistent icons
    */
 
-  /** @type {string} */
-  export let name = 'home';
-  /** @type {'sm' | 'md' | 'lg' | 'xl' | string} */
-  export let size = 'md';
-  /** @type {string} */
-  export let class_ = '';
+  
+  
+  
+  /**
+   * @typedef {Object} Props
+   * @property {string} [name]
+   * @property {'sm' | 'md' | 'lg' | 'xl' | string} [size]
+   * @property {string} [class_]
+   */
+
+  /** @type {Props} */
+  let { name = 'home', size = 'md', class_ = '' } = $props();
 
   const sizes = {
     sm: '14px',
@@ -69,7 +75,7 @@
     pause: 'M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z',
   };
 
-  $: iconSize = sizes[size] || sizes.md;
+  let iconSize = $derived(sizes[size] || sizes.md);
 </script>
 
 <svg

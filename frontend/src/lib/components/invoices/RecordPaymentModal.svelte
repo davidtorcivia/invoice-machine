@@ -1,11 +1,24 @@
 <script>
+  import { self, preventDefault } from 'svelte/legacy';
+
   import { createEventDispatcher, onMount } from 'svelte';
   import { formatCurrency } from '$lib/stores';
 
-  export let open = false;
-  export let currencyCode = 'USD';
-  export let amountDue = '0';
-  export let saving = false;
+  /**
+   * @typedef {Object} Props
+   * @property {boolean} [open]
+   * @property {string} [currencyCode]
+   * @property {string} [amountDue]
+   * @property {boolean} [saving]
+   */
+
+  /** @type {Props} */
+  let {
+    open = false,
+    currencyCode = 'USD',
+    amountDue = '0',
+    saving = false
+  } = $props();
 
   const dispatch = createEventDispatcher();
 
@@ -19,19 +32,19 @@
     { value: 'other', label: 'Other' }
   ];
 
-  let amount = '';
-  let paymentDate = new Date().toISOString().slice(0, 10);
-  let method = 'bank_transfer';
-  let reference = '';
-  let notes = '';
-  let allowOverpayment = false;
-  let error = '';
+  let amount = $state('');
+  let paymentDate = $state(new Date().toISOString().slice(0, 10));
+  let method = $state('bank_transfer');
+  let reference = $state('');
+  let notes = $state('');
+  let allowOverpayment = $state(false);
+  let error = $state('');
   /** @type {HTMLInputElement | undefined} */
-  let amountInput;
+  let amountInput = $state();
 
-  $: dueNum = parseFloat(amountDue) || 0;
-  $: amountNum = parseFloat(amount) || 0;
-  $: exceedsBalance = amountNum > dueNum;
+  let dueNum = $derived(parseFloat(amountDue) || 0);
+  let amountNum = $derived(parseFloat(amount) || 0);
+  let exceedsBalance = $derived(amountNum > dueNum);
 
   onMount(() => {
     amount = dueNum > 0 ? dueNum.toFixed(2) : '';
@@ -64,14 +77,14 @@
   }
 </script>
 
-<svelte:window on:keydown={onKeydown} />
+<svelte:window onkeydown={onKeydown} />
 
 {#if open}
-  <!-- svelte-ignore a11y-no-noninteractive-element-interactions -->
+  <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
   <div
     class="modal-backdrop"
     role="presentation"
-    on:click|self={() => dispatch('cancel')}
+    onclick={self(() => dispatch('cancel'))}
   >
     <div class="modal" role="dialog" aria-modal="true" aria-labelledby="record-payment-title">
       <div class="modal-header">
@@ -79,12 +92,12 @@
         <button
           type="button"
           class="modal-close"
-          on:click={() => dispatch('cancel')}
+          onclick={() => dispatch('cancel')}
           aria-label="Close"
         >&times;</button>
       </div>
 
-      <form on:submit|preventDefault={submit}>
+      <form onsubmit={preventDefault(submit)}>
         <div class="modal-body">
           <p class="due-hint">
             Balance due: <strong>{formatCurrency(amountDue, currencyCode)}</strong>
@@ -156,7 +169,7 @@
         </div>
 
         <div class="modal-footer">
-          <button type="button" class="btn btn-secondary" on:click={() => dispatch('cancel')}>
+          <button type="button" class="btn btn-secondary" onclick={() => dispatch('cancel')}>
             Cancel
           </button>
           <button type="submit" class="btn btn-primary" disabled={saving}>

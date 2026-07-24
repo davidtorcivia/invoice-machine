@@ -1,14 +1,14 @@
-<script>
+<script lang="ts">
   import Icon from '$lib/components/Icons.svelte';
   import { formatCurrency } from '$lib/stores';
 
-  export let stats = {
+  let { stats = {
     totalOutstanding: 0,
     paidThisMonth: 0,
     draftCount: 0,
     clientCount: 0,
     currency: 'USD'
-  };
+  } } = $props();
 
   const cards = [
     { key: 'totalOutstanding', label: 'Outstanding', icon: 'dollar', tone: 'outstanding', money: true },

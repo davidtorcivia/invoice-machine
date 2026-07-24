@@ -1,4 +1,4 @@
-<script>
+<script lang="ts">
   import { createEventDispatcher } from 'svelte';
   import Icon from '$lib/components/Icons.svelte';
   import InvoiceLineItemsCard from '$lib/components/invoices/InvoiceLineItemsCard.svelte';
@@ -8,14 +8,27 @@
   import { currencies } from '$lib/data/currencies';
   import { monthOptions, quarterMonthOptions, weekdayOptions } from '$lib/recurring/form';
 
-  export let show = false;
-  export let editingSchedule = null;
-  export let formData;
-  export let clients = [];
-  export let availablePaymentMethods = [];
-  export let defaultNotesText = '';
-  export let smtpEnabled = false;
-  export let saving = false;
+  interface Props {
+    show?: boolean;
+    editingSchedule?: any;
+    formData: any;
+    clients?: any;
+    availablePaymentMethods?: any;
+    defaultNotesText?: string;
+    smtpEnabled?: boolean;
+    saving?: boolean;
+  }
+
+  let {
+    show = false,
+    editingSchedule = null,
+    formData = $bindable(),
+    clients = [],
+    availablePaymentMethods = [],
+    defaultNotesText = '',
+    smtpEnabled = false,
+    saving = false
+  }: Props = $props();
 
   const dispatch = createEventDispatcher();
 
@@ -35,12 +48,12 @@
 </script>
 
 {#if show}
-  <div class="modal-overlay" role="presentation" tabindex="-1" on:keydown={handleModalKeydown}>
-    <button type="button" class="modal-backdrop" aria-label="Close recurring schedule dialog" on:click={closeModal}></button>
+  <div class="modal-overlay" role="presentation" tabindex="-1" onkeydown={handleModalKeydown}>
+    <button type="button" class="modal-backdrop" aria-label="Close recurring schedule dialog" onclick={closeModal}></button>
     <div class="modal" role="dialog" aria-modal="true" tabindex="-1">
       <div class="modal-header">
         <h2>{editingSchedule ? 'Edit Schedule' : 'New Recurring Schedule'}</h2>
-        <button class="btn btn-ghost btn-icon" aria-label="Close" on:click={closeModal}>
+        <button class="btn btn-ghost btn-icon" aria-label="Close" onclick={closeModal}>
           <Icon name="x" size="md" />
         </button>
       </div>
@@ -189,9 +202,9 @@
 
         <InvoiceLineItemsCard
           bind:items={formData.line_items}
-          bind:taxEnabled={formData.tax_enabled}
-          bind:taxRate={formData.tax_rate}
-          bind:taxName={formData.tax_name}
+          taxEnabled={formData.tax_enabled}
+          taxRate={formData.tax_rate}
+          taxName={formData.tax_name}
           currencyCode={formData.currency_code}
           addButtonText="Add Line Item"
         />
@@ -260,8 +273,8 @@
       </div>
 
       <div class="modal-footer">
-        <button class="btn btn-ghost" on:click={closeModal}>Cancel</button>
-        <button class="btn btn-primary" on:click={saveSchedule} disabled={saving}>
+        <button class="btn btn-ghost" onclick={closeModal}>Cancel</button>
+        <button class="btn btn-primary" onclick={saveSchedule} disabled={saving}>
           {saving ? 'Saving...' : (editingSchedule ? 'Save Changes' : 'Create Schedule')}
         </button>
       </div>

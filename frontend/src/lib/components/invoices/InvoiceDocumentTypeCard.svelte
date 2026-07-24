@@ -1,5 +1,9 @@
-<script>
-  export let isQuote = false;
+<script lang="ts">
+  interface Props {
+    isQuote?: boolean;
+  }
+
+  let { isQuote = $bindable(false) }: Props = $props();
 </script>
 
 <div class="card">

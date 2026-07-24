@@ -2,18 +2,30 @@
   import Icon from '$lib/components/Icons.svelte';
   import { getBarWidth } from '$lib/reports/format';
 
-  /** @type {{ breakdown?: Array<{ period: string, invoiced: string | number, paid: string | number, invoiced_formatted: string, paid_formatted: string }> } | null} */
-  export let revenueData = null;
-  export let year = new Date().getFullYear();
-  export let groupBy = 'month';
-  export let changeYear;
-  export let changeGroupBy;
+  
+  /**
+   * @typedef {Object} Props
+   * @property {{ breakdown?: Array<{ period: string, invoiced: string | number, paid: string | number, invoiced_formatted: string, paid_formatted: string }> } | null} [revenueData]
+   * @property {any} [year]
+   * @property {string} [groupBy]
+   * @property {any} changeYear
+   * @property {any} changeGroupBy
+   */
+
+  /** @type {Props} */
+  let {
+    revenueData = null,
+    year = new Date().getFullYear(),
+    groupBy = 'month',
+    changeYear,
+    changeGroupBy
+  } = $props();
 
   /** @type {Array<{ period: string, invoiced: string | number, paid: string | number, invoiced_formatted: string, paid_formatted: string }>} */
-  $: breakdown = revenueData?.breakdown || [];
-  $: maxInvoiced = breakdown.length
+  let breakdown = $derived(revenueData?.breakdown || []);
+  let maxInvoiced = $derived(breakdown.length
     ? Math.max(...breakdown.map((period) => Number(period.invoiced)))
-    : 0;
+    : 0);
 </script>
 
 <div class="card">
@@ -21,18 +33,18 @@
     <h3 class="card-title">Revenue by Period</h3>
     <div class="card-controls">
       <div class="year-nav">
-        <button class="btn btn-ghost btn-sm" on:click={() => changeYear(-1)}>
+        <button class="btn btn-ghost btn-sm" onclick={() => changeYear(-1)}>
           <Icon name="chevronLeft" size="sm" />
         </button>
         <span class="year-label">{year}</span>
-        <button class="btn btn-ghost btn-sm" on:click={() => changeYear(1)} disabled={year >= new Date().getFullYear()}>
+        <button class="btn btn-ghost btn-sm" onclick={() => changeYear(1)} disabled={year >= new Date().getFullYear()}>
           <Icon name="chevronRight" size="sm" />
         </button>
       </div>
 
       <div class="group-tabs">
-        <button class="tab" class:active={groupBy === 'month'} on:click={() => changeGroupBy('month')}>Monthly</button>
-        <button class="tab" class:active={groupBy === 'quarter'} on:click={() => changeGroupBy('quarter')}>Quarterly</button>
+        <button class="tab" class:active={groupBy === 'month'} onclick={() => changeGroupBy('month')}>Monthly</button>
+        <button class="tab" class:active={groupBy === 'quarter'} onclick={() => changeGroupBy('quarter')}>Quarterly</button>
       </div>
     </div>
   </div>

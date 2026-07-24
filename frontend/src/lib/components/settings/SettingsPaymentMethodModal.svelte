@@ -1,12 +1,23 @@
-<script>
+<script lang="ts">
   import Icon from '$lib/components/Icons.svelte';
 
-  export let show = false;
-  export let editingMethod = null;
-  export let newMethodName = '';
-  export let newMethodInstructions = '';
-  export let closePaymentMethodModal;
-  export let savePaymentMethod;
+  interface Props {
+    show?: boolean;
+    editingMethod?: any;
+    newMethodName?: string;
+    newMethodInstructions?: string;
+    closePaymentMethodModal: any;
+    savePaymentMethod: any;
+  }
+
+  let {
+    show = false,
+    editingMethod = null,
+    newMethodName = $bindable(''),
+    newMethodInstructions = $bindable(''),
+    closePaymentMethodModal,
+    savePaymentMethod
+  }: Props = $props();
 
   function handleModalKeydown(event) {
     if (event.key === 'Escape') {
@@ -16,12 +27,12 @@
 </script>
 
 {#if show}
-  <div class="modal-overlay" role="presentation" tabindex="-1" on:keydown={handleModalKeydown}>
-    <button type="button" class="modal-backdrop" aria-label="Close payment method dialog" on:click={closePaymentMethodModal}></button>
+  <div class="modal-overlay" role="presentation" tabindex="-1" onkeydown={handleModalKeydown}>
+    <button type="button" class="modal-backdrop" aria-label="Close payment method dialog" onclick={closePaymentMethodModal}></button>
     <div class="modal" role="dialog" aria-modal="true" tabindex="-1">
       <div class="modal-header">
         <h2 class="modal-title">{editingMethod ? 'Edit Payment Method' : 'Add Payment Method'}</h2>
-        <button class="btn btn-ghost btn-icon btn-sm" aria-label="Close" on:click={closePaymentMethodModal}>
+        <button class="btn btn-ghost btn-icon btn-sm" aria-label="Close" onclick={closePaymentMethodModal}>
           <Icon name="x" size="md" />
         </button>
       </div>
@@ -48,8 +59,8 @@
         </div>
       </div>
       <div class="modal-footer">
-        <button class="btn btn-secondary" on:click={closePaymentMethodModal}>Cancel</button>
-        <button class="btn btn-primary" on:click={savePaymentMethod}>
+        <button class="btn btn-secondary" onclick={closePaymentMethodModal}>Cancel</button>
+        <button class="btn btn-primary" onclick={savePaymentMethod}>
           {editingMethod ? 'Save Changes' : 'Add Method'}
         </button>
       </div>

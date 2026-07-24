@@ -2,8 +2,15 @@
   import { createEventDispatcher } from 'svelte';
   import CollapsibleSection from '$lib/components/CollapsibleSection.svelte';
 
-  /** @type {{ reminders_enabled: boolean, reminder_offsets: number[], reminder_subject_template: string|null, reminder_body_template: string|null, smtp_enabled: boolean, business_timezone?: string, reminder_send_hour?: number, local_time?: string|null, default_subject?: string, default_body?: string }} */
-  export let settings = {
+  
+  /**
+   * @typedef {Object} Props
+   * @property {{ reminders_enabled: boolean, reminder_offsets: number[], reminder_subject_template: string|null, reminder_body_template: string|null, smtp_enabled: boolean, business_timezone?: string, reminder_send_hour?: number, local_time?: string|null, default_subject?: string, default_body?: string }} [settings]
+   * @property {boolean} [running]
+   */
+
+  /** @type {Props} */
+  let { settings = $bindable({
     reminders_enabled: false,
     reminder_offsets: [-3, 1, 7, 14],
     reminder_subject_template: null,
@@ -11,12 +18,11 @@
     smtp_enabled: false,
     business_timezone: 'UTC',
     reminder_send_hour: 9
-  };
-  export let running = false;
+  }), running = false } = $props();
 
   const dispatch = createEventDispatcher();
 
-  let newOffset = '';
+  let newOffset = $state('');
 
   // Whatever the host platform knows about, so the list stays current without
   // shipping a hardcoded copy of the tz database.
@@ -24,7 +30,7 @@
     typeof Intl.supportedValuesOf === 'function' ? Intl.supportedValuesOf('timeZone') : ['UTC'];
   const browserZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
-  $: hours = Array.from({ length: 24 }, (_, hour) => hour);
+  let hours = $derived(Array.from({ length: 24 }, (_, hour) => hour));
 
   function formatHour(hour) {
     const suffix = hour < 12 ? 'am' : 'pm';
@@ -32,7 +38,7 @@
     return `${display}:00 ${suffix}`;
   }
 
-  $: offsets = [...(settings.reminder_offsets || [])].sort((a, b) => a - b);
+  let offsets = $derived([...(settings.reminder_offsets || [])].sort((a, b) => a - b));
 
   function describeOffset(offset) {
     if (offset < 0) return `${Math.abs(offset)} days before due`;
@@ -120,7 +126,7 @@
             <button
               type="button"
               class="btn-danger-text"
-              on:click={() => removeOffset(offset)}
+              onclick={() => removeOffset(offset)}
               aria-label="Remove reminder {describeOffset(offset)}"
             >Remove</button>
           </li>
@@ -138,9 +144,9 @@
         min="-365"
         max="365"
         placeholder="e.g. 7"
-        on:keydown={(event) => event.key === 'Enter' && (event.preventDefault(), addOffset())}
+        onkeydown={(event) => event.key === 'Enter' && (event.preventDefault(), addOffset())}
       />
-      <button type="button" class="btn btn-secondary btn-sm" on:click={addOffset}>Add</button>
+      <button type="button" class="btn btn-secondary btn-sm" onclick={addOffset}>Add</button>
     </div>
     <p class="hint">
       Negative numbers are days before the due date, positive are days after.
@@ -179,7 +185,7 @@
   <button
     type="button"
     class="btn btn-secondary btn-sm"
-    on:click={() => dispatch('runnow')}
+    onclick={() => dispatch('runnow')}
     disabled={running || !settings.reminders_enabled}
   >
     {running ? 'Sending...' : 'Send due reminders now'}

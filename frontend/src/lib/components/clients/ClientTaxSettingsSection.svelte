@@ -1,8 +1,17 @@
-<script>
-  export let taxOverride = false;
-  export let taxEnabled = false;
-  export let taxRate = '';
-  export let taxName = 'Tax';
+<script lang="ts">
+  interface Props {
+    taxOverride?: boolean;
+    taxEnabled?: boolean;
+    taxRate?: string;
+    taxName?: string;
+  }
+
+  let {
+    taxOverride = $bindable(false),
+    taxEnabled = $bindable(false),
+    taxRate = $bindable(''),
+    taxName = $bindable('Tax')
+  }: Props = $props();
 </script>
 
 <div class="card">

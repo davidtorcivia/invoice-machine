@@ -25,7 +25,7 @@
         <span class="toast-message">{t.message}</span>
         <button
           class="toast-close"
-          on:click={() => toast.dismiss(t.id)}
+          onclick={() => toast.dismiss(t.id)}
           aria-label="Close"
         >
           <Icon name="x" size="sm" />

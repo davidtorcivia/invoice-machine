@@ -1,4 +1,6 @@
 <script>
+  import { run } from 'svelte/legacy';
+
   import { page } from '$app/stores';
   import { goto } from '$app/navigation';
   import { invoicesApi, emailApi, paymentsApi } from '$lib/api';
@@ -14,33 +16,29 @@
   import RecordPaymentModal from '$lib/components/invoices/RecordPaymentModal.svelte';
   import SendInvoiceEmailModal from '$lib/components/invoices/SendInvoiceEmailModal.svelte';
 
-  $: invoiceId = $page.params.id || '';
 
-  let invoice = null;
-  let items = [];
-  let loading = true;
+  let invoice = $state(/** @type {any} */ (null));
+  let items = $state([]);
+  let loading = $state(true);
   let loadError = false;
-  let generatingPdf = false;
-  let showDeleteModal = false;
-  let deleting = false;
-  let showConvertModal = false;
-  let converting = false;
-  let showSendEmailModal = false;
-  let emailLoading = false;
-  let emailSending = false;
-  let emailRecipient = '';
-  let emailSubject = '';
-  let emailBody = '';
-  let payments = [];
-  let showRecordPaymentModal = false;
-  let savingPayment = false;
-  let paymentsBusy = false;
-  let deletePaymentTarget = null;
-  let creatingPaymentLink = false;
+  let generatingPdf = $state(false);
+  let showDeleteModal = $state(false);
+  let deleting = $state(false);
+  let showConvertModal = $state(false);
+  let converting = $state(false);
+  let showSendEmailModal = $state(false);
+  let emailLoading = $state(false);
+  let emailSending = $state(false);
+  let emailRecipient = $state('');
+  let emailSubject = $state('');
+  let emailBody = $state('');
+  let payments = $state([]);
+  let showRecordPaymentModal = $state(false);
+  let savingPayment = $state(false);
+  let paymentsBusy = $state(false);
+  let deletePaymentTarget = $state(/** @type {any} */ (null));
+  let creatingPaymentLink = $state(false);
 
-  $: if (invoiceId) loadInvoice();
-  $: isQuote = invoice?.document_type === 'quote';
-  $: documentLabel = isQuote ? 'Quote' : 'Invoice';
 
   async function loadInvoice() {
     loading = true;
@@ -246,6 +244,12 @@
       emailSending = false;
     }
   }
+  let invoiceId = $derived($page.params.id || '');
+  run(() => {
+    if (invoiceId) loadInvoice();
+  });
+  let isQuote = $derived(invoice?.document_type === 'quote');
+  let documentLabel = $derived(isQuote ? 'Quote' : 'Invoice');
 </script>
 
 <Header title={invoice ? `${documentLabel} #${invoice.invoice_number}` : 'Invoice'} />
@@ -317,13 +321,13 @@
                     rel="noopener noreferrer"
                     class="btn btn-secondary btn-sm"
                   >Open</a>
-                  <button type="button" class="btn btn-secondary btn-sm" on:click={copyPaymentLink}>
+                  <button type="button" class="btn btn-secondary btn-sm" onclick={copyPaymentLink}>
                     Copy link
                   </button>
                   <button
                     type="button"
                     class="btn btn-secondary btn-sm"
-                    on:click={createPaymentLink}
+                    onclick={createPaymentLink}
                     disabled={creatingPaymentLink}
                   >
                     {creatingPaymentLink ? 'Refreshing...' : 'Refresh'}
@@ -337,7 +341,7 @@
                 <button
                   type="button"
                   class="btn btn-secondary btn-sm"
-                  on:click={createPaymentLink}
+                  onclick={createPaymentLink}
                   disabled={creatingPaymentLink || parseFloat(invoice.amount_due) <= 0}
                 >
                   {creatingPaymentLink ? 'Creating...' : 'Create payment link'}
@@ -373,8 +377,8 @@
       <p class="error-title">This {documentLabel.toLowerCase()} could not be loaded.</p>
       <p class="error-hint">It may have been deleted, or the connection failed.</p>
       <div class="error-actions">
-        <button class="btn btn-secondary" on:click={loadInvoice}>Retry</button>
-        <button class="btn btn-primary" on:click={() => goto('/invoices')}>Back to Invoices</button>
+        <button class="btn btn-secondary" onclick={loadInvoice}>Retry</button>
+        <button class="btn btn-primary" onclick={() => goto('/invoices')}>Back to Invoices</button>
       </div>
     </div>
   {/if}

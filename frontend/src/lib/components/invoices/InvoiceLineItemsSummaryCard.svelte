@@ -1,8 +1,7 @@
-<script>
+<script lang="ts">
   import { formatCurrency } from '$lib/stores';
 
-  export let invoice = {};
-  export let items = [];
+  let { invoice = {}, items = [] } = $props();
 </script>
 
 <div class="card">

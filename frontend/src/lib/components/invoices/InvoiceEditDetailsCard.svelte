@@ -1,15 +1,29 @@
-<script>
+<script lang="ts">
+  import { run } from 'svelte/legacy';
+
   import { getNormalizedStatus } from '$lib/invoices/list';
 
-  export let invoice = {};
-  export let documentType = 'invoice';
-  export let issueDate = '';
-  export let dueDate = '';
-  export let paymentTermsDays = 30;
-  export let status = 'draft';
-  export let clientReference = '';
+  interface Props {
+    invoice?: any;
+    documentType?: string;
+    issueDate?: string;
+    dueDate?: string;
+    paymentTermsDays?: number;
+    status?: string;
+    clientReference?: string;
+  }
 
-  $: statusOptions = documentType === 'quote'
+  let {
+    invoice = {},
+    documentType = 'invoice',
+    issueDate = $bindable(''),
+    dueDate = $bindable(''),
+    paymentTermsDays = $bindable(30),
+    status = $bindable('draft'),
+    clientReference = $bindable('')
+  }: Props = $props();
+
+  let statusOptions = $derived(documentType === 'quote'
     ? [
         { value: 'draft', label: 'Draft' },
         { value: 'sent', label: 'Sent' },
@@ -21,13 +35,15 @@
         { value: 'paid', label: 'Paid' },
         { value: 'overdue', label: 'Overdue' },
         { value: 'cancelled', label: 'Cancelled' }
-      ];
+      ]);
 
-  $: if (documentType === 'quote' && ['paid', 'overdue'].includes(status)) {
-    status = getNormalizedStatus({ status, document_type: documentType });
-  } else if (!statusOptions.some((option) => option.value === status)) {
-    status = 'draft';
-  }
+  run(() => {
+    if (documentType === 'quote' && ['paid', 'overdue'].includes(status)) {
+      status = getNormalizedStatus({ status, document_type: documentType });
+    } else if (!statusOptions.some((option) => option.value === status)) {
+      status = 'draft';
+    }
+  });
 </script>
 
 <div class="card">

@@ -1,11 +1,11 @@
-<script>
+<script lang="ts">
   import { getBarWidth } from '$lib/reports/format';
 
-  export let clientData = [];
+  let { clientData = [] } = $props();
 
-  $: maxPaid = clientData.length
+  let maxPaid = $derived(clientData.length
     ? Math.max(...clientData.map((client) => parseFloat(client.total_paid)))
-    : 0;
+    : 0);
 </script>
 
 <div class="card">

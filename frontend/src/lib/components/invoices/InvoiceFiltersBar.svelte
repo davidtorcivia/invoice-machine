@@ -2,19 +2,37 @@
   import { createEventDispatcher } from 'svelte';
   import Icon from '$lib/components/Icons.svelte';
 
-  export let clients = [];
-  export let sortOptions = [];
-  export let yearOptions = [];
-  export let selectedSortOption = '';
-  export let filterStatus = '';
-  /** @type {string|number} */
-  export let filterClient = '';
-  export let filterDocumentType = '';
-  /** @type {string|number} */
-  export let filterYear = '';
-  export let filterFromDate = '';
-  export let filterToDate = '';
-  export let hasFilters = false;
+  
+  
+  /**
+   * @typedef {Object} Props
+   * @property {any} [clients]
+   * @property {any} [sortOptions]
+   * @property {any} [yearOptions]
+   * @property {string} [selectedSortOption]
+   * @property {string} [filterStatus]
+   * @property {string|number} [filterClient]
+   * @property {string} [filterDocumentType]
+   * @property {string|number} [filterYear]
+   * @property {string} [filterFromDate]
+   * @property {string} [filterToDate]
+   * @property {boolean} [hasFilters]
+   */
+
+  /** @type {Props} */
+  let {
+    clients = [],
+    sortOptions = [],
+    yearOptions = [],
+    selectedSortOption = '',
+    filterStatus = $bindable(''),
+    filterClient = $bindable(''),
+    filterDocumentType = $bindable(''),
+    filterYear = $bindable(''),
+    filterFromDate = $bindable(''),
+    filterToDate = $bindable(''),
+    hasFilters = false
+  } = $props();
 
   const dispatch = createEventDispatcher();
 
@@ -27,7 +45,7 @@
   <div class="filters-row">
     <div class="filter-group">
       <label for="status-filter" class="filter-label">Status</label>
-      <select id="status-filter" class="select" bind:value={filterStatus} on:change={() => dispatch('filterchange')}>
+      <select id="status-filter" class="select" bind:value={filterStatus} onchange={() => dispatch('filterchange')}>
         <option value="">All Statuses</option>
         <option value="draft">Draft</option>
         <option value="sent">Sent</option>
@@ -39,7 +57,7 @@
 
     <div class="filter-group">
       <label for="type-filter" class="filter-label">Type</label>
-      <select id="type-filter" class="select" bind:value={filterDocumentType} on:change={() => dispatch('filterchange')}>
+      <select id="type-filter" class="select" bind:value={filterDocumentType} onchange={() => dispatch('filterchange')}>
         <option value="">All Types</option>
         <option value="invoice">Invoices</option>
         <option value="quote">Quotes</option>
@@ -48,7 +66,7 @@
 
     <div class="filter-group">
       <label for="client-filter" class="filter-label">Client</label>
-      <select id="client-filter" class="select" bind:value={filterClient} on:change={() => dispatch('filterchange')}>
+      <select id="client-filter" class="select" bind:value={filterClient} onchange={() => dispatch('filterchange')}>
         <option value="">All Clients</option>
         {#each clients as client}
           <option value={client.id}>{client.business_name || client.name}</option>
@@ -58,7 +76,7 @@
 
     <div class="filter-group">
       <label for="year-filter" class="filter-label">Year</label>
-      <select id="year-filter" class="select" bind:value={filterYear} on:change={() => dispatch('yearchange')}>
+      <select id="year-filter" class="select" bind:value={filterYear} onchange={() => dispatch('yearchange')}>
         <option value="">All Years</option>
         {#each yearOptions as year}
           <option value={year}>{year}</option>
@@ -74,7 +92,7 @@
           type="date"
           class="input input-sm"
           bind:value={filterFromDate}
-          on:change={() => dispatch('datechange')}
+          onchange={() => dispatch('datechange')}
           placeholder="From"
         />
         <span class="date-range-separator">to</span>
@@ -83,7 +101,7 @@
           type="date"
           class="input input-sm"
           bind:value={filterToDate}
-          on:change={() => dispatch('datechange')}
+          onchange={() => dispatch('datechange')}
           placeholder="To"
         />
       </div>
@@ -91,7 +109,7 @@
 
     <div class="filter-group sort-dropdown-mobile">
       <label for="sort-select" class="filter-label">Sort</label>
-      <select id="sort-select" class="select" value={selectedSortOption} on:change={handleSortChange}>
+      <select id="sort-select" class="select" value={selectedSortOption} onchange={handleSortChange}>
         {#each sortOptions as option}
           <option value={option.value}>{option.label}</option>
         {/each}
@@ -100,7 +118,7 @@
   </div>
 
   {#if hasFilters}
-    <button class="btn btn-ghost btn-sm clear-filters" on:click={() => dispatch('clear')}>
+    <button class="btn btn-ghost btn-sm clear-filters" onclick={() => dispatch('clear')}>
       <Icon name="x" size="sm" />
       Clear filters
     </button>

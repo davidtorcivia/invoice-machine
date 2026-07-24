@@ -1,6 +1,10 @@
-<script>
-  export let documentType = 'invoice';
-  export let helpText = 'Quotes use a different number format (Q-YYYYMMDD-N) and show "Quote" instead of "Invoice" on the PDF.';
+<script lang="ts">
+  interface Props {
+    documentType?: string;
+    helpText?: string;
+  }
+
+  let { documentType = $bindable('invoice'), helpText = 'Quotes use a different number format (Q-YYYYMMDD-N) and show "Quote" instead of "Invoice" on the PDF.' }: Props = $props();
 </script>
 
 <div class="card">
@@ -8,7 +12,7 @@
     <h3 class="card-title">Document Type</h3>
   </div>
   <label class="checkbox-label">
-    <input type="checkbox" checked={documentType === 'quote'} on:change={(event) => documentType = event.currentTarget.checked ? 'quote' : 'invoice'} />
+    <input type="checkbox" checked={documentType === 'quote'} onchange={(event) => documentType = event.currentTarget.checked ? 'quote' : 'invoice'} />
     <span>This is a Quote</span>
   </label>
   <p class="form-hint">{helpText}</p>

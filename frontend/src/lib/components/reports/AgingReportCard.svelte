@@ -1,8 +1,14 @@
 <script>
   import { formatCurrency, formatDate } from '$lib/stores';
 
-  /** @type {{ as_of?: string, by_currency?: Record<string, any>, invoices?: any[] } | null} */
-  export let aging = null;
+  
+  /**
+   * @typedef {Object} Props
+   * @property {{ as_of?: string, by_currency?: Record<string, any>, invoices?: any[] } | null} [aging]
+   */
+
+  /** @type {Props} */
+  let { aging = null } = $props();
 
   const BUCKET_LABELS = {
     current: 'Not yet due',
@@ -14,9 +20,9 @@
 
   const BUCKET_ORDER = ['current', '1_30', '31_60', '61_90', 'over_90'];
 
-  $: byCurrency = aging?.by_currency || {};
-  $: currencies = Object.keys(byCurrency);
-  $: overdueInvoices = (aging?.invoices || []).filter((invoice) => invoice.days_overdue > 0);
+  let byCurrency = $derived(aging?.by_currency || {});
+  let currencies = $derived(Object.keys(byCurrency));
+  let overdueInvoices = $derived((aging?.invoices || []).filter((invoice) => invoice.days_overdue > 0));
 </script>
 
 <div class="card">

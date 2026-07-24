@@ -1,8 +1,8 @@
-<script>
+<script lang="ts">
   import Icon from '$lib/components/Icons.svelte';
   import { reportSummaryCards } from '$lib/reports/format';
 
-  export let totals = {};
+  let { totals = {} } = $props();
 </script>
 
 <div class="summary-grid">

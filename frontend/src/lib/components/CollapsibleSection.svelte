@@ -1,14 +1,27 @@
 <script>
   import Icon from './Icons.svelte';
 
-  /** @type {string} */
-  export let title = '';
-  /** @type {string} */
-  export let subtitle = '';
-  /** @type {boolean} */
-  export let open = false;
-  /** @type {string | null} */
-  export let icon = null;
+  
+  
+  
+  
+  /**
+   * @typedef {Object} Props
+   * @property {string} [title]
+   * @property {string} [subtitle]
+   * @property {boolean} [open]
+   * @property {string | null} [icon]
+   * @property {import('svelte').Snippet} [children]
+   */
+
+  /** @type {Props} */
+  let {
+    title = '',
+    subtitle = '',
+    open = $bindable(false),
+    icon = null,
+    children
+  } = $props();
 
   function toggle() {
     open = !open;
@@ -16,7 +29,7 @@
 </script>
 
 <div class="collapsible" class:open>
-  <button class="collapsible-header" on:click={toggle} type="button" aria-expanded={open}>
+  <button class="collapsible-header" onclick={toggle} type="button" aria-expanded={open}>
     <div class="collapsible-title">
       {#if icon}
         <Icon name={icon} size="sm" />
@@ -33,7 +46,7 @@
 
   {#if open}
     <div class="collapsible-content">
-      <slot />
+      {@render children?.()}
     </div>
   {/if}
 </div>

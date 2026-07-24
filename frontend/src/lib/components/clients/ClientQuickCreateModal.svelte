@@ -1,11 +1,21 @@
-<script>
+<script lang="ts">
   import Icon from '$lib/components/Icons.svelte';
 
-  export let show = false;
-  export let saving = false;
-  export let draft;
-  export let close;
-  export let save;
+  interface Props {
+    show?: boolean;
+    saving?: boolean;
+    draft: any;
+    close: any;
+    save: any;
+  }
+
+  let {
+    show = false,
+    saving = false,
+    draft = $bindable(),
+    close,
+    save
+  }: Props = $props();
 
   function handleKeydown(event) {
     if (event.key === 'Escape') {
@@ -15,12 +25,12 @@
 </script>
 
 {#if show}
-  <div class="modal-overlay" role="presentation" tabindex="-1" on:keydown={handleKeydown}>
-    <button type="button" class="modal-backdrop" aria-label="Close create client dialog" on:click={close}></button>
+  <div class="modal-overlay" role="presentation" tabindex="-1" onkeydown={handleKeydown}>
+    <button type="button" class="modal-backdrop" aria-label="Close create client dialog" onclick={close}></button>
     <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title" tabindex="-1">
       <div class="modal-header">
         <h2 id="modal-title" class="modal-title">New Client</h2>
-        <button class="btn btn-ghost btn-icon btn-sm" aria-label="Close" on:click={close}>
+        <button class="btn btn-ghost btn-icon btn-sm" aria-label="Close" onclick={close}>
           <Icon name="x" size="md" />
         </button>
       </div>
@@ -74,8 +84,8 @@
       </div>
 
       <div class="modal-footer">
-        <button type="button" class="btn btn-secondary" on:click={close} disabled={saving}>Cancel</button>
-        <button type="button" class="btn btn-primary" on:click={save} disabled={saving}>
+        <button type="button" class="btn btn-secondary" onclick={close} disabled={saving}>Cancel</button>
+        <button type="button" class="btn btn-primary" onclick={save} disabled={saving}>
           {saving ? 'Creating...' : 'Create Client'}
         </button>
       </div>

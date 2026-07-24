@@ -1,23 +1,23 @@
-<script>
+<script lang="ts">
   import { formatCurrency } from '$lib/stores';
 
-  export let invoices = [];
+  let { invoices = [] } = $props();
 
   // Quotes are not billed amounts, and money is never summed across currencies.
   // Restrict to invoice documents in the client's dominant currency; per-currency
   // reporting lives in the analytics endpoints.
-  $: invoiceDocs = invoices.filter((invoice) => (invoice.document_type || 'invoice') === 'invoice');
-  $: currency = invoiceDocs.find((invoice) => invoice.currency_code)?.currency_code || 'USD';
-  $: scoped = invoiceDocs.filter((invoice) => (invoice.currency_code || 'USD') === currency);
+  let invoiceDocs = $derived(invoices.filter((invoice) => (invoice.document_type || 'invoice') === 'invoice'));
+  let currency = $derived(invoiceDocs.find((invoice) => invoice.currency_code)?.currency_code || 'USD');
+  let scoped = $derived(invoiceDocs.filter((invoice) => (invoice.currency_code || 'USD') === currency));
   // "Billed" = issued invoices (sent/paid/overdue), matching the backend; drafts
   // and cancelled invoices are excluded.
-  $: totalBilled = scoped
+  let totalBilled = $derived(scoped
     .filter((invoice) => ['sent', 'paid', 'overdue'].includes(invoice.status))
-    .reduce((sum, invoice) => sum + parseFloat(invoice.total || 0), 0);
-  $: totalPaid = scoped.filter((invoice) => invoice.status === 'paid').reduce((sum, invoice) => sum + parseFloat(invoice.total || 0), 0);
-  $: totalOutstanding = scoped
+    .reduce((sum, invoice) => sum + parseFloat(invoice.total || 0), 0));
+  let totalPaid = $derived(scoped.filter((invoice) => invoice.status === 'paid').reduce((sum, invoice) => sum + parseFloat(invoice.total || 0), 0));
+  let totalOutstanding = $derived(scoped
     .filter((invoice) => invoice.status === 'sent' || invoice.status === 'overdue')
-    .reduce((sum, invoice) => sum + parseFloat(invoice.total || 0), 0);
+    .reduce((sum, invoice) => sum + parseFloat(invoice.total || 0), 0));
 </script>
 
 <div class="stats-row">

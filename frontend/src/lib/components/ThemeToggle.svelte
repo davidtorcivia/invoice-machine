@@ -2,14 +2,14 @@
   import { theme } from '$lib/stores';
   import Icon from './Icons.svelte';
 
-  $: currentTheme = $theme;
-  $: icon = currentTheme === 'light' ? 'sun' : currentTheme === 'dark' ? 'moon' : 'monitor';
-  $: label = currentTheme === 'light' ? 'Light' : currentTheme === 'dark' ? 'Dark' : 'System';
+  let currentTheme = $derived($theme);
+  let icon = $derived(currentTheme === 'light' ? 'sun' : currentTheme === 'dark' ? 'moon' : 'monitor');
+  let label = $derived(currentTheme === 'light' ? 'Light' : currentTheme === 'dark' ? 'Dark' : 'System');
 </script>
 
 <button
   class="theme-toggle"
-  on:click={theme.toggle}
+  onclick={theme.toggle}
   title="Toggle theme ({label})"
   aria-label="Toggle theme, currently {label}"
 >

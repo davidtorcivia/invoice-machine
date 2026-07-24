@@ -1,14 +1,27 @@
-<script>
+<script lang="ts">
   import CollapsibleSection from '$lib/components/CollapsibleSection.svelte';
 
-  export let open = false;
-  export let addressLine1 = '';
-  export let addressLine2 = '';
-  export let city = '';
-  export let state = '';
-  export let postalCode = '';
-  export let country = '';
-  export let countries = [];
+  interface Props {
+    open?: boolean;
+    addressLine1?: string;
+    addressLine2?: string;
+    city?: string;
+    state?: string;
+    postalCode?: string;
+    country?: string;
+    countries?: any;
+  }
+
+  let {
+    open = $bindable(false),
+    addressLine1 = $bindable(''),
+    addressLine2 = $bindable(''),
+    city = $bindable(''),
+    state = $bindable(''),
+    postalCode = $bindable(''),
+    country = $bindable(''),
+    countries = []
+  }: Props = $props();
 </script>
 
 <CollapsibleSection title="Business Address" subtitle="Your mailing address" icon="home" bind:open={open}>

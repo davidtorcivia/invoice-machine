@@ -1,11 +1,20 @@
-<script>
+<script lang="ts">
   import { createEventDispatcher } from 'svelte';
   import Icon from '$lib/components/Icons.svelte';
 
-  export let invoiceId = '';
-  export let invoice = {};
-  export let documentLabel = 'Invoice';
-  export let generatingPdf = false;
+  interface Props {
+    invoiceId?: string;
+    invoice?: any;
+    documentLabel?: string;
+    generatingPdf?: boolean;
+  }
+
+  let {
+    invoiceId = '',
+    invoice = {},
+    documentLabel = 'Invoice',
+    generatingPdf = false
+  }: Props = $props();
 
   const dispatch = createEventDispatcher();
 </script>
@@ -20,15 +29,15 @@
       <Icon name="pencil" size="sm" />
       Edit
     </a>
-    <button class="btn btn-secondary" on:click={() => dispatch('generatepdf')} disabled={generatingPdf}>
+    <button class="btn btn-secondary" onclick={() => dispatch('generatepdf')} disabled={generatingPdf}>
       <Icon name="refresh" size="sm" />
       {generatingPdf ? 'Generating...' : 'Generate PDF'}
     </button>
-    <button class="btn btn-primary" on:click={() => dispatch('downloadpdf')}>
+    <button class="btn btn-primary" onclick={() => dispatch('downloadpdf')}>
       <Icon name="download" size="sm" />
       Download PDF
     </button>
-    <button class="btn btn-secondary" on:click={() => dispatch('sendemail')}>
+    <button class="btn btn-secondary" onclick={() => dispatch('sendemail')}>
       <Icon name="send" size="sm" />
       Send Email
     </button>

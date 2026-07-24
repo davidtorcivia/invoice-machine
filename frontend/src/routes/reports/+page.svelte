@@ -17,17 +17,17 @@
     { kind: 'clients', label: 'Clients' }
   ];
 
-  let loading = true;
-  let loadError = false;
-  let revenueData = null;
-  let clientData = [];
-  let agingData = null;
-  let consolidatedData = null;
-  let groupBy = 'month';
-  let year = new Date().getFullYear();
+  let loading = $state(true);
+  let loadError = $state(false);
+  let revenueData = $state(/** @type {any} */ (null));
+  let clientData = $state([]);
+  let agingData = $state(/** @type {any} */ (null));
+  let consolidatedData = $state(/** @type {any} */ (null));
+  let groupBy = $state('month');
+  let year = $state(new Date().getFullYear());
 
-  $: fromDate = `${year}-01-01`;
-  $: toDate = `${year}-12-31`;
+  let fromDate = $derived(`${year}-01-01`);
+  let toDate = $derived(`${year}-12-31`);
 
   onMount(async () => {
     await loadData();
@@ -94,7 +94,7 @@
   {:else if loadError}
     <div class="load-error">
       <p>Couldn't load analytics.</p>
-      <button type="button" class="btn btn-secondary" on:click={loadData}>
+      <button type="button" class="btn btn-secondary" onclick={loadData}>
         <Icon name="refresh" size="sm" />
         Retry
       </button>

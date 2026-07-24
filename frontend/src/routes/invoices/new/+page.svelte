@@ -1,4 +1,6 @@
 <script>
+  import { run, preventDefault } from 'svelte/legacy';
+
   import { onMount } from 'svelte';
   import { goto, beforeNavigate } from '$app/navigation';
   import { page } from '$app/stores';
@@ -25,18 +27,13 @@
    */
 
   /** @type {ClientSummary[]} */
-  let clients = [];
-  let profile = null;
-  let loading = false;
-  let saving = false;
+  let clients = $state([]);
+  let profile = $state(/** @type {any} */ (null));
+  let loading = $state(false);
+  let saving = $state(false);
   // Warn before navigating away from a partially-filled form.
-  let allowLeave = false;
+  let allowLeave = $state(false);
 
-  $: isDirty =
-    !allowLeave &&
-    (!!clientId ||
-      !!(notes && notes.trim()) ||
-      items.some((i) => (i.description || '').trim() || `${i.unit_price ?? ''}`.trim()));
 
   beforeNavigate((nav) => {
     if (isDirty && !saving) {
@@ -47,35 +44,35 @@
   });
 
   // Form data
-  let clientId = '';
-  let issueDate = new Date().toISOString().split('T')[0];
-  let paymentTermsDays = 30;
-  let currencyCode = 'USD';
-  let notes = '';
-  let useDefaultNotes = true;
-  let isQuote = false;
-  let clientReference = '';
-  let showPaymentInstructions = true;
-  let invoiceNumberOverride = '';
+  let clientId = $state('');
+  let issueDate = $state(new Date().toISOString().split('T')[0]);
+  let paymentTermsDays = $state(30);
+  let currencyCode = $state('USD');
+  let notes = $state('');
+  let useDefaultNotes = $state(true);
+  let isQuote = $state(false);
+  let clientReference = $state('');
+  let showPaymentInstructions = $state(true);
+  let invoiceNumberOverride = $state('');
   /** @type {string[]} */
-  let selectedPaymentMethods = [];
+  let selectedPaymentMethods = $state([]);
 
   // Tax settings
-  let taxEnabled = false;
-  let taxRate = '';
-  let taxName = 'Tax';
+  let taxEnabled = $state(false);
+  let taxRate = $state('');
+  let taxName = $state('Tax');
 
   // Line items
   /** @type {InvoiceItemDraft[]} */
-  let items = [{ description: '', quantity: 1, unit_price: '', unit_type: 'qty' }];
+  let items = $state([{ description: '', quantity: 1, unit_price: '', unit_type: 'qty' }]);
 
   // Modal states
-  let showClientModal = false;
-  let clientModalSaving = false;
-  let showDiscardModal = false;
+  let showClientModal = $state(false);
+  let clientModalSaving = $state(false);
+  let showDiscardModal = $state(false);
 
   /** @type {NewClientDraft} */
-  let newClient = {
+  let newClient = $state({
     name: '',
     business_name: '',
     email: '',
@@ -85,7 +82,7 @@
     state: '',
     postal_code: '',
     payment_terms_days: 30,
-  };
+  });
 
   onMount(async () => {
     await Promise.all([loadClients(), loadProfile()]);
@@ -133,18 +130,12 @@
     }
   }
 
-  // Computed values
-  $: defaultNotesText = profile?.default_notes || '';
-  $: effectiveNotes = useDefaultNotes && defaultNotesText ? defaultNotesText : notes;
 
-  // Get selected client data
-  $: selectedClient = clients.find(c => c.id === parseInt(clientId)) || null;
 
   // Apply client defaults ONLY when the selected client actually changes, so a
   // background clients refresh (or any other reactive recompute) can't clobber
   // values the user has since edited by hand.
   let appliedClientId = null;
-  $: applyClientDefaults(selectedClient);
 
   function applyClientDefaults(client) {
     if (!client) {
@@ -172,9 +163,6 @@
     }
   }
 
-  // Parse payment methods from profile
-  /** @type {PaymentMethod[]} */
-  $: availablePaymentMethods = parseJsonArray(profile?.payment_methods);
 
   async function saveInvoice() {
     if (!clientId) {
@@ -268,6 +256,22 @@
     allowLeave = true;
     goto('/invoices');
   }
+  let isDirty =
+    $derived(!allowLeave &&
+    (!!clientId ||
+      !!(notes && notes.trim()) ||
+      items.some((i) => (i.description || '').trim() || `${i.unit_price ?? ''}`.trim())));
+  // Computed values
+  let defaultNotesText = $derived(profile?.default_notes || '');
+  let effectiveNotes = $derived(useDefaultNotes && defaultNotesText ? defaultNotesText : notes);
+  // Get selected client data
+  let selectedClient = $derived(clients.find(c => c.id === parseInt(clientId)) || null);
+  run(() => {
+    applyClientDefaults(selectedClient);
+  });
+  // Parse payment methods from profile
+  /** @type {PaymentMethod[]} */
+  let availablePaymentMethods = $derived(parseJsonArray(profile?.payment_methods));
 </script>
 
 <Header title={isQuote ? "New Quote" : "New Invoice"} subtitle={isQuote ? "Create a new quote" : "Create a new invoice"} />
@@ -278,7 +282,7 @@
       <div class="spinner"></div>
     </div>
   {:else}
-    <form on:submit|preventDefault={saveInvoice} class="form-layout">
+    <form onsubmit={preventDefault(saveInvoice)} class="form-layout">
       <InvoiceDocumentTypeCard bind:isQuote />
 
       <InvoiceClientDetailsCard
@@ -293,7 +297,7 @@
         {openClientModal}
       />
 
-      <InvoiceLineItemsCard bind:items bind:taxEnabled bind:taxRate bind:taxName {currencyCode} />
+      <InvoiceLineItemsCard bind:items {taxEnabled} {taxRate} {taxName} {currencyCode} />
 
       <InvoiceTaxCard
         bind:taxEnabled
@@ -320,7 +324,7 @@
         <button
           type="button"
           class="btn btn-secondary"
-          on:click={cancel}
+          onclick={cancel}
           disabled={saving}
         >
           Cancel

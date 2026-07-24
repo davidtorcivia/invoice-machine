@@ -14,21 +14,21 @@
 
   const PER_PAGE = 24;
 
-  let clients = [];
-  let loading = true;
-  let searchQuery = '';
-  let sortBy = 'created_at';
-  let sortDir = 'desc';
+  let clients = $state([]);
+  let loading = $state(true);
+  let searchQuery = $state('');
+  let sortBy = $state('created_at');
+  let sortDir = $state('desc');
   let currentPage = 1;
-  let pagination = { page: 1, per_page: PER_PAGE, total: 0, total_pages: 0, has_next: false, has_prev: false };
-  let showDeleteModal = false;
+  let pagination = $state({ page: 1, per_page: PER_PAGE, total: 0, total_pages: 0, has_next: false, has_prev: false });
+  let showDeleteModal = $state(false);
   let deleteTargetId = null;
-  let deleteTargetName = '';
-  let deleting = false;
+  let deleteTargetName = $state('');
+  let deleting = $state(false);
 
-  $: selectedSortOption = `${sortBy}-${sortDir}`;
-  $: pageStart = pagination.total === 0 ? 0 : (pagination.page - 1) * pagination.per_page + 1;
-  $: pageEnd = pagination.total === 0 ? 0 : Math.min(pagination.total, pageStart + clients.length - 1);
+  let selectedSortOption = $derived(`${sortBy}-${sortDir}`);
+  let pageStart = $derived(pagination.total === 0 ? 0 : (pagination.page - 1) * pagination.per_page + 1);
+  let pageEnd = $derived(pagination.total === 0 ? 0 : Math.min(pagination.total, pageStart + clients.length - 1));
 
   onMount(async () => {
     hydrateFromUrl();
@@ -189,7 +189,7 @@
           Add your first client to start creating invoices.
         {/if}
       </div>
-      <button class="btn btn-primary mt-6" on:click={() => goto('/clients/new')}>
+      <button class="btn btn-primary mt-6" onclick={() => goto('/clients/new')}>
         <Icon name="plus" size="sm" />
         Add Client
       </button>

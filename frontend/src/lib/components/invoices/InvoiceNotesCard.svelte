@@ -1,10 +1,19 @@
-<script>
+<script lang="ts">
   import Icon from '$lib/components/Icons.svelte';
 
-  export let useDefaultNotes = false;
-  export let defaultNotesText = '';
-  export let notes = '';
-  export let placeholder = 'Payment terms, thank you message, etc.';
+  interface Props {
+    useDefaultNotes?: boolean;
+    defaultNotesText?: string;
+    notes?: string;
+    placeholder?: string;
+  }
+
+  let {
+    useDefaultNotes = $bindable(false),
+    defaultNotesText = '',
+    notes = $bindable(''),
+    placeholder = 'Payment terms, thank you message, etc.'
+  }: Props = $props();
 
   function removeDefaultNotes() {
     useDefaultNotes = false;
@@ -29,7 +38,7 @@
         <button
           type="button"
           class="btn btn-ghost btn-sm"
-          on:click={removeDefaultNotes}
+          onclick={removeDefaultNotes}
         >
           <Icon name="x" size="sm" />
           Remove
@@ -51,7 +60,7 @@
       <button
         type="button"
         class="btn btn-ghost btn-sm mt-2"
-        on:click={restoreDefaultNotes}
+        onclick={restoreDefaultNotes}
       >
         <Icon name="refresh" size="sm" />
         Use default notes

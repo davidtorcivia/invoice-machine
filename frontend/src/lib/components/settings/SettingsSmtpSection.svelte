@@ -1,19 +1,36 @@
-<script>
+<script lang="ts">
   import CollapsibleSection from '$lib/components/CollapsibleSection.svelte';
   import Icon from '$lib/components/Icons.svelte';
 
-  export let open = false;
-  export let smtpEnabled = false;
-  export let smtpHost = '';
-  export let smtpPort = 587;
-  export let smtpUsername = '';
-  export let smtpPassword = '';
-  export let smtpFromEmail = '';
-  export let smtpFromName = '';
-  export let smtpUseTls = true;
-  export let smtpPasswordSet = false;
-  export let testingSmtp = false;
-  export let testSmtpConnection;
+  interface Props {
+    open?: boolean;
+    smtpEnabled?: boolean;
+    smtpHost?: string;
+    smtpPort?: number;
+    smtpUsername?: string;
+    smtpPassword?: string;
+    smtpFromEmail?: string;
+    smtpFromName?: string;
+    smtpUseTls?: boolean;
+    smtpPasswordSet?: boolean;
+    testingSmtp?: boolean;
+    testSmtpConnection: any;
+  }
+
+  let {
+    open = $bindable(false),
+    smtpEnabled = $bindable(false),
+    smtpHost = $bindable(''),
+    smtpPort = $bindable(587),
+    smtpUsername = $bindable(''),
+    smtpPassword = $bindable(''),
+    smtpFromEmail = $bindable(''),
+    smtpFromName = $bindable(''),
+    smtpUseTls = $bindable(true),
+    smtpPasswordSet = false,
+    testingSmtp = false,
+    testSmtpConnection
+  }: Props = $props();
 </script>
 
 <CollapsibleSection title="Email Settings (SMTP)" subtitle="Send invoices via email" icon="send" bind:open={open}>
@@ -114,7 +131,7 @@
       <button
         type="button"
         class="btn btn-secondary"
-        on:click={testSmtpConnection}
+        onclick={testSmtpConnection}
         disabled={testingSmtp || !smtpHost || !smtpFromEmail}
       >
         {#if testingSmtp}

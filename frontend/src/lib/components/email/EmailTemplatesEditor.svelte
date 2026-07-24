@@ -1,22 +1,35 @@
-<script>
+<script lang="ts">
   import Icon from '$lib/components/Icons.svelte';
   import { placeholderDescriptions } from '$lib/email/templates';
 
-  export let subjectTemplate = '';
-  export let bodyTemplate = '';
-  export let availablePlaceholders = [];
-  export let saving = false;
-  export let resetToDefaults;
-  export let saveTemplates;
-  export let schedulePreviewUpdate;
-  export let insertPlaceholder;
+  interface Props {
+    subjectTemplate?: string;
+    bodyTemplate?: string;
+    availablePlaceholders?: any;
+    saving?: boolean;
+    resetToDefaults: any;
+    saveTemplates: any;
+    schedulePreviewUpdate: any;
+    insertPlaceholder: any;
+  }
+
+  let {
+    subjectTemplate = $bindable(''),
+    bodyTemplate = $bindable(''),
+    availablePlaceholders = [],
+    saving = false,
+    resetToDefaults,
+    saveTemplates,
+    schedulePreviewUpdate,
+    insertPlaceholder
+  }: Props = $props();
 </script>
 
 <div class="editor-panel">
   <div class="card">
     <div class="card-header">
       <h3 class="card-title">Templates</h3>
-      <button class="btn btn-ghost btn-sm" on:click={resetToDefaults}>
+      <button class="btn btn-ghost btn-sm" onclick={resetToDefaults}>
         <Icon name="refresh" size="sm" />
         Reset to Defaults
       </button>
@@ -24,18 +37,18 @@
 
     <div class="form-group">
       <label class="form-label" for="subject">Subject Template</label>
-      <input type="text" id="subject" class="input" bind:value={subjectTemplate} on:input={schedulePreviewUpdate} />
+      <input type="text" id="subject" class="input" bind:value={subjectTemplate} oninput={schedulePreviewUpdate} />
       <p class="form-hint">Use placeholders like <code>{'{document_type}'}</code> to insert dynamic content</p>
     </div>
 
     <div class="form-group">
       <label class="form-label" for="body">Body Template</label>
-      <textarea id="body" class="input textarea" bind:value={bodyTemplate} on:input={schedulePreviewUpdate} rows="12"></textarea>
+      <textarea id="body" class="input textarea" bind:value={bodyTemplate} oninput={schedulePreviewUpdate} rows="12"></textarea>
       <p class="form-hint">Customize the email body sent with invoices. Click placeholders below to insert them.</p>
     </div>
 
     <div class="form-actions">
-      <button class="btn btn-primary" on:click={saveTemplates} disabled={saving}>
+      <button class="btn btn-primary" onclick={saveTemplates} disabled={saving}>
         {#if saving}
           <span class="spinner-sm"></span>
           Saving...
@@ -54,7 +67,7 @@
     <p class="text-secondary mb-3">Click a placeholder to insert it into the body template:</p>
     <div class="placeholders-grid">
       {#each availablePlaceholders as placeholder}
-        <button class="placeholder-chip" on:click={() => insertPlaceholder(placeholder)} title="Click to insert">
+        <button class="placeholder-chip" onclick={() => insertPlaceholder(placeholder)} title="Click to insert">
           {placeholder}
         </button>
       {/each}

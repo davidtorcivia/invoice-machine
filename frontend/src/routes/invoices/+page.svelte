@@ -20,50 +20,50 @@
     yearOptions
   } from '$lib/invoices/list';
 
-  let invoices = [];
-  let clients = [];
-  let loading = true;
-  let filterStatus = '';
+  let invoices = $state([]);
+  let clients = $state([]);
+  let loading = $state(true);
+  let filterStatus = $state('');
   // string|number: empty string when unset, or the numeric id/year the <select>
   // binds from its option values.
   /** @type {string|number} */
-  let filterClient = '';
-  let filterDocumentType = '';
+  let filterClient = $state('');
+  let filterDocumentType = $state('');
   /** @type {string|number} */
-  let filterYear = '';
-  let filterFromDate = '';
-  let filterToDate = '';
-  let sortBy = 'issue_date';
-  let sortDir = 'desc';
+  let filterYear = $state('');
+  let filterFromDate = $state('');
+  let filterToDate = $state('');
+  let sortBy = $state('issue_date');
+  let sortDir = $state('desc');
   let currentPage = 1;
   let perPage = 25;
-  let pagination = {
+  let pagination = $state({
     page: 1,
     per_page: 25,
     total: 0,
     total_pages: 0,
     has_next: false,
     has_prev: false
-  };
+  });
 
-  let showDeleteModal = false;
+  let showDeleteModal = $state(false);
   let deleteTargetId = null;
-  let deleteTargetNumber = '';
-  let deleting = false;
+  let deleteTargetNumber = $state('');
+  let deleting = $state(false);
 
-  let selectedIds = new Set();
-  let showBulkModal = false;
-  let bulkAction = null;
-  let bulkActionLoading = false;
+  let selectedIds = $state(new Set());
+  let showBulkModal = $state(false);
+  let bulkAction = $state(/** @type {any} */ (null));
+  let bulkActionLoading = $state(false);
 
-  $: selectedSortOption = `${sortBy}-${sortDir}`;
-  $: pageStart = pagination.total === 0 ? 0 : ((pagination.page - 1) * pagination.per_page) + 1;
-  $: pageEnd = pagination.total === 0 ? 0 : Math.min(pagination.total, pageStart + invoices.length - 1);
-  $: allSelected = invoices.length > 0 && selectedIds.size === invoices.length;
-  $: selectedInvoices = invoices.filter((invoice) => selectedIds.has(invoice.id));
-  $: canMarkSent = selectedInvoices.some((invoice) => invoice.status === 'draft');
-  $: canMarkPaid = selectedInvoices.some((invoice) => invoice.document_type !== 'quote' && ['sent', 'overdue'].includes(invoice.status));
-  $: hasFilters = Boolean(filterStatus || filterClient || filterDocumentType || filterYear || filterFromDate || filterToDate);
+  let selectedSortOption = $derived(`${sortBy}-${sortDir}`);
+  let pageStart = $derived(pagination.total === 0 ? 0 : ((pagination.page - 1) * pagination.per_page) + 1);
+  let pageEnd = $derived(pagination.total === 0 ? 0 : Math.min(pagination.total, pageStart + invoices.length - 1));
+  let allSelected = $derived(invoices.length > 0 && selectedIds.size === invoices.length);
+  let selectedInvoices = $derived(invoices.filter((invoice) => selectedIds.has(invoice.id)));
+  let canMarkSent = $derived(selectedInvoices.some((invoice) => invoice.status === 'draft'));
+  let canMarkPaid = $derived(selectedInvoices.some((invoice) => invoice.document_type !== 'quote' && ['sent', 'overdue'].includes(invoice.status)));
+  let hasFilters = $derived(Boolean(filterStatus || filterClient || filterDocumentType || filterYear || filterFromDate || filterToDate));
 
   onMount(async () => {
     // Restore any filter/sort/page state encoded in the URL so back-navigation
@@ -383,7 +383,7 @@
           Create your first invoice to get started.
         {/if}
       </div>
-      <button class="btn btn-primary mt-6" on:click={() => goto('/invoices/new')}>
+      <button class="btn btn-primary mt-6" onclick={() => goto('/invoices/new')}>
         <Icon name="plus" size="sm" />
         Create Invoice
       </button>

@@ -6,13 +6,13 @@
   import Icon from './Icons.svelte';
   import ThemeToggle from './ThemeToggle.svelte';
 
-  let searchQuery = '';
-  let searchResults = null;
-  let searching = false;
-  let searchError = false;
-  let showResults = false;
-  let searchInput;
-  let searchContainer;
+  let searchQuery = $state('');
+  let searchResults = $state(/** @type {any} */ (null));
+  let searching = $state(false);
+  let searchError = $state(false);
+  let showResults = $state(false);
+  let searchInput = $state();
+  let searchContainer = $state();
   let searchDebounce;
   let searchSeq = 0;
 
@@ -146,10 +146,10 @@
   }
 
   // Reactive current path to ensure menu updates on navigation
-  $: currentPath = $page.url.pathname;
-  $: visibleSearchGroups = searchGroups
+  let currentPath = $derived($page.url.pathname);
+  let visibleSearchGroups = $derived(searchGroups
     .map((group) => ({ ...group, items: searchResults?.[group.key] || [] }))
-    .filter((group) => group.items.length > 0);
+    .filter((group) => group.items.length > 0));
 
   function isActive(path, current) {
     if (path === '/dashboard') {
@@ -159,14 +159,14 @@
   }
 </script>
 
-<svelte:window on:mousedown={handleWindowPointerDown} />
+<svelte:window onmousedown={handleWindowPointerDown} />
 
 <!-- Mobile overlay -->
 {#if $sidebarOpen}
   <div
     class="sidebar-overlay"
-    on:click={toggleSidebar}
-    on:keydown={(e) => e.key === 'Escape' && toggleSidebar()}
+    onclick={toggleSidebar}
+    onkeydown={(e) => e.key === 'Escape' && toggleSidebar()}
     role="button"
     tabindex="-1"
     aria-label="Close sidebar"
@@ -179,7 +179,7 @@
       <span class="logo-mark">Invoice</span>
       <span class="logo-text">Machine</span>
     </div>
-    <button class="btn btn-ghost btn-icon mobile-close" on:click={toggleSidebar}>
+    <button class="btn btn-ghost btn-icon mobile-close" onclick={toggleSidebar}>
       <Icon name="x" size="md" />
     </button>
   </div>
@@ -194,12 +194,12 @@
         placeholder="Search..."
         bind:value={searchQuery}
         bind:this={searchInput}
-        on:keydown={handleSearchKeydown}
-        on:focus={() => searchResults && (showResults = true)}
-        on:input={handleSearchInput}
+        onkeydown={handleSearchKeydown}
+        onfocus={() => searchResults && (showResults = true)}
+        oninput={handleSearchInput}
       />
       {#if searchQuery}
-        <button class="search-clear" on:click={closeSearch}>
+        <button class="search-clear" onclick={closeSearch}>
           <Icon name="x" size="sm" />
         </button>
       {/if}
@@ -209,7 +209,7 @@
       <div class="search-results">
         <div class="search-results-header">
           <span class="search-results-title">Search Results</span>
-          <button class="search-results-close" on:click={dismissSearchResults} aria-label="Close search results">
+          <button class="search-results-close" onclick={dismissSearchResults} aria-label="Close search results">
             <Icon name="x" size="sm" />
           </button>
         </div>
@@ -227,7 +227,7 @@
                 {#each group.items as item}
                   <button
                     class="search-result"
-                    on:click={() => navigateToResult(group.type, group.getId(item))}
+                    onclick={() => navigateToResult(group.type, group.getId(item))}
                   >
                     <Icon name={group.icon} size="sm" />
                     <div class="search-result-info">
@@ -252,7 +252,7 @@
         href={item.path}
         class="nav-item"
         class:active={isActive(item.path, currentPath)}
-        on:click={closeSidebarOnMobile}
+        onclick={closeSidebarOnMobile}
       >
         <Icon name={item.icon} size="md" />
         <span>{item.label}</span>
@@ -262,7 +262,7 @@
 
   <div class="sidebar-footer">
     <ThemeToggle />
-    <button class="logout-btn" on:click={handleLogout}>
+    <button class="logout-btn" onclick={handleLogout}>
       <Icon name="logout" size="sm" />
       <span>Sign Out</span>
     </button>

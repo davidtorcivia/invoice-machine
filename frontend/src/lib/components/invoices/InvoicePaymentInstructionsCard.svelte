@@ -1,12 +1,23 @@
 <script>
   /** @typedef {{ id: string, name: string, instructions?: string }} PaymentMethod */
 
-  /** @type {PaymentMethod[]} */
-  export let availablePaymentMethods = [];
-  /** @type {string[]} */
-  export let selectedPaymentMethods = [];
-  export let showPaymentInstructions = true;
-  export let selectionHint = 'Select payment methods to include on the PDF.';
+  
+  
+  /**
+   * @typedef {Object} Props
+   * @property {PaymentMethod[]} [availablePaymentMethods]
+   * @property {string[]} [selectedPaymentMethods]
+   * @property {boolean} [showPaymentInstructions]
+   * @property {string} [selectionHint]
+   */
+
+  /** @type {Props} */
+  let {
+    availablePaymentMethods = [],
+    selectedPaymentMethods = $bindable([]),
+    showPaymentInstructions = $bindable(true),
+    selectionHint = 'Select payment methods to include on the PDF.'
+  } = $props();
 
   /**
    * @param {Event} event
@@ -36,7 +47,7 @@
           <input
             type="checkbox"
             checked={selectedPaymentMethods.includes(method.id)}
-            on:change={(event) => toggleSelectedMethod(method.id, getInputTarget(event).checked)}
+            onchange={(event) => toggleSelectedMethod(method.id, getInputTarget(event).checked)}
           />
           <div class="payment-method-info">
             <span class="payment-method-name">{method.name}</span>
@@ -101,7 +112,7 @@
     background: var(--color-bg-hover);
   }
 
-  .payment-method-option:has(input:checked) {
+  .payment-method-option:has(:global(input:checked)) {
     border-color: var(--color-primary);
     background: color-mix(in srgb, var(--color-primary) 5%, var(--color-bg-sunken));
   }

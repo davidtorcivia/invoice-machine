@@ -3,7 +3,7 @@
   import CollapsibleSection from '$lib/components/CollapsibleSection.svelte';
   import { helpSections } from '$lib/help/content';
 
-  let openSections = Object.fromEntries(helpSections.map((section, index) => [section.key, index === 0]));
+  let openSections = $state(Object.fromEntries(helpSections.map((section, index) => [section.key, index === 0])));
 </script>
 
 <Header title="Help & Documentation" subtitle="Learn how to use Invoice Machine" />

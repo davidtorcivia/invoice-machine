@@ -1,4 +1,6 @@
 <script>
+  import { preventDefault } from 'svelte/legacy';
+
   import { onMount } from 'svelte';
   import { page } from '$app/stores';
   import { goto } from '$app/navigation';
@@ -16,13 +18,13 @@
   import ClientPreferencesSection from '$lib/components/clients/ClientPreferencesSection.svelte';
   import ClientTaxSettingsSection from '$lib/components/clients/ClientTaxSettingsSection.svelte';
 
-  $: clientId = $page.params.id || '';
+  let clientId = $derived($page.params.id || '');
 
-  let client = null;
-  let loading = true;
-  let saving = false;
-  let showDiscardModal = false;
-  let draft = createClientDraft();
+  let client = $state(/** @type {any} */ (null));
+  let loading = $state(true);
+  let saving = $state(false);
+  let showDiscardModal = $state(false);
+  let draft = $state(createClientDraft());
 
   const guard = createUnsavedGuard(() => JSON.stringify(draft));
 
@@ -83,7 +85,7 @@
       <div class="spinner"></div>
     </div>
   {:else}
-    <form on:submit|preventDefault={saveClient} class="form-layout">
+    <form onsubmit={preventDefault(saveClient)} class="form-layout">
       <ClientIdentitySection bind:name={draft.name} bind:businessName={draft.business_name} bind:email={draft.email} bind:phone={draft.phone} />
       <ClientAddressSection
         bind:addressLine1={draft.address_line1}
@@ -108,7 +110,7 @@
       />
 
       <div class="form-actions">
-        <button type="button" class="btn btn-secondary" on:click={cancel} disabled={saving}>Cancel</button>
+        <button type="button" class="btn btn-secondary" onclick={cancel} disabled={saving}>Cancel</button>
         <button type="submit" class="btn btn-primary" disabled={saving}>
           <Icon name="check" size="sm" />
           {saving ? 'Saving...' : 'Save Changes'}

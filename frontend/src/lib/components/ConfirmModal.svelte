@@ -1,47 +1,59 @@
 <script>
+  import { run } from 'svelte/legacy';
+
   import { tick } from 'svelte';
   import Icon from './Icons.svelte';
 
-  /** @type {boolean} */
-  export let show = false;
-  /** @type {string} */
-  export let title = 'Confirm';
-  /** @type {string} */
-  export let message = 'Are you sure?';
-  /** @type {string} */
-  export let confirmText = 'Confirm';
-  /** @type {string} */
-  export let cancelText = 'Cancel';
-  /** @type {'danger' | 'warning' | 'primary'} */
-  export let variant = 'danger'; // 'danger', 'warning', 'primary'
-  /** @type {'danger' | 'warning' | 'primary' | undefined} */
-  export let confirmVariant = undefined;
-  /** @type {string} */
-  export let icon = 'warning'; // icon name
-  /** @type {boolean} */
-  export let loading = false;
+  
+  
+  
+  
+  
+  
+  
+  
+  
 
-  /** @type {() => void} */
-  export let onConfirm = () => {};
-  /** @type {() => void} */
-  export let onCancel = () => {};
+  
+  
+  /**
+   * @typedef {Object} Props
+   * @property {boolean} [show]
+   * @property {string} [title]
+   * @property {string} [message]
+   * @property {string} [confirmText]
+   * @property {string} [cancelText]
+   * @property {'danger' | 'warning' | 'primary'} [variant] - 'danger', 'warning', 'primary'
+   * @property {'danger' | 'warning' | 'primary' | undefined} [confirmVariant]
+   * @property {string} [icon] - icon name
+   * @property {boolean} [loading]
+   * @property {() => void} [onConfirm]
+   * @property {() => void} [onCancel]
+   */
+
+  /** @type {Props} */
+  let {
+    show = false,
+    title = 'Confirm',
+    message = 'Are you sure?',
+    confirmText = 'Confirm',
+    cancelText = 'Cancel',
+    variant = 'danger',
+    confirmVariant = undefined,
+    icon = 'warning',
+    loading = false,
+    onConfirm = () => {},
+    onCancel = () => {}
+  } = $props();
 
   /** @type {HTMLElement | null} */
-  let dialogEl = null;
+  let dialogEl = $state(/** @type {any} */ (null));
   /** @type {HTMLButtonElement | null} */
-  let confirmBtn = null;
+  let confirmBtn = $state(/** @type {any} */ (null));
   /** @type {Element | null} */
   let previouslyFocused = null;
-  let wasShown = false;
+  let wasShown = $state(false);
 
-  // Focus the primary action on open; restore focus to the trigger on close.
-  $: if (show && !wasShown) {
-    wasShown = true;
-    openModal();
-  } else if (!show && wasShown) {
-    wasShown = false;
-    restoreFocus();
-  }
 
   async function openModal() {
     if (typeof document !== 'undefined') {
@@ -88,14 +100,24 @@
     }
   }
 
-  $: activeVariant = confirmVariant || variant;
-  $: buttonClass = activeVariant === 'danger' ? 'btn-danger' : activeVariant === 'warning' ? 'btn-warning' : 'btn-primary';
-  $: iconClass = activeVariant === 'danger' ? 'danger' : activeVariant === 'warning' ? 'warning' : 'primary';
+  // Focus the primary action on open; restore focus to the trigger on close.
+  run(() => {
+    if (show && !wasShown) {
+      wasShown = true;
+      openModal();
+    } else if (!show && wasShown) {
+      wasShown = false;
+      restoreFocus();
+    }
+  });
+  let activeVariant = $derived(confirmVariant || variant);
+  let buttonClass = $derived(activeVariant === 'danger' ? 'btn-danger' : activeVariant === 'warning' ? 'btn-warning' : 'btn-primary');
+  let iconClass = $derived(activeVariant === 'danger' ? 'danger' : activeVariant === 'warning' ? 'warning' : 'primary');
 </script>
 
 {#if show}
-  <div class="modal-overlay" role="presentation" tabindex="-1" on:keydown={handleKeydown}>
-    <button type="button" class="modal-backdrop" aria-label="Close confirmation dialog" on:click={handleCancel}></button>
+  <div class="modal-overlay" role="presentation" tabindex="-1" onkeydown={handleKeydown}>
+    <button type="button" class="modal-backdrop" aria-label="Close confirmation dialog" onclick={handleCancel}></button>
     <div
       bind:this={dialogEl}
       class="modal confirm-modal"
@@ -111,10 +133,10 @@
       <h3 class="modal-title" id="confirm-modal-title">{title}</h3>
       <p class="modal-message" id="confirm-modal-message">{message}</p>
       <div class="modal-actions">
-        <button class="btn btn-secondary" on:click={handleCancel} disabled={loading}>
+        <button class="btn btn-secondary" onclick={handleCancel} disabled={loading}>
           {cancelText}
         </button>
-        <button class="btn {buttonClass}" bind:this={confirmBtn} on:click={handleConfirm} disabled={loading}>
+        <button class="btn {buttonClass}" bind:this={confirmBtn} onclick={handleConfirm} disabled={loading}>
           {#if loading}
             <span class="spinner-sm"></span>
           {/if}

@@ -1,12 +1,23 @@
-<script>
+<script lang="ts">
   import CollapsibleSection from '$lib/components/CollapsibleSection.svelte';
 
-  export let open = false;
-  export let name = '';
-  export let businessName = '';
-  export let email = '';
-  export let phone = '';
-  export let ein = '';
+  interface Props {
+    open?: boolean;
+    name?: string;
+    businessName?: string;
+    email?: string;
+    phone?: string;
+    ein?: string;
+  }
+
+  let {
+    open = $bindable(false),
+    name = $bindable(''),
+    businessName = $bindable(''),
+    email = $bindable(''),
+    phone = $bindable(''),
+    ein = $bindable('')
+  }: Props = $props();
 </script>
 
 <CollapsibleSection title="Business Information" subtitle="Your company details" icon="users" bind:open={open}>

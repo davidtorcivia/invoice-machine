@@ -1,12 +1,23 @@
-<script>
+<script lang="ts">
   import Icon from '$lib/components/Icons.svelte';
 
-  export let invoices = [];
-  export let previewInvoiceId = null;
-  export let previewLoading = false;
-  export let previewSubject = '';
-  export let previewBody = '';
-  export let updatePreview;
+  interface Props {
+    invoices?: any;
+    previewInvoiceId?: any;
+    previewLoading?: boolean;
+    previewSubject?: string;
+    previewBody?: string;
+    updatePreview: any;
+  }
+
+  let {
+    invoices = [],
+    previewInvoiceId = $bindable(null),
+    previewLoading = false,
+    previewSubject = '',
+    previewBody = '',
+    updatePreview
+  }: Props = $props();
 </script>
 
 <div class="preview-panel">
@@ -14,7 +25,7 @@
     <div class="card-header">
       <h3 class="card-title">Preview</h3>
       {#if invoices.length > 0}
-        <select class="preview-select" bind:value={previewInvoiceId} on:change={updatePreview}>
+        <select class="preview-select" bind:value={previewInvoiceId} onchange={updatePreview}>
           {#each invoices as invoice}
             <option value={invoice.id}>
               {invoice.invoice_number} - {invoice.client_business || invoice.client_name || 'No client'}

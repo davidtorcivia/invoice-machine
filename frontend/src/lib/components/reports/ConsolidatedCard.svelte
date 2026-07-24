@@ -1,11 +1,17 @@
 <script>
   import { formatCurrency } from '$lib/stores';
 
-  /** @type {{ currency: string, invoiced: string, paid: string, outstanding: string, coverage: any } | null} */
-  export let consolidated = null;
+  
+  /**
+   * @typedef {Object} Props
+   * @property {{ currency: string, invoiced: string, paid: string, outstanding: string, coverage: any } | null} [consolidated]
+   */
 
-  $: coverage = consolidated?.coverage;
-  $: uncovered = Object.entries(coverage?.uncovered_by_currency || {});
+  /** @type {Props} */
+  let { consolidated = null } = $props();
+
+  let coverage = $derived(consolidated?.coverage);
+  let uncovered = $derived(Object.entries(coverage?.uncovered_by_currency || {}));
 </script>
 
 {#if consolidated}

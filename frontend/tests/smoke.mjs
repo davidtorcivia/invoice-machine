@@ -365,6 +365,48 @@ const persisted = await evaluate(
 );
 check('edited value round-tripped to the server', persisted === marker, String(persisted));
 
+// Parent-to-child prop flow on the busiest form: the tax settings live in one
+// card and the running total that consumes them lives in another, so a broken
+// prop shows up as a total that never picks up the rate.
+await goto('/invoices/new');
+const taxPreview = await evaluate(`(async () => {
+  const set = (el, value) => {
+    Object.getOwnPropertyDescriptor(Object.getPrototypeOf(el), 'value').set.call(el, value);
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+  };
+
+  const desc = document.querySelector('#item-desc-0');
+  const price = document.querySelector('#item-price-0');
+  if (!desc || !price) return 'no line item inputs';
+  set(desc, 'Smoke line');
+  set(price, '200');
+  await new Promise((r) => setTimeout(r, 400));
+
+  const taxToggle = [...document.querySelectorAll('input[type=checkbox]')]
+    .find((c) => /apply tax|enable tax/i.test(c.closest('label')?.textContent || ''));
+  if (!taxToggle) return 'no tax toggle';
+  if (!taxToggle.checked) taxToggle.click();
+  await new Promise((r) => setTimeout(r, 400));
+
+  const rate = [...document.querySelectorAll('input')]
+    .find((i) => /tax-rate|taxRate/.test(i.id || ''));
+  if (!rate) return 'no tax rate field after enabling tax';
+  set(rate, '10');
+  await new Promise((r) => setTimeout(r, 500));
+
+  const totals = (document.body.innerText.match(/Subtotal[\\s\\S]{0,160}/) || [''])[0];
+  return totals.replace(/\\s+/g, ' ').trim();
+})()`);
+drainEvents();
+// 200 subtotal at 10% must render a 20.00 tax line and a 220.00 total.
+check(
+  'tax rate reaches the totals card',
+  typeof taxPreview === 'string' &&
+    taxPreview.includes('20.00') &&
+    taxPreview.includes('220.00'),
+  String(taxPreview).slice(0, 120),
+);
+
 drainEvents();
 console.log('');
 if (problems.length) {

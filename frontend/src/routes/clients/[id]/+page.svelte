@@ -1,4 +1,6 @@
 <script>
+  import { run } from 'svelte/legacy';
+
   import { page } from '$app/stores';
   import { goto } from '$app/navigation';
   import { clientsApi, invoicesApi } from '$lib/api';
@@ -10,15 +12,13 @@
   import ClientSidebarDetails from '$lib/components/clients/ClientSidebarDetails.svelte';
   import ClientStatsGrid from '$lib/components/clients/ClientStatsGrid.svelte';
 
-  $: clientId = $page.params.id || '';
 
-  let client = null;
-  let invoices = [];
-  let loading = true;
-  let showDeleteModal = false;
-  let deleting = false;
+  let client = $state(/** @type {any} */ (null));
+  let invoices = $state([]);
+  let loading = $state(true);
+  let showDeleteModal = $state(false);
+  let deleting = $state(false);
 
-  $: if (clientId) loadData();
 
   async function loadData() {
     loading = true;
@@ -57,6 +57,10 @@
   function cancelDelete() {
     showDeleteModal = false;
   }
+  let clientId = $derived($page.params.id || '');
+  run(() => {
+    if (clientId) loadData();
+  });
 </script>
 
 <Header title={client ? (client.business_name || client.name) : 'Client'} />
@@ -100,11 +104,11 @@
             <h3 class="card-title">Actions</h3>
           </div>
           <div class="action-list">
-            <button class="btn btn-secondary btn-block" on:click={() => goto(`/clients/${clientId}/edit`)}>
+            <button class="btn btn-secondary btn-block" onclick={() => goto(`/clients/${clientId}/edit`)}>
               <Icon name="pencil" size="sm" />
               Edit Client
             </button>
-            <button class="btn btn-ghost btn-block text-danger" on:click={openDeleteModal}>
+            <button class="btn btn-ghost btn-block text-danger" onclick={openDeleteModal}>
               <Icon name="trash" size="sm" />
               Delete Client
             </button>

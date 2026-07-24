@@ -1,17 +1,22 @@
-<script>
+<script lang="ts">
   import { toggleSidebar } from '$lib/stores';
   import Icon from './Icons.svelte';
 
-  // Title/subtitle kept for accessibility but visually hidden
-  export let title = '';
-  export let subtitle = '';
+  
+  interface Props {
+    // Title/subtitle kept for accessibility but visually hidden
+    title?: string;
+    subtitle?: string;
+  }
+
+  let { title = '', subtitle = '' }: Props = $props();
 </script>
 
 <!-- Minimal header - just mobile menu toggle, no visible titles -->
 <header class="header">
   <button
     class="btn btn-ghost btn-icon mobile-menu"
-    on:click={toggleSidebar}
+    onclick={toggleSidebar}
     aria-label="Toggle menu"
   >
     <Icon name="menu" size="md" />

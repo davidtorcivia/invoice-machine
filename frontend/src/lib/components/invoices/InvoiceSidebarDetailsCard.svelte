@@ -1,9 +1,13 @@
-<script>
+<script lang="ts">
   import { formatDate } from '$lib/stores';
 
-  export let invoice = {};
-  export let documentLabel = 'Invoice';
-  export let isQuote = false;
+  interface Props {
+    invoice?: any;
+    documentLabel?: string;
+    isQuote?: boolean;
+  }
+
+  let { invoice = {}, documentLabel = 'Invoice', isQuote = false }: Props = $props();
 </script>
 
 <div class="card">

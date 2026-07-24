@@ -2,9 +2,15 @@
   import { createEventDispatcher } from 'svelte';
   import Icon from '$lib/components/Icons.svelte';
 
-  export let searchQuery = '';
-  export let selectedSortOption = '';
-  export let sortOptions = [];
+  /**
+   * @typedef {Object} Props
+   * @property {string} [searchQuery]
+   * @property {string} [selectedSortOption]
+   * @property {any} [sortOptions]
+   */
+
+  /** @type {Props} */
+  let { searchQuery = $bindable(''), selectedSortOption = '', sortOptions = [] } = $props();
 
   const dispatch = createEventDispatcher();
 
@@ -37,20 +43,20 @@
           class="search-input"
           placeholder="Search clients..."
           bind:value={searchQuery}
-          on:keydown={handleKeydown}
+          onkeydown={handleKeydown}
         />
         {#if searchQuery}
-          <button class="btn btn-ghost btn-icon btn-sm clear-button" on:click={() => dispatch('clear')} aria-label="Clear search">
+          <button class="btn btn-ghost btn-icon btn-sm clear-button" onclick={() => dispatch('clear')} aria-label="Clear search">
             <Icon name="x" size="sm" />
           </button>
         {/if}
       </div>
-      <button class="btn btn-secondary search-button" on:click={() => dispatch('search')}>Search</button>
+      <button class="btn btn-secondary search-button" onclick={() => dispatch('search')}>Search</button>
     </div>
   </div>
   <div class="sort-group">
     <label for="sort-select" class="sort-label">Sort</label>
-    <select id="sort-select" class="select" value={selectedSortOption} on:change={handleSortChange}>
+    <select id="sort-select" class="select" value={selectedSortOption} onchange={handleSortChange}>
       {#each sortOptions as option}
         <option value={option.value}>{option.label}</option>
       {/each}

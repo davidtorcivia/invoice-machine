@@ -1,11 +1,13 @@
 <script>
+  import { preventDefault } from 'svelte/legacy';
+
   import { goto } from '$app/navigation';
   import { auth, toast } from '$lib/stores';
 
-  let username = '';
-  let password = '';
-  let loading = false;
-  let error = '';
+  let username = $state('');
+  let password = $state('');
+  let loading = $state(false);
+  let error = $state('');
 
   async function handleSubmit() {
     error = '';
@@ -37,7 +39,7 @@
       <p>Sign in to continue</p>
     </div>
 
-    <form on:submit|preventDefault={handleSubmit}>
+    <form onsubmit={preventDefault(handleSubmit)}>
       {#if error}
         <div class="error-message">{error}</div>
       {/if}

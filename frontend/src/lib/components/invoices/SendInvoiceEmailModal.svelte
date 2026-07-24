@@ -1,14 +1,26 @@
-<script>
+<script lang="ts">
   import { createEventDispatcher } from 'svelte';
   import Icon from '$lib/components/Icons.svelte';
 
-  export let show = false;
-  export let documentLabel = 'Invoice';
-  export let emailLoading = false;
-  export let emailSending = false;
-  export let emailRecipient = '';
-  export let emailSubject = '';
-  export let emailBody = '';
+  interface Props {
+    show?: boolean;
+    documentLabel?: string;
+    emailLoading?: boolean;
+    emailSending?: boolean;
+    emailRecipient?: string;
+    emailSubject?: string;
+    emailBody?: string;
+  }
+
+  let {
+    show = false,
+    documentLabel = 'Invoice',
+    emailLoading = false,
+    emailSending = false,
+    emailRecipient = $bindable(''),
+    emailSubject = $bindable(''),
+    emailBody = $bindable('')
+  }: Props = $props();
 
   const dispatch = createEventDispatcher();
 
@@ -20,15 +32,15 @@
 </script>
 
 {#if show}
-  <div class="modal-overlay" role="presentation" tabindex="-1" on:keydown={handleKeydown}>
-    <button type="button" class="modal-backdrop" aria-label="Close send email dialog" on:click={() => dispatch('cancel')}></button>
+  <div class="modal-overlay" role="presentation" tabindex="-1" onkeydown={handleKeydown}>
+    <button type="button" class="modal-backdrop" aria-label="Close send email dialog" onclick={() => dispatch('cancel')}></button>
     <div class="modal-content email-modal" role="dialog" aria-modal="true" tabindex="-1">
       <div class="modal-header">
         <h2 class="modal-title">
           <Icon name="send" size="md" />
           Send {documentLabel} via Email
         </h2>
-        <button class="btn btn-ghost btn-sm" aria-label="Close" on:click={() => dispatch('cancel')}>
+        <button class="btn btn-ghost btn-sm" aria-label="Close" onclick={() => dispatch('cancel')}>
           <Icon name="x" size="sm" />
         </button>
       </div>
@@ -69,8 +81,8 @@
         </div>
 
         <div class="modal-actions">
-          <button class="btn btn-ghost" on:click={() => dispatch('cancel')}>Cancel</button>
-          <button class="btn btn-primary" on:click={() => dispatch('confirm')} disabled={emailSending || !emailRecipient}>
+          <button class="btn btn-ghost" onclick={() => dispatch('cancel')}>Cancel</button>
+          <button class="btn btn-primary" onclick={() => dispatch('confirm')} disabled={emailSending || !emailRecipient}>
             {#if emailSending}
               <span class="spinner-sm"></span>
               Sending...

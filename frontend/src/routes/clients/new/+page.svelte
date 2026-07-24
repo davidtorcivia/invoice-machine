@@ -1,4 +1,6 @@
 <script>
+  import { preventDefault } from 'svelte/legacy';
+
   import { goto } from '$app/navigation';
   import { clientsApi } from '$lib/api';
   import { createUnsavedGuard } from '$lib/unsavedGuard';
@@ -14,9 +16,9 @@
   import ClientPreferencesSection from '$lib/components/clients/ClientPreferencesSection.svelte';
   import ClientTaxSettingsSection from '$lib/components/clients/ClientTaxSettingsSection.svelte';
 
-  let saving = false;
-  let showDiscardModal = false;
-  let draft = createClientDraft();
+  let saving = $state(false);
+  let showDiscardModal = $state(false);
+  let draft = $state(createClientDraft());
 
   // Warn before leaving with unsaved edits (a stray sidebar click otherwise
   // silently discards the form).
@@ -56,7 +58,7 @@
 <Header title="New Client" subtitle="Add a new client to your contacts" />
 
 <div class="page-content">
-  <form on:submit|preventDefault={saveClient} class="form-layout">
+  <form onsubmit={preventDefault(saveClient)} class="form-layout">
     <ClientIdentitySection bind:name={draft.name} bind:businessName={draft.business_name} bind:email={draft.email} bind:phone={draft.phone} />
     <ClientAddressSection
       bind:addressLine1={draft.address_line1}
@@ -81,7 +83,7 @@
     />
 
     <div class="form-actions">
-      <button type="button" class="btn btn-secondary" on:click={cancel} disabled={saving}>Cancel</button>
+      <button type="button" class="btn btn-secondary" onclick={cancel} disabled={saving}>Cancel</button>
       <button type="submit" class="btn btn-primary" disabled={saving}>
         <Icon name="check" size="sm" />
         {saving ? 'Creating...' : 'Create Client'}

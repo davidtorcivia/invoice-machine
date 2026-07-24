@@ -8,13 +8,13 @@
   import TrashList from '$lib/components/trash/TrashList.svelte';
   import { getTrashItemName } from '$lib/trash/helpers';
 
-  let items = [];
-  let loading = true;
-  let emptying = false;
-  let restoring = false;
-  let showRestoreModal = false;
-  let showEmptyModal = false;
-  let selectedItem = null;
+  let items = $state([]);
+  let loading = $state(true);
+  let emptying = $state(false);
+  let restoring = $state(false);
+  let showRestoreModal = $state(false);
+  let showEmptyModal = $state(false);
+  let selectedItem = $state(/** @type {any} */ (null));
 
   onMount(async () => {
     await loadTrash();
@@ -89,7 +89,7 @@
       <p class="page-subtitle">{items.length} item{items.length !== 1 ? 's' : ''}</p>
     </div>
     {#if items.length > 0}
-      <button class="btn btn-danger" on:click={openEmptyModal}>
+      <button class="btn btn-danger" onclick={openEmptyModal}>
         <Icon name="trash" size="sm" />
         Empty Trash
       </button>

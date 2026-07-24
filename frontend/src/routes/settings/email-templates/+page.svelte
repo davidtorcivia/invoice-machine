@@ -1,4 +1,6 @@
 <script>
+  import { run } from 'svelte/legacy';
+
   import { onMount } from 'svelte';
   import { emailApi, invoicesApi } from '$lib/api';
   import { createUnsavedGuard } from '$lib/unsavedGuard';
@@ -8,18 +10,18 @@
   import EmailTemplatesEditor from '$lib/components/email/EmailTemplatesEditor.svelte';
   import EmailTemplatePreviewCard from '$lib/components/email/EmailTemplatePreviewCard.svelte';
 
-  let loading = true;
-  let saving = false;
-  let previewLoading = false;
-  let subjectTemplate = '';
-  let bodyTemplate = '';
-  let availablePlaceholders = [];
+  let loading = $state(true);
+  let saving = $state(false);
+  let previewLoading = $state(false);
+  let subjectTemplate = $state('');
+  let bodyTemplate = $state('');
+  let availablePlaceholders = $state([]);
   let defaultSubject = '';
   let defaultBody = '';
-  let previewSubject = '';
-  let previewBody = '';
-  let previewInvoiceId = null;
-  let invoices = [];
+  let previewSubject = $state('');
+  let previewBody = $state('');
+  let previewInvoiceId = $state(/** @type {any} */ (null));
+  let invoices = $state([]);
   let previewTimeout;
 
   // Warn before leaving with unsaved template edits; re-baseline after each save
@@ -110,9 +112,11 @@
     schedulePreviewUpdate();
   }
 
-  $: if (subjectTemplate !== undefined || bodyTemplate !== undefined) {
-    schedulePreviewUpdate();
-  }
+  run(() => {
+    if (subjectTemplate !== undefined || bodyTemplate !== undefined) {
+      schedulePreviewUpdate();
+    }
+  });
 </script>
 
 <Header title="Email Templates" />

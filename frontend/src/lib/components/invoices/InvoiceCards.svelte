@@ -1,12 +1,13 @@
-<script>
+<script lang="ts">
+  import { createBubbler, stopPropagation } from 'svelte/legacy';
+
+  const bubble = createBubbler();
   import { createEventDispatcher } from 'svelte';
   import Icon from '$lib/components/Icons.svelte';
   import { formatDate, formatCurrency } from '$lib/stores';
   import { getEffectiveStatus, isOverdue } from '$lib/invoices/list';
 
-  export let invoices = [];
-  export let selectedIds = new Set();
-  export let statusConfig = {};
+  let { invoices = [], selectedIds = new Set(), statusConfig = {} } = $props();
 
   const dispatch = createEventDispatcher();
 </script>
@@ -20,12 +21,12 @@
         <input
           type="checkbox"
           checked={selectedIds.has(invoice.id)}
-          on:click|stopPropagation
-          on:change={() => dispatch('toggleselect', invoice.id)}
+          onclick={stopPropagation(bubble('click'))}
+          onchange={() => dispatch('toggleselect', invoice.id)}
           aria-label="Select invoice {invoice.invoice_number}"
         />
       </div>
-      <button class="invoice-card-main" on:click={() => dispatch('navigate', invoice.id)}>
+      <button class="invoice-card-main" onclick={() => dispatch('navigate', invoice.id)}>
         <div class="invoice-card-header">
           <span class="invoice-card-number font-mono">#{invoice.invoice_number}</span>
           <span class="badge {statusConfig[effectiveStatus]?.class || 'badge-draft'}">
@@ -48,11 +49,11 @@
       </button>
       <div class="invoice-card-actions">
         {#if invoice.document_type !== 'quote' && (invoice.status === 'sent' || invoice.status === 'overdue')}
-          <button class="btn btn-ghost btn-icon" on:click={() => dispatch('markpaid', invoice.id)} title="Mark as paid">
+          <button class="btn btn-ghost btn-icon" onclick={() => dispatch('markpaid', invoice.id)} title="Mark as paid">
             <Icon name="check" size="sm" />
           </button>
         {/if}
-        <button class="btn btn-ghost btn-icon" on:click={() => dispatch('delete', invoice)} title="Delete">
+        <button class="btn btn-ghost btn-icon" onclick={() => dispatch('delete', invoice)} title="Delete">
           <Icon name="trash" size="sm" />
         </button>
       </div>

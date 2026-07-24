@@ -1,10 +1,10 @@
-<script>
+<script lang="ts">
   import { createEventDispatcher } from 'svelte';
   import { formatDate } from '$lib/stores';
   import Icon from '$lib/components/Icons.svelte';
   import { getTrashItemIcon, getTrashItemName } from '$lib/trash/helpers';
 
-  export let items = [];
+  let { items = [] } = $props();
 
   const dispatch = createEventDispatcher();
 </script>
@@ -29,7 +29,7 @@
         </div>
 
         <div class="trash-item-actions">
-          <button class="btn btn-secondary btn-sm" on:click={() => dispatch('restore', item)}>
+          <button class="btn btn-secondary btn-sm" onclick={() => dispatch('restore', item)}>
             <Icon name="refresh" size="sm" />
             Restore
           </button>

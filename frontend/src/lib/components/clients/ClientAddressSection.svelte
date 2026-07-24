@@ -1,12 +1,25 @@
-<script>
-  export let title = 'Address';
-  export let addressLine1 = '';
-  export let addressLine2 = '';
-  export let city = '';
-  export let state = '';
-  export let postalCode = '';
-  export let country = '';
-  export let countries = [];
+<script lang="ts">
+  interface Props {
+    title?: string;
+    addressLine1?: string;
+    addressLine2?: string;
+    city?: string;
+    state?: string;
+    postalCode?: string;
+    country?: string;
+    countries?: any;
+  }
+
+  let {
+    title = 'Address',
+    addressLine1 = $bindable(''),
+    addressLine2 = $bindable(''),
+    city = $bindable(''),
+    state = $bindable(''),
+    postalCode = $bindable(''),
+    country = $bindable(''),
+    countries = []
+  }: Props = $props();
 </script>
 
 <div class="card">

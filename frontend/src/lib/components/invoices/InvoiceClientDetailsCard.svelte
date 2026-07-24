@@ -1,16 +1,30 @@
-<script>
+<script lang="ts">
   import Icon from '$lib/components/Icons.svelte';
   import { currencies } from '$lib/data/currencies';
 
-  export let clients = [];
-  export let clientId = '';
-  export let issueDate = '';
-  export let paymentTermsDays = 30;
-  export let currencyCode = 'USD';
-  export let clientReference = '';
-  export let invoiceNumberOverride = '';
-  export let isQuote = false;
-  export let openClientModal;
+  interface Props {
+    clients?: any;
+    clientId?: string;
+    issueDate?: string;
+    paymentTermsDays?: number;
+    currencyCode?: string;
+    clientReference?: string;
+    invoiceNumberOverride?: string;
+    isQuote?: boolean;
+    openClientModal: any;
+  }
+
+  let {
+    clients = [],
+    clientId = $bindable(''),
+    issueDate = $bindable(''),
+    paymentTermsDays = $bindable(30),
+    currencyCode = $bindable('USD'),
+    clientReference = $bindable(''),
+    invoiceNumberOverride = $bindable(''),
+    isQuote = false,
+    openClientModal
+  }: Props = $props();
 </script>
 
 <div class="card">
@@ -28,7 +42,7 @@
             <option value={client.id}>{client.business_name || client.name}</option>
           {/each}
         </select>
-        <button type="button" class="btn btn-secondary btn-sm new-client-btn" on:click={openClientModal}>
+        <button type="button" class="btn btn-secondary btn-sm new-client-btn" onclick={openClientModal}>
           <Icon name="plus" size="sm" />
           New
         </button>

@@ -1,12 +1,22 @@
-<script>
+<script lang="ts">
   import CollapsibleSection from '$lib/components/CollapsibleSection.svelte';
   import Icon from '$lib/components/Icons.svelte';
 
-  export let open = false;
-  export let logoPreview = null;
-  export let logoUploading = false;
-  export let handleLogoSelect;
-  export let openDeleteLogoModal;
+  interface Props {
+    open?: boolean;
+    logoPreview?: any;
+    logoUploading?: boolean;
+    handleLogoSelect: any;
+    openDeleteLogoModal: any;
+  }
+
+  let {
+    open = $bindable(false),
+    logoPreview = null,
+    logoUploading = false,
+    handleLogoSelect,
+    openDeleteLogoModal
+  }: Props = $props();
 </script>
 
 <CollapsibleSection title="Logo" subtitle="Company logo for invoices" icon="image" bind:open={open}>
@@ -39,14 +49,14 @@
           <input
             type="file"
             accept="image/*"
-            on:change={handleLogoSelect}
+            onchange={handleLogoSelect}
             disabled={logoUploading}
             style="display: none"
           />
         </label>
 
         {#if logoPreview && !logoUploading}
-          <button class="btn btn-ghost btn-danger-text" on:click={openDeleteLogoModal}>
+          <button class="btn btn-ghost btn-danger-text" onclick={openDeleteLogoModal}>
             <Icon name="trash" size="sm" />
             Delete
           </button>

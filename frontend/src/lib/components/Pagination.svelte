@@ -1,17 +1,27 @@
-<script>
+<script lang="ts">
   import { createEventDispatcher } from 'svelte';
 
-  export let pageStart = 0;
-  export let pageEnd = 0;
-  export let pagination = {
+  interface Props {
+    pageStart?: number;
+    pageEnd?: number;
+    pagination?: any;
+    loading?: boolean;
+    noun?: string;
+  }
+
+  let {
+    pageStart = 0,
+    pageEnd = 0,
+    pagination = {
     page: 1,
     total: 0,
     total_pages: 0,
     has_next: false,
     has_prev: false
-  };
-  export let loading = false;
-  export let noun = 'item';
+  },
+    loading = false,
+    noun = 'item'
+  }: Props = $props();
 
   const dispatch = createEventDispatcher();
 </script>
@@ -22,11 +32,11 @@
       Showing {pageStart}-{pageEnd} of {pagination.total} {noun}{pagination.total === 1 ? '' : 's'}
     </div>
     <div class="pagination-controls">
-      <button class="btn btn-secondary btn-sm" on:click={() => dispatch('pagechange', pagination.page - 1)} disabled={!pagination.has_prev || loading}>
+      <button class="btn btn-secondary btn-sm" onclick={() => dispatch('pagechange', pagination.page - 1)} disabled={!pagination.has_prev || loading}>
         Previous
       </button>
       <span class="pagination-page">Page {pagination.page} of {Math.max(1, pagination.total_pages)}</span>
-      <button class="btn btn-secondary btn-sm" on:click={() => dispatch('pagechange', pagination.page + 1)} disabled={!pagination.has_next || loading}>
+      <button class="btn btn-secondary btn-sm" onclick={() => dispatch('pagechange', pagination.page + 1)} disabled={!pagination.has_next || loading}>
         Next
       </button>
     </div>

@@ -1,4 +1,6 @@
 <script>
+  import { run, preventDefault } from 'svelte/legacy';
+
   import { onMount } from 'svelte';
   import { page } from '$app/stores';
   import { goto, beforeNavigate } from '$app/navigation';
@@ -15,46 +17,46 @@
   import InvoiceTaxCard from '$lib/components/invoices/InvoiceTaxCard.svelte';
   import InvoiceTypeCard from '$lib/components/invoices/InvoiceTypeCard.svelte';
 
-  $: invoiceId = $page.params.id || '';
+  let invoiceId = $derived($page.params.id || '');
 
   /**
    * @typedef {{ id: string, name: string, instructions?: string }} PaymentMethod
    * @typedef {{ id?: number|string, description: string, quantity: number, unit_type: string, unit_price: string|number }} InvoiceItemDraft
    */
 
-  let invoice = null;
-  let profile = null;
-  let loading = true;
-  let saving = false;
-  let showDiscardModal = false;
+  let invoice = $state(/** @type {any} */ (null));
+  let profile = $state(/** @type {any} */ (null));
+  let loading = $state(true);
+  let saving = $state(false);
+  let showDiscardModal = $state(false);
 
   // Form data
-  let issueDate = '';
-  let dueDate = '';
-  let paymentTermsDays = 30;
-  let notes = '';
-  let status = 'draft';
-  let documentType = 'invoice';
-  let clientReference = '';
-  let showPaymentInstructions = true;
+  let issueDate = $state('');
+  let dueDate = $state('');
+  let paymentTermsDays = $state(30);
+  let notes = $state('');
+  let status = $state('draft');
+  let documentType = $state('invoice');
+  let clientReference = $state('');
+  let showPaymentInstructions = $state(true);
   /** @type {string[]} */
-  let selectedPaymentMethods = [];
+  let selectedPaymentMethods = $state([]);
   /** @type {InvoiceItemDraft[]} */
-  let items = [];
+  let items = $state([]);
 
   // Notes handling
-  let useDefaultNotes = false;
-  let originalNotes = '';
-  let defaultNotesInitialized = false;
+  let useDefaultNotes = $state(false);
+  let originalNotes = $state('');
+  let defaultNotesInitialized = $state(false);
 
   // Tax settings
-  let taxEnabled = false;
-  let taxRate = '';
-  let taxName = 'Tax';
+  let taxEnabled = $state(false);
+  let taxRate = $state('');
+  let taxName = $state('Tax');
 
   // Unsaved-changes guard: compare current form state to a snapshot taken on load.
-  let allowLeave = false;
-  let initialSnapshot = '';
+  let allowLeave = $state(false);
+  let initialSnapshot = $state('');
 
   function formState() {
     return JSON.stringify({
@@ -74,7 +76,7 @@
     });
   }
 
-  $: isDirty = !allowLeave && initialSnapshot !== '' && formState() !== initialSnapshot;
+  let isDirty = $derived(!allowLeave && initialSnapshot !== '' && formState() !== initialSnapshot);
 
   beforeNavigate((nav) => {
     if (isDirty && !saving) {
@@ -85,7 +87,7 @@
   });
 
   // Default notes from profile
-  $: defaultNotesText = profile?.default_notes || '';
+  let defaultNotesText = $derived(profile?.default_notes || '');
 
   onMount(async () => {
     await Promise.all([loadInvoice(), loadProfile()]);
@@ -101,7 +103,7 @@
 
   // Parse payment methods from profile
   /** @type {PaymentMethod[]} */
-  $: availablePaymentMethods = parseJsonArray(profile?.payment_methods);
+  let availablePaymentMethods = $derived(parseJsonArray(profile?.payment_methods));
 
   async function loadInvoice() {
     loading = true;
@@ -151,11 +153,13 @@
   }
 
   // Effective notes (use default if toggled on)
-  $: effectiveNotes = useDefaultNotes && defaultNotesText ? defaultNotesText : notes;
-  $: if (!defaultNotesInitialized && profile && invoice) {
-    useDefaultNotes = !!(profile.default_notes && originalNotes === profile.default_notes);
-    defaultNotesInitialized = true;
-  }
+  let effectiveNotes = $derived(useDefaultNotes && defaultNotesText ? defaultNotesText : notes);
+  run(() => {
+    if (!defaultNotesInitialized && profile && invoice) {
+      useDefaultNotes = !!(profile.default_notes && originalNotes === profile.default_notes);
+      defaultNotesInitialized = true;
+    }
+  });
 
   async function saveInvoice() {
     const validItems = items.filter(item => item.description.trim() && item.unit_price);
@@ -252,7 +256,7 @@
       <div class="spinner"></div>
     </div>
   {:else}
-    <form on:submit|preventDefault={saveInvoice} class="form-layout">
+    <form onsubmit={preventDefault(saveInvoice)} class="form-layout">
       <InvoiceTypeCard
         bind:documentType
         helpText="Changing document type will not regenerate the number. Create a new document if you need a different number format."
@@ -260,7 +264,7 @@
 
       <InvoiceEditDetailsCard
         {invoice}
-        bind:documentType
+        {documentType}
         bind:issueDate
         bind:dueDate
         bind:paymentTermsDays
@@ -270,9 +274,9 @@
 
       <InvoiceLineItemsCard
         bind:items
-        bind:taxEnabled
-        bind:taxRate
-        bind:taxName
+        {taxEnabled}
+        {taxRate}
+        {taxName}
         currencyCode={invoice?.currency_code || 'USD'}
       />
 
@@ -296,7 +300,7 @@
         <button
           type="button"
           class="btn btn-secondary"
-          on:click={cancel}
+          onclick={cancel}
           disabled={saving}
         >
           Cancel

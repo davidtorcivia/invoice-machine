@@ -1,17 +1,27 @@
-<script>
+<script lang="ts">
   import CollapsibleSection from '$lib/components/CollapsibleSection.svelte';
   import Icon from '$lib/components/Icons.svelte';
 
-  export let open = false;
-  export let paymentMethods = [];
-  export let openAddMethodModal;
-  export let openEditMethodModal;
-  export let deletePaymentMethod;
+  interface Props {
+    open?: boolean;
+    paymentMethods?: any;
+    openAddMethodModal: any;
+    openEditMethodModal: any;
+    deletePaymentMethod: any;
+  }
+
+  let {
+    open = $bindable(false),
+    paymentMethods = [],
+    openAddMethodModal,
+    openEditMethodModal,
+    deletePaymentMethod
+  }: Props = $props();
 </script>
 
 <CollapsibleSection title="Payment Methods" subtitle="Configure payment options" icon="invoice" bind:open={open}>
   <div class="section-header-actions">
-    <button type="button" class="btn btn-secondary btn-sm" on:click={openAddMethodModal}>
+    <button type="button" class="btn btn-secondary btn-sm" onclick={openAddMethodModal}>
       <Icon name="plus" size="sm" />
       Add Method
     </button>
@@ -30,10 +40,10 @@
             {/if}
           </div>
           <div class="payment-method-actions">
-            <button type="button" class="btn btn-ghost btn-icon btn-sm" on:click={() => openEditMethodModal(method)} title="Edit">
+            <button type="button" class="btn btn-ghost btn-icon btn-sm" onclick={() => openEditMethodModal(method)} title="Edit">
               <Icon name="pencil" size="sm" />
             </button>
-            <button type="button" class="btn btn-ghost btn-icon btn-sm" on:click={() => deletePaymentMethod(method.id)} title="Delete">
+            <button type="button" class="btn btn-ghost btn-icon btn-sm" onclick={() => deletePaymentMethod(method.id)} title="Delete">
               <Icon name="trash" size="sm" />
             </button>
           </div>
@@ -43,7 +53,7 @@
   {:else}
     <div class="empty-methods">
       <p class="text-secondary">No payment methods configured yet.</p>
-      <button type="button" class="btn btn-secondary btn-sm mt-2" on:click={openAddMethodModal}>
+      <button type="button" class="btn btn-secondary btn-sm mt-2" onclick={openAddMethodModal}>
         <Icon name="plus" size="sm" />
         Add your first method
       </button>

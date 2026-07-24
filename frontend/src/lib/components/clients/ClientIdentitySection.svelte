@@ -1,9 +1,19 @@
-<script>
-  export let title = 'Client Information';
-  export let name = '';
-  export let businessName = '';
-  export let email = '';
-  export let phone = '';
+<script lang="ts">
+  interface Props {
+    title?: string;
+    name?: string;
+    businessName?: string;
+    email?: string;
+    phone?: string;
+  }
+
+  let {
+    title = 'Client Information',
+    name = $bindable(''),
+    businessName = $bindable(''),
+    email = $bindable(''),
+    phone = $bindable('')
+  }: Props = $props();
 </script>
 
 <div class="card">

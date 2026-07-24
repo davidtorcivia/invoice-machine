@@ -1,14 +1,23 @@
-<script>
+<script lang="ts">
   import { createEventDispatcher } from 'svelte';
   import Icon from '$lib/components/Icons.svelte';
   import { formatFrequency, formatScheduleDate } from '$lib/recurring/form';
 
-  export let schedule;
-  export let isTriggering = false;
+  interface Props {
+    schedule: any;
+    isTriggering?: boolean;
+  }
+
+  let { schedule, isTriggering = false }: Props = $props();
 
   const dispatch = createEventDispatcher();
 
-  const clientLabel = schedule.client_name || schedule.client_business || 'Unknown Client';
+  // $derived, not const: a const captures the value at component creation, so
+  // an in-place update to the schedule (a rename, a client reassignment) would
+  // leave this label showing the old value.
+  const clientLabel = $derived(
+    schedule.client_name || schedule.client_business || 'Unknown Client',
+  );
 </script>
 
 <div class="schedule-card" class:inactive={!schedule.is_active}>
@@ -46,7 +55,7 @@
   <div class="schedule-actions">
     <button
       class="btn btn-secondary btn-sm"
-      on:click={() => dispatch('trigger')}
+      onclick={() => dispatch('trigger')}
       disabled={isTriggering}
       title="Create invoice now"
     >
@@ -60,17 +69,17 @@
 
     <button
       class="btn btn-ghost btn-sm"
-      on:click={() => dispatch('toggle')}
+      onclick={() => dispatch('toggle')}
       title={schedule.is_active ? 'Pause schedule' : 'Activate schedule'}
     >
       <Icon name={schedule.is_active ? 'pause' : 'play'} size="sm" />
     </button>
 
-    <button class="btn btn-ghost btn-sm" on:click={() => dispatch('edit')} title="Edit schedule">
+    <button class="btn btn-ghost btn-sm" onclick={() => dispatch('edit')} title="Edit schedule">
       <Icon name="pencil" size="sm" />
     </button>
 
-    <button class="btn btn-ghost btn-sm btn-danger-text" on:click={() => dispatch('delete')} title="Delete schedule">
+    <button class="btn btn-ghost btn-sm btn-danger-text" onclick={() => dispatch('delete')} title="Delete schedule">
       <Icon name="trash" size="sm" />
     </button>
   </div>

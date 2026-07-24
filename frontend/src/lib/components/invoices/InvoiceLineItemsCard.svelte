@@ -4,13 +4,26 @@
 
   /** @typedef {{ description: string, quantity: number, unit_price: string | number, unit_type: string }} InvoiceItemDraft */
 
-  /** @type {InvoiceItemDraft[]} */
-  export let items = [];
-  export let taxEnabled = false;
-  export let taxRate = '';
-  export let taxName = 'Tax';
-  export let addButtonText = 'Add Item';
-  export let currencyCode = 'USD';
+  
+  /**
+   * @typedef {Object} Props
+   * @property {InvoiceItemDraft[]} [items]
+   * @property {boolean} [taxEnabled]
+   * @property {string} [taxRate]
+   * @property {string} [taxName]
+   * @property {string} [addButtonText]
+   * @property {string} [currencyCode]
+   */
+
+  /** @type {Props} */
+  let {
+    items = $bindable([]),
+    taxEnabled = false,
+    taxRate = '',
+    taxName = 'Tax',
+    addButtonText = 'Add Item',
+    currencyCode = 'USD'
+  } = $props();
 
   // Round to cents per line so this live preview matches the backend's
   // decimal arithmetic (the server is authoritative on save).
@@ -26,18 +39,18 @@
     }
   }
 
-  $: subtotal = round2(
+  let subtotal = $derived(round2(
     items.reduce((sum, item) => sum + round2((Number(item.unit_price) || 0) * item.quantity), 0)
-  );
-  $: parsedTaxRate = Number(taxRate) || 0;
-  $: taxAmount = taxEnabled && parsedTaxRate > 0 ? round2(subtotal * parsedTaxRate / 100) : 0;
-  $: total = round2(subtotal + taxAmount);
+  ));
+  let parsedTaxRate = $derived(Number(taxRate) || 0);
+  let taxAmount = $derived(taxEnabled && parsedTaxRate > 0 ? round2(subtotal * parsedTaxRate / 100) : 0);
+  let total = $derived(round2(subtotal + taxAmount));
 </script>
 
 <div class="card">
   <div class="card-header">
     <h3 class="card-title">Line Items</h3>
-    <button type="button" class="btn btn-secondary btn-sm" on:click={addItem}>
+    <button type="button" class="btn btn-secondary btn-sm" onclick={addItem}>
       <Icon name="plus" size="sm" />
       {addButtonText}
     </button>
@@ -102,7 +115,7 @@
         <button
           type="button"
           class="btn btn-ghost btn-icon btn-sm btn-remove"
-          on:click={() => removeItem(index)}
+          onclick={() => removeItem(index)}
           disabled={items.length === 1}
           title="Remove item"
         >

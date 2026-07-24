@@ -1,29 +1,56 @@
-<script>
+<script lang="ts">
   import CollapsibleSection from '$lib/components/CollapsibleSection.svelte';
   import Icon from '$lib/components/Icons.svelte';
 
-  export let open = false;
-  export let creatingBackup = false;
-  export let createBackup;
-  export let backupEnabled = true;
-  export let backupRetentionDays = 30;
-  export let backupS3Enabled = false;
-  export let backupS3EndpointUrl = '';
-  export let backupS3AccessKeyId = '';
-  export let backupS3SecretAccessKey = '';
-  export let backupS3Bucket = '';
-  export let backupS3Region = '';
-  export let backupS3Prefix = 'invoice-machine-backups';
-  export let testingS3 = false;
-  export let testS3Connection;
-  export let loadingBackups = false;
-  export let backups = [];
-  export let restoringBackup = null;
-  export let openRestoreModal;
-  export let openDeleteBackupModal;
-  export let formatBytes;
-  export let formatDate;
-  export let downloadBackupHref;
+  interface Props {
+    open?: boolean;
+    creatingBackup?: boolean;
+    createBackup: any;
+    backupEnabled?: boolean;
+    backupRetentionDays?: number;
+    backupS3Enabled?: boolean;
+    backupS3EndpointUrl?: string;
+    backupS3AccessKeyId?: string;
+    backupS3SecretAccessKey?: string;
+    backupS3Bucket?: string;
+    backupS3Region?: string;
+    backupS3Prefix?: string;
+    testingS3?: boolean;
+    testS3Connection: any;
+    loadingBackups?: boolean;
+    backups?: any;
+    restoringBackup?: any;
+    openRestoreModal: any;
+    openDeleteBackupModal: any;
+    formatBytes: any;
+    formatDate: any;
+    downloadBackupHref: any;
+  }
+
+  let {
+    open = $bindable(false),
+    creatingBackup = false,
+    createBackup,
+    backupEnabled = $bindable(true),
+    backupRetentionDays = $bindable(30),
+    backupS3Enabled = $bindable(false),
+    backupS3EndpointUrl = $bindable(''),
+    backupS3AccessKeyId = $bindable(''),
+    backupS3SecretAccessKey = $bindable(''),
+    backupS3Bucket = $bindable(''),
+    backupS3Region = $bindable(''),
+    backupS3Prefix = $bindable('invoice-machine-backups'),
+    testingS3 = false,
+    testS3Connection,
+    loadingBackups = false,
+    backups = [],
+    restoringBackup = null,
+    openRestoreModal,
+    openDeleteBackupModal,
+    formatBytes,
+    formatDate,
+    downloadBackupHref
+  }: Props = $props();
 </script>
 
 <CollapsibleSection title="Backup & Restore" subtitle="Manage your data backups" icon="download" bind:open={open}>
@@ -31,7 +58,7 @@
     <button
       type="button"
       class="btn btn-secondary btn-sm"
-      on:click={createBackup}
+      onclick={createBackup}
       disabled={creatingBackup}
     >
       <Icon name="plus" size="sm" />
@@ -142,7 +169,7 @@
         <button
           type="button"
           class="btn btn-secondary btn-sm"
-          on:click={testS3Connection}
+          onclick={testS3Connection}
           disabled={testingS3}
         >
           {testingS3 ? 'Testing...' : 'Test S3 Connection'}
@@ -188,7 +215,7 @@
               <button
                 type="button"
                 class="btn btn-ghost btn-icon btn-sm"
-                on:click={() => openRestoreModal(backup)}
+                onclick={() => openRestoreModal(backup)}
                 title="Restore"
                 disabled={restoringBackup === backup.filename}
               >
@@ -198,7 +225,7 @@
                 <button
                   type="button"
                   class="btn btn-ghost btn-icon btn-sm"
-                  on:click={() => openDeleteBackupModal(backup)}
+                  onclick={() => openDeleteBackupModal(backup)}
                   title="Delete"
                 >
                   <Icon name="trash" size="sm" />

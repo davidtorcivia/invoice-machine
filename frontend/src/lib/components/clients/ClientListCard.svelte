@@ -1,16 +1,16 @@
-<script>
+<script lang="ts">
   import { createEventDispatcher } from 'svelte';
   import Icon from '$lib/components/Icons.svelte';
   import { getAvatarColor } from '$lib/clients/config';
 
-  export let client = {};
+  let { client = {} } = $props();
 
   const dispatch = createEventDispatcher();
 
-  $: avatar = getAvatarColor(client.id);
+  let avatar = $derived(getAvatarColor(client.id));
 </script>
 
-<div class="client-card" on:click={() => dispatch('open', client.id)} role="button" tabindex="0" on:keydown={(event) => event.key === 'Enter' && dispatch('open', client.id)}>
+<div class="client-card" onclick={() => dispatch('open', client.id)} role="button" tabindex="0" onkeydown={(event) => event.key === 'Enter' && dispatch('open', client.id)}>
   <div class="client-card-header">
     <div class="client-avatar" style="background-color: {avatar.bg}; color: {avatar.fg};">
       {(client.business_name || client.name || '?').charAt(0).toUpperCase()}
@@ -22,10 +22,10 @@
       {/if}
     </div>
     <div class="client-actions">
-      <button class="btn btn-ghost btn-icon btn-sm" on:click={(event) => { event.stopPropagation(); dispatch('edit', client.id); }} title="Edit">
+      <button class="btn btn-ghost btn-icon btn-sm" onclick={(event) => { event.stopPropagation(); dispatch('edit', client.id); }} title="Edit">
         <Icon name="pencil" size="sm" />
       </button>
-      <button class="btn btn-ghost btn-icon btn-sm" on:click={(event) => { event.stopPropagation(); dispatch('delete', client); }} title="Delete">
+      <button class="btn btn-ghost btn-icon btn-sm" onclick={(event) => { event.stopPropagation(); dispatch('delete', client); }} title="Delete">
         <Icon name="trash" size="sm" />
       </button>
     </div>

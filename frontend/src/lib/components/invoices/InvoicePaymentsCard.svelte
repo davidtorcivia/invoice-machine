@@ -3,13 +3,26 @@
   import { formatCurrency, formatDate } from '$lib/stores';
   import Icons from '$lib/components/Icons.svelte';
 
-  /** @type {{ id: number, amount: string, currency_code: string, payment_date: string, method?: string|null, reference?: string|null, provider?: string|null }[]} */
-  export let payments = [];
-  export let currencyCode = 'USD';
-  export let total = '0';
-  export let amountPaid = '0';
-  export let amountDue = '0';
-  export let busy = false;
+  
+  /**
+   * @typedef {Object} Props
+   * @property {{ id: number, amount: string, currency_code: string, payment_date: string, method?: string|null, reference?: string|null, provider?: string|null }[]} [payments]
+   * @property {string} [currencyCode]
+   * @property {string} [total]
+   * @property {string} [amountPaid]
+   * @property {string} [amountDue]
+   * @property {boolean} [busy]
+   */
+
+  /** @type {Props} */
+  let {
+    payments = [],
+    currencyCode = 'USD',
+    total = '0',
+    amountPaid = '0',
+    amountDue = '0',
+    busy = false
+  } = $props();
 
   const dispatch = createEventDispatcher();
 
@@ -23,11 +36,11 @@
     other: 'Other'
   };
 
-  $: paidNum = parseFloat(amountPaid) || 0;
-  $: totalNum = parseFloat(total) || 0;
-  $: dueNum = parseFloat(amountDue) || 0;
-  $: percentPaid = totalNum > 0 ? Math.min(100, Math.round((paidNum / totalNum) * 100)) : 0;
-  $: isSettled = dueNum <= 0 && paidNum > 0;
+  let paidNum = $derived(parseFloat(amountPaid) || 0);
+  let totalNum = $derived(parseFloat(total) || 0);
+  let dueNum = $derived(parseFloat(amountDue) || 0);
+  let percentPaid = $derived(totalNum > 0 ? Math.min(100, Math.round((paidNum / totalNum) * 100)) : 0);
+  let isSettled = $derived(dueNum <= 0 && paidNum > 0);
 
   function methodLabel(method) {
     if (!method) return 'Payment';
@@ -41,7 +54,7 @@
     <button
       type="button"
       class="btn btn-secondary btn-sm"
-      on:click={() => dispatch('record')}
+      onclick={() => dispatch('record')}
       disabled={busy}
     >
       <Icons name="plus" size="sm" />
@@ -101,7 +114,7 @@
             <button
               type="button"
               class="btn-danger-text"
-              on:click={() => dispatch('delete', payment)}
+              onclick={() => dispatch('delete', payment)}
               disabled={busy}
               aria-label="Delete payment of {payment.amount}"
             >

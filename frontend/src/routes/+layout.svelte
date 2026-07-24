@@ -1,4 +1,6 @@
-<script>
+<script lang="ts">
+  import { run } from 'svelte/legacy';
+
   import '@fontsource-variable/inter';
   import '../app.css';
   import { onMount } from 'svelte';
@@ -7,6 +9,11 @@
   import { auth } from '$lib/stores';
   import Sidebar from '$lib/components/Sidebar.svelte';
   import Toast from '$lib/components/Toast.svelte';
+  interface Props {
+    children?: import('svelte').Snippet;
+  }
+
+  let { children }: Props = $props();
 
   // Auth-free routes
   const publicRoutes = ['/login', '/setup'];
@@ -36,29 +43,31 @@
     return 'Invoice Machine';
   }
 
-  $: pageTitle = getPageTitle($page.url.pathname);
+  let pageTitle = $derived(getPageTitle($page.url.pathname));
 
-  $: isPublicRoute = publicRoutes.includes($page.url.pathname);
-  $: isAuthenticated = $auth.authenticated;
-  $: needsSetup = $auth.needsSetup;
-  $: loading = $auth.loading;
+  let isPublicRoute = $derived(publicRoutes.includes($page.url.pathname));
+  let isAuthenticated = $derived($auth.authenticated);
+  let needsSetup = $derived($auth.needsSetup);
+  let loading = $derived($auth.loading);
 
   onMount(async () => {
     await auth.check();
   });
 
   // Reactive navigation based on auth state
-  $: if (!loading) {
-    const path = $page.url.pathname;
+  run(() => {
+    if (!loading) {
+      const path = $page.url.pathname;
 
-    if (needsSetup && path !== '/setup') {
-      goto('/setup');
-    } else if (!needsSetup && !isAuthenticated && !publicRoutes.includes(path)) {
-      goto('/login');
-    } else if (isAuthenticated && publicRoutes.includes(path)) {
-      goto('/');
+      if (needsSetup && path !== '/setup') {
+        goto('/setup');
+      } else if (!needsSetup && !isAuthenticated && !publicRoutes.includes(path)) {
+        goto('/login');
+      } else if (isAuthenticated && publicRoutes.includes(path)) {
+        goto('/');
+      }
     }
-  }
+  });
 </script>
 
 <svelte:head>
@@ -70,13 +79,13 @@
     <div class="spinner"></div>
   </div>
 {:else if isPublicRoute}
-  <slot />
+  {@render children?.()}
   <Toast />
 {:else if isAuthenticated}
   <div class="app-layout">
     <Sidebar />
     <main class="main-content">
-      <slot />
+      {@render children?.()}
     </main>
   </div>
   <Toast />

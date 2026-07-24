@@ -1,13 +1,25 @@
-<script>
+<script lang="ts">
   import CollapsibleSection from '$lib/components/CollapsibleSection.svelte';
 
-  export let open = false;
-  export let defaultPaymentTermsDays = 30;
-  export let defaultCurrencyCode = 'USD';
-  export let currencies = [];
-  export let accentColor = '#16a34a';
-  export let defaultNotes = '';
-  export let defaultPaymentInstructions = '';
+  interface Props {
+    open?: boolean;
+    defaultPaymentTermsDays?: number;
+    defaultCurrencyCode?: string;
+    currencies?: any;
+    accentColor?: string;
+    defaultNotes?: string;
+    defaultPaymentInstructions?: string;
+  }
+
+  let {
+    open = $bindable(false),
+    defaultPaymentTermsDays = $bindable(30),
+    defaultCurrencyCode = $bindable('USD'),
+    currencies = [],
+    accentColor = $bindable('#16a34a'),
+    defaultNotes = $bindable(''),
+    defaultPaymentInstructions = $bindable('')
+  }: Props = $props();
 </script>
 
 <CollapsibleSection title="Invoice Defaults" subtitle="Default settings for new invoices" icon="invoice" bind:open={open}>

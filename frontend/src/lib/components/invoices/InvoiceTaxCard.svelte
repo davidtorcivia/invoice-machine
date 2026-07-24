@@ -1,10 +1,21 @@
-<script>
-  export let taxEnabled = false;
-  export let taxRate = '';
-  export let taxName = 'Tax';
-  export let checkboxLabel = 'Enable Tax';
-  export let enabledHint = '';
-  export let disabledHint = '';
+<script lang="ts">
+  interface Props {
+    taxEnabled?: boolean;
+    taxRate?: string;
+    taxName?: string;
+    checkboxLabel?: string;
+    enabledHint?: string;
+    disabledHint?: string;
+  }
+
+  let {
+    taxEnabled = $bindable(false),
+    taxRate = $bindable(''),
+    taxName = $bindable('Tax'),
+    checkboxLabel = 'Enable Tax',
+    enabledHint = '',
+    disabledHint = ''
+  }: Props = $props();
 </script>
 
 <div class="card">

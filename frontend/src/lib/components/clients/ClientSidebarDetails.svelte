@@ -1,7 +1,7 @@
-<script>
+<script lang="ts">
   import Icon from '$lib/components/Icons.svelte';
 
-  export let client = {};
+  let { client = {} } = $props();
 </script>
 
 <div class="card">

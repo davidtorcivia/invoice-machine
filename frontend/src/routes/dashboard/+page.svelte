@@ -8,17 +8,17 @@
   import DashboardStatsGrid from '$lib/components/dashboard/DashboardStatsGrid.svelte';
   import RecentInvoicesPanel from '$lib/components/dashboard/RecentInvoicesPanel.svelte';
 
-  let stats = {
+  let stats = $state({
     totalOutstanding: 0,
     paidThisMonth: 0,
     draftCount: 0,
     clientCount: 0,
     currency: 'USD'
-  };
+  });
 
-  let recentInvoices = [];
-  let loading = true;
-  let loadError = false;
+  let recentInvoices = $state([]);
+  let loading = $state(true);
+  let loadError = $state(false);
 
   async function load() {
     loading = true;
@@ -72,7 +72,7 @@
   {:else if loadError}
     <div class="load-error">
       <p>Couldn't load the dashboard.</p>
-      <button type="button" class="btn btn-secondary" on:click={load}>
+      <button type="button" class="btn btn-secondary" onclick={load}>
         <Icon name="refresh" size="sm" />
         Retry
       </button>
