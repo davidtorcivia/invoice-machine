@@ -24,22 +24,6 @@ def _maybe_iso(value: Any, json_ready: bool) -> Any:
     return value
 
 
-def parse_json_list(value: Any) -> list:
-    """Parse a JSON-backed list field safely."""
-    if isinstance(value, list):
-        return value
-    if not value:
-        return []
-
-    import json
-
-    try:
-        parsed = json.loads(value)
-        return parsed if isinstance(parsed, list) else []
-    except (json.JSONDecodeError, TypeError):
-        return []
-
-
 def dump_json_list(values: list | None) -> str | None:
     """Serialize a list field or return None for empty values."""
     if not values:

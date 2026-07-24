@@ -170,7 +170,7 @@ export const toast = createToastStore();
 
 // ===== Loading State =====
 
-export const createLoadingStore = () => {
+const createLoadingStore = () => {
   const { subscribe, set } = writable(false);
 
   return {
@@ -201,7 +201,7 @@ export const createLoadingStore = () => {
  * @param {*} initialValue - Initial value before first fetch
  * @param {{ lazy?: boolean }} [options={}] - Configuration options
  */
-export function createDataStore(fetchFn, initialValue = null, options = {}) {
+function createDataStore(fetchFn, initialValue = null, options = {}) {
   const { lazy = true } = options;
 
   const { subscribe: rawSubscribe, set, update } = writable(initialValue);
@@ -370,24 +370,3 @@ export const formatDate = (dateStr, format = 'short') => {
   });
 };
 
-export const formatStatus = (status) => {
-  const map = {
-    draft: 'Draft',
-    sent: 'Sent',
-    paid: 'Paid',
-    overdue: 'Overdue',
-    cancelled: 'Cancelled',
-  };
-  return map[status] || status;
-};
-
-export const statusBadgeClass = (status) => {
-  const map = {
-    draft: 'badge-draft',
-    sent: 'badge-sent',
-    paid: 'badge-paid',
-    overdue: 'badge-overdue',
-    cancelled: 'badge-cancelled',
-  };
-  return map[status] || 'badge-draft';
-};

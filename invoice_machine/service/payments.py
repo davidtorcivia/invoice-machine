@@ -18,18 +18,6 @@ from invoice_machine.database import Invoice, Payment
 from invoice_machine.service.common import quantize_money
 from invoice_machine.utils import utc_now
 
-# Free-text is allowed, but these are the values the UI offers.
-SUGGESTED_PAYMENT_METHODS = (
-    "bank_transfer",
-    "card",
-    "cash",
-    "cheque",
-    "paypal",
-    "stripe",
-    "other",
-)
-
-# Statuses a payment may not be recorded against.
 _UNPAYABLE_STATUSES = ("cancelled",)
 
 

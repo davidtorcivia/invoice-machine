@@ -16,6 +16,7 @@ from invoice_machine.service.reminders import (
     DEFAULT_REMINDER_OFFSETS,
     DEFAULT_REMINDER_SUBJECT,
     validate_reminder_offsets,
+    validate_timezone,
 )
 from invoice_machine.utils import utc_now
 
@@ -74,6 +75,9 @@ class ReminderSettingsSchema(BaseModel):
     reminder_offsets: list[int]
     reminder_subject_template: str | None = None
     reminder_body_template: str | None = None
+    business_timezone: str = "UTC"
+    reminder_send_hour: int = 9
+    local_time: str | None = None
     default_offsets: list[int] = list(DEFAULT_REMINDER_OFFSETS)
     default_subject: str = DEFAULT_REMINDER_SUBJECT
     default_body: str = DEFAULT_REMINDER_BODY
@@ -88,6 +92,10 @@ class ReminderSettingsUpdate(BaseModel):
     reminder_offsets: list[int] | None = Field(None, max_length=10)
     reminder_subject_template: str | None = Field(None, max_length=500)
     reminder_body_template: str | None = Field(None, max_length=10000)
+    # IANA name, e.g. "America/New_York". Governs both when reminders send and
+    # how "days until due" is counted.
+    business_timezone: str | None = Field(None, max_length=64)
+    reminder_send_hour: int | None = Field(None, ge=0, le=23)
 
 
 class FxRatesSchema(BaseModel):
@@ -209,12 +217,20 @@ async def get_reminder_settings(
     session: AsyncSession = Depends(get_session),
 ) -> dict:
     """Get automated payment reminder settings."""
+    from invoice_machine.service.reminders import business_now
+
     profile = await BusinessProfile.get_or_create(session)
     return {
         "reminders_enabled": bool(profile.reminders_enabled),
         "reminder_offsets": profile.reminder_offsets_list or list(DEFAULT_REMINDER_OFFSETS),
         "reminder_subject_template": profile.reminder_subject_template,
         "reminder_body_template": profile.reminder_body_template,
+        "business_timezone": profile.business_timezone or "UTC",
+        "reminder_send_hour": (
+            profile.reminder_send_hour if profile.reminder_send_hour is not None else 9
+        ),
+        # Shown in the UI so the configured timezone can be sanity-checked at a glance.
+        "local_time": business_now(profile).strftime("%Y-%m-%d %H:%M"),
         "smtp_enabled": bool(profile.smtp_enabled),
     }
 
@@ -239,6 +255,15 @@ async def update_reminder_settings(
 
     if updates.get("reminders_enabled") is not None:
         profile.reminders_enabled = int(updates["reminders_enabled"])
+
+    if updates.get("business_timezone") is not None:
+        try:
+            profile.business_timezone = validate_timezone(updates["business_timezone"])
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+
+    if updates.get("reminder_send_hour") is not None:
+        profile.reminder_send_hour = int(updates["reminder_send_hour"])
 
     for field in ("reminder_subject_template", "reminder_body_template"):
         if field in updates:

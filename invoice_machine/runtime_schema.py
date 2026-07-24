@@ -21,15 +21,6 @@ _OLD_TO_NEW_REVISIONS = {
 }
 
 
-def sqlite_path_from_url(database_url: str) -> Path | None:
-    """Extract SQLite file path from a SQLAlchemy URL, if applicable."""
-    if database_url.startswith("sqlite+aiosqlite:///"):
-        return Path(database_url.replace("sqlite+aiosqlite:///", "", 1))
-    if database_url.startswith("sqlite:///"):
-        return Path(database_url.replace("sqlite:///", "", 1))
-    return None
-
-
 def _inspect_existing_db(db_path: Path) -> tuple[bool, str | None, bool]:
     """Return (has_alembic_version, current_version, has_users) for an existing DB."""
     conn = sqlite3.connect(str(db_path))

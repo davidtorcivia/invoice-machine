@@ -132,12 +132,26 @@ async def _recurring_invoice_job() -> None:
 
 
 async def _payment_reminder_job() -> None:
-    """Send any payment reminders that fall due today."""
-    from invoice_machine.database import async_session_maker
-    from invoice_machine.service.reminders import send_due_reminders
+    """Send payment reminders when the business's local clock reaches its send hour.
+
+    Checked hourly rather than at a fixed UTC hour so the mail lands during the
+    user's working day wherever they are. Running twice in the same local day is
+    harmless: each offset is recorded once per invoice, so a repeat is a no-op.
+    """
+    from invoice_machine.database import BusinessProfile, async_session_maker
+    from invoice_machine.service.reminders import business_now, send_due_reminders
 
     async with async_session_maker() as session:
-        results = await send_due_reminders(session)
+        profile = await BusinessProfile.get(session)
+        if not profile or not profile.reminders_enabled:
+            return
+
+        local = business_now(profile)
+        send_hour = profile.reminder_send_hour if profile.reminder_send_hour is not None else 9
+        if local.hour != send_hour:
+            return
+
+        results = await send_due_reminders(session, today=local.date())
         if results:
             sent = sum(1 for result in results if result.get("success"))
             failed = len(results) - sent
@@ -223,9 +237,10 @@ async def lifespan(app: FastAPI):
             asyncio.create_task(_run_daily_task(app, 3, "Trash cleanup task", _trash_cleanup_job)),
             asyncio.create_task(_run_daily_task(app, 1, "Overdue check task", _overdue_check_job)),
             asyncio.create_task(_run_daily_task(app, 2, "Recurring invoice task", _recurring_invoice_job)),
-            # After the overdue sweep, so "N days overdue" wording is accurate.
+            # Hourly, because the send time is the user's local hour rather than
+            # a fixed UTC one. The job itself decides whether this hour qualifies.
             asyncio.create_task(
-                _run_daily_task(app, 9, "Payment reminder task", _payment_reminder_job)
+                _run_hourly_task(app, "Payment reminder task", _payment_reminder_job)
             ),
         ]
     logger.info("Invoice Machine ready! Listening on port %s", settings.port)

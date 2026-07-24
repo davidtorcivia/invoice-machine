@@ -156,14 +156,6 @@ def _read_logo_bytes(business: BusinessProfile) -> bytes | None:
     return logo_file.read_bytes()
 
 
-def get_logo_base64(business: BusinessProfile) -> str | None:
-    """Get logo as a base64 string."""
-    data = _read_logo_bytes(business)
-    if data is None:
-        return None
-    return base64.b64encode(data).decode("ascii")
-
-
 def get_logo_data_uri(business: BusinessProfile) -> str | None:
     """Get the logo as a complete ``data:`` URI with a content-derived MIME type.
 

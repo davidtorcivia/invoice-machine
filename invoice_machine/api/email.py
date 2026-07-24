@@ -15,19 +15,6 @@ from invoice_machine.service.email import send_invoice_email as send_invoice_ema
 router = APIRouter(tags=["email"])
 
 
-class SMTPSettingsSchema(BaseModel):
-    """SMTP settings response (password masked)."""
-
-    smtp_enabled: bool
-    smtp_host: str | None = None
-    smtp_port: int = 587
-    smtp_username: str | None = None
-    smtp_password_set: bool = False  # Never expose actual password
-    smtp_from_email: str | None = None
-    smtp_from_name: str | None = None
-    smtp_use_tls: bool = True
-
-
 class SMTPSettingsUpdate(BaseModel):
     """SMTP settings update request."""
 

@@ -31,7 +31,7 @@ export const helpSections = [
   <li>Fill in the details as you would for an invoice</li>
   <li>Quotes are numbered separately using the format Q-YYYYMMDD-N</li>
 </ol>
-<p>When a quote is accepted, open it and click <strong>Convert to Invoice</strong> — it gets a fresh invoice number and joins your normal invoice workflow.</p>
+<p>When a quote is accepted, open it and click <strong>Convert to Invoice</strong>. This creates a new invoice carrying the quote's line items, tax, and currency. The quote itself is kept exactly as the client saw it, and the two documents link to each other, so you always have a record of what was agreed. A quote can only be converted once.</p>
 <h3>Currency</h3>
 <p>Each invoice can use its own currency. The default comes from Settings, and each client can have a preferred currency that is applied automatically.</p>
 <h3>Reference / PO Number</h3>
@@ -78,6 +78,61 @@ export const helpSections = [
 <p>The Invoices list can be filtered by status, client, document type (invoice/quote), and date. Filters and the current page are reflected in the URL, so you can bookmark or share a filtered view. The Clients list is paginated the same way.</p>`
   },
   {
+    key: 'recordingPayments',
+    title: 'Recording Payments',
+    icon: 'dollar',
+    content: `<p>Record what clients actually pay, including partial payments, from the <strong>Payments</strong> panel on any invoice.</p>
+<h3>Recording a Payment</h3>
+<ol>
+  <li>Open the invoice and click <strong>Record payment</strong></li>
+  <li>Enter the amount, the date it arrived, and how it was paid</li>
+  <li>Add a bank reference or cheque number if you have one</li>
+</ol>
+<p>The amount defaults to the full balance due, so settling an invoice in full is one click.</p>
+<h3>Partial Payments</h3>
+<p>An invoice can take as many payments as it needs. It shows a running balance and a progress bar, and moves to <strong>Paid</strong> on its own once the payments cover the total. Delete a payment and it reverts to Sent or Overdue, whichever is correct for its due date.</p>
+<p>Paying more than the balance is refused unless you tick <strong>record as overpayment</strong>, which guards against a mistyped amount.</p>
+<h3>What You Are Owed</h3>
+<p>The <strong>Reports</strong> page has an accounts receivable table showing outstanding balances grouped by how far past due they are: not yet due, 1-30 days, 31-60, 61-90, and over 90. Amounts in different currencies are listed separately and never added together.</p>`
+  },
+  {
+    key: 'onlinePayments',
+    title: 'Getting Paid Online',
+    icon: 'external',
+    content: `<p>Connect a Stripe account and each invoice gets a payment link, so clients can pay by card instead of arranging a transfer.</p>
+<h3>Setup</h3>
+<ol>
+  <li>In Stripe, create a <strong>restricted API key</strong> with write access to Checkout Sessions</li>
+  <li>Paste it into <strong>Settings</strong> &gt; <strong>Online payments</strong> and enable payments</li>
+  <li>In Stripe, add a webhook pointing at the URL shown in that settings panel, subscribed to <code>checkout.session.completed</code></li>
+  <li>Paste the webhook signing secret back into Settings</li>
+</ol>
+<p class="note"><strong>Why a restricted key:</strong> it can create checkouts and nothing else, so a leaked value cannot move money or read your customer list. Both the key and the signing secret are encrypted before they are stored and are never shown again.</p>
+<h3>Using It</h3>
+<p>Open an invoice and click <strong>Create payment link</strong>. The link covers whatever is still outstanding, appears on the PDF, and can be included in emails with the <code>{payment_link}</code> placeholder. When a client pays, the payment is recorded against the invoice automatically and the balance updates.</p>
+<p>Which cards and wallets appear at checkout is controlled from your Stripe dashboard, not here.</p>
+<p>Without the webhook secret, links still work but completed payments will not be recorded back, so you would have to enter them by hand.</p>`
+  },
+  {
+    key: 'paymentReminders',
+    title: 'Payment Reminders',
+    icon: 'clock',
+    content: `<p>Chase unpaid invoices without having to remember to. Configure this in <strong>Settings</strong> &gt; <strong>Payment reminders</strong>.</p>
+<h3>Setting a Schedule</h3>
+<p>A schedule is a list of days relative to the due date. Negative numbers are before it, positive numbers after. The default is three days before, then one, seven, and fourteen days after.</p>
+<h3>Timing</h3>
+<p>Set your timezone and the hour you want reminders to go out. Both the send time and the count of days until due follow your local clock, so a reminder never lands in the middle of the night or a day out.</p>
+<h3>What Gets Chased</h3>
+<ul>
+  <li>Only invoices that are sent or overdue and still owe something</li>
+  <li>Each point in the schedule is sent at most once per invoice</li>
+  <li>Fully paid invoices are never chased; partially paid ones are chased for the balance</li>
+  <li>Turning reminders on for an already-overdue invoice sends one current reminder, not the whole backlog</li>
+</ul>
+<p>Reminder emails have their own subject and body templates, which additionally accept <code>{amount_due}</code>, <code>{due_status}</code>, and <code>{days_overdue}</code>. Use <strong>Send due reminders now</strong> to run the sweep immediately and see what goes out.</p>
+<p class="note"><strong>Note:</strong> SMTP has to be configured first, since there is otherwise no way to send them.</p>`
+  },
+  {
     key: 'managingClients',
     title: 'Managing Clients',
     icon: 'users',
@@ -94,10 +149,10 @@ export const helpSections = [
     icon: 'download',
     content: `<ul>
   <li>Click <strong>Download PDF</strong> on any invoice or quote to download it</li>
-  <li>PDFs are automatically regenerated if the invoice has been modified since the last generation</li>
+  <li>PDFs are regenerated only when the document has actually changed, and served straight from disk otherwise</li>
   <li>Filename format: <code>[Client Name] - [Invoice Number].pdf</code></li>
 </ul>
-<p>The PDF includes your logo, business details, line items, totals, and payment instructions (if enabled).</p>`
+<p>The PDF includes your logo, business details, line items, totals, and payment instructions if enabled. Once payments are recorded it also shows what has been paid and the remaining balance, and it carries the online payment link when one exists.</p>`
   },
   {
     key: 'settings',
@@ -117,6 +172,8 @@ export const helpSections = [
 <p>Customize the accent color used in your invoices. The default is forest green (#16a34a).</p>
 <h3>Theme</h3>
 <p>Choose between light mode, dark mode, or system preference (which follows your operating system's setting).</p>
+<h3>Payments, Reminders &amp; Exchange Rates</h3>
+<p>Further down the page you will find <strong>Payment reminders</strong> for automated chasing, <strong>Online payments</strong> for accepting cards through Stripe, and <strong>Exchange rates</strong> for combining multiple currencies in reports. Each has its own help section here.</p>
 <h3>API Keys</h3>
 <p>Settings includes two separate keys: <strong>MCP API Key</strong> for Claude Desktop (<code>/mcp/*</code>) and <strong>Bot API Key</strong> for REST automation (<code>/api/*</code>).</p>`
   },
@@ -178,31 +235,45 @@ export const helpSections = [
     key: 'search',
     title: 'Search',
     icon: 'search',
-    content: `<p>Use the search bar in the sidebar to find invoices and clients quickly.</p>
+    content: `<p>Use the search bar in the sidebar to find things quickly.</p>
 <ul>
-  <li>Search by invoice number, client name, or notes</li>
-  <li>Results include both invoices and clients</li>
+  <li>Covers invoice numbers, client names, notes, and line item descriptions</li>
+  <li>Results are grouped into invoices, clients, and line items</li>
   <li>Partial matches are supported using full-text search</li>
-  <li>Press Enter or wait for results as you type</li>
-</ul>`
+  <li>Results appear as you type</li>
+</ul>
+<p>Searching line item text is the quickest way to answer questions like "what did I charge for that logo design last year".</p>`
   },
   {
     key: 'reportsAnalytics',
     title: 'Reports & Analytics',
     icon: 'chart',
     content: `<p>View revenue insights and client metrics from the <strong>Reports</strong> page.</p>
-<h3>Revenue Dashboard</h3>
+<h3>Revenue</h3>
 <ul>
-  <li>Total revenue, paid vs outstanding</li>
-  <li>Monthly and yearly breakdowns</li>
-  <li>Revenue trends over time</li>
+  <li>Invoiced, paid, outstanding, and overdue for the selected year</li>
+  <li>Breakdown by month, quarter, or year</li>
 </ul>
+<h3>Accounts Receivable</h3>
+<p>Outstanding balances bucketed by how far past due they are, with the individual overdue invoices listed underneath so you know exactly who to chase.</p>
 <h3>Client Insights</h3>
 <ul>
   <li>Top clients by total paid</li>
   <li>Lifetime value per client</li>
-  <li>Invoice count and payment history</li>
-</ul>`
+  <li>Invoice count and first and last invoice dates</li>
+</ul>
+<h3>Export</h3>
+<p>Download the selected year as CSV: invoices, individual line items, payments, or clients. Amounts are written as plain numbers with a separate currency column, which is what spreadsheets and accounting software expect.</p>`
+  },
+  {
+    key: 'multiCurrency',
+    title: 'Multiple Currencies',
+    icon: 'dollar',
+    content: `<p>Each invoice carries its own currency, taken from the client's preference or your default. Totals throughout the app are reported per currency and are never added together, because adding dollars to euros produces a number that means nothing.</p>
+<h3>One Headline Number</h3>
+<p>If you do want a single combined figure, add exchange rates in <strong>Settings</strong> &gt; <strong>Exchange rates</strong>. Enter what one unit of each foreign currency is worth in your base currency.</p>
+<p>The rate is copied onto each invoice when it is issued, so historical invoices keep the rate that applied at the time and old figures do not shift when today's rate moves. The Reports page then shows a converted roll-up.</p>
+<p class="note"><strong>Note:</strong> invoices in a currency you have no rate for are left out of that roll-up and reported as excluded, so a partial total is never presented as a complete one.</p>`
   },
   {
     key: 'trash',
@@ -210,10 +281,11 @@ export const helpSections = [
     icon: 'trash',
     content: `<p>When you delete invoices or clients, they're moved to Trash instead of being permanently deleted.</p>
 <ul>
-  <li>Items remain in Trash for <strong>90 days</strong></li>
+  <li>Items remain in Trash for <strong>90 days</strong>, then are purged automatically</li>
   <li>Click <strong>Restore</strong> to recover an item</li>
-  <li>Click <strong>Empty Trash</strong> to permanently delete items older than 90 days</li>
-</ul>`
+  <li>Click <strong>Empty Trash</strong> to permanently delete <strong>everything</strong> in the trash right away, regardless of age</li>
+</ul>
+<p class="note"><strong>Note:</strong> Emptying the trash also deletes the generated PDFs for those invoices. It cannot be undone, so take a backup first if you are unsure.</p>`
   },
   {
     key: 'tips',
@@ -242,8 +314,9 @@ export const helpSections = [
   <li><strong>Automatic backups</strong> run daily; old backups are pruned after the configured retention period</li>
   <li><strong>Create Backup</strong> takes a manual backup at any time</li>
   <li>Optionally upload backups to <strong>S3-compatible storage</strong> (AWS S3, Backblaze B2, MinIO, etc.)</li>
-  <li>Each backup can be <strong>downloaded</strong>, <strong>restored</strong>, or deleted from the list; restoring creates a pre-restore backup automatically</li>
-</ul>`
+  <li>Each backup can be <strong>downloaded</strong>, <strong>restored</strong>, or deleted from the list; restoring creates a pre-restore backup automatically and brings the schema up to date, so a backup from an older release comes back usable</li>
+</ul>
+<p class="note"><strong>Note:</strong> backups contain the database only. Your uploaded logo lives in <code>logos/</code> and is not included, so keep a copy of the whole <code>data/</code> directory if you want a complete restore.</p>`
   },
   {
     key: 'mcpIntegration',

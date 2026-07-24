@@ -166,21 +166,9 @@ export const currencies = [
 ];
 
 // Simple list of currency codes for quick lookups
-export const currencyCodes = currencies.filter(c => c.code !== '---').map(c => c.code);
 
 // Get currency by code
-export function getCurrency(code) {
-  return currencies.find(c => c.code === code);
-}
 
 // Format currency value
-export function formatCurrencyValue(amount, currencyCode = 'USD') {
-  const currency = getCurrency(currencyCode);
-  const formatted = new Intl.NumberFormat('en-US', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(amount);
-  return currency ? `${currency.symbol}${formatted}` : `${formatted} ${currencyCode}`;
-}
 
 export default currencies;

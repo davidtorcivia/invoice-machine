@@ -116,6 +116,9 @@
     reminder_offsets: [-3, 1, 7, 14],
     reminder_subject_template: '',
     reminder_body_template: '',
+    business_timezone: 'UTC',
+    reminder_send_hour: 9,
+    local_time: null,
     smtp_enabled: false,
     default_subject: '',
     default_body: ''
@@ -268,7 +271,9 @@
       reminders_enabled: remindersForm.reminders_enabled,
       reminder_offsets: remindersForm.reminder_offsets,
       reminder_subject_template: remindersForm.reminder_subject_template || '',
-      reminder_body_template: remindersForm.reminder_body_template || ''
+      reminder_body_template: remindersForm.reminder_body_template || '',
+      business_timezone: remindersForm.business_timezone,
+      reminder_send_hour: remindersForm.reminder_send_hour
     });
     remindersForm = {
       ...data,

@@ -306,11 +306,6 @@ a.btn:hover {
   vertical-align: -2px;
 }
 
-.btn-lg {
-  padding: var(--space-3) var(--space-6);
-  font-size: 1rem;
-}
-
 .btn-icon {
   padding: var(--space-2);
   min-width: 36px;
@@ -383,13 +378,6 @@ input[type="number"]::-webkit-outer-spin-button {
   top: 0;
 }
 
-/* Custom number input with visible arrows */
-.input-number-wrapper {
-  position: relative;
-  display: inline-flex;
-  align-items: stretch;
-}
-
 .input-number-wrapper input[type="number"] {
   padding-right: 32px;
   -moz-appearance: textfield;
@@ -399,19 +387,6 @@ input[type="number"]::-webkit-outer-spin-button {
 .input-number-wrapper input[type="number"]::-webkit-outer-spin-button {
   -webkit-appearance: none;
   margin: 0;
-}
-
-.number-spinners {
-  position: absolute;
-  right: 1px;
-  top: 1px;
-  bottom: 1px;
-  width: 28px;
-  display: flex;
-  flex-direction: column;
-  border-left: 1px solid var(--color-border);
-  border-radius: 0 calc(var(--radius-md) - 1px) calc(var(--radius-md) - 1px) 0;
-  overflow: hidden;
 }
 
 .number-spinners button {
@@ -618,30 +593,15 @@ input[type="number"]::-webkit-outer-spin-button {
 .text-right { text-align: right; }
 .text-center { text-align: center; }
 .text-secondary { color: var(--color-text-secondary); }
-.text-tertiary { color: var(--color-text-tertiary); }
-.text-success { color: var(--color-success); }
 .text-danger { color: var(--color-danger); }
-.text-primary { color: var(--color-primary); }
 
 .font-mono { font-family: var(--font-mono); }
 .font-medium { font-weight: 500; }
-.font-semibold { font-weight: 600; }
-.font-bold { font-weight: 700; }
 
 .mt-2 { margin-top: var(--space-2); }
 .mt-4 { margin-top: var(--space-4); }
 .mt-6 { margin-top: var(--space-6); }
-.mt-8 { margin-top: var(--space-8); }
-.mb-2 { margin-bottom: var(--space-2); }
 .mb-4 { margin-bottom: var(--space-4); }
-.mb-6 { margin-bottom: var(--space-6); }
-
-.flex { display: flex; }
-.flex-col { flex-direction: column; }
-.items-center { align-items: center; }
-.justify-between { justify-content: space-between; }
-.gap-2 { gap: var(--space-2); }
-.gap-4 { gap: var(--space-4); }
 
 /* Toast container */
 .toast-container {
@@ -853,10 +813,6 @@ input[type="number"]::-webkit-outer-spin-button {
     padding: var(--space-2) var(--space-3);
   }
 
-  .btn-lg {
-    padding: var(--space-2) var(--space-4);
-  }
-
   .card {
     padding: var(--space-4);
     border-radius: var(--radius-md);
@@ -958,25 +914,11 @@ input[type="number"]::-webkit-outer-spin-button {
 }
 
 /* Responsive utility classes */
-@media (max-width: 768px) {
-  .hide-mobile { display: none !important; }
-}
-
-@media (min-width: 769px) {
-  .hide-desktop { display: none !important; }
-}
 
 @media (max-width: 480px) {
-  .stack-mobile {
-    flex-direction: column !important;
-    align-items: stretch !important;
-  }
 
   .stack-mobile > * {
     width: 100% !important;
   }
 
-  .full-width-mobile {
-    width: 100% !important;
-  }
 }

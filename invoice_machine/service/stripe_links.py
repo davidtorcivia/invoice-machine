@@ -38,31 +38,55 @@ _HTTP_TIMEOUT = httpx.Timeout(20.0, connect=10.0)
 # Tolerance for webhook timestamp skew, per Stripe's replay-protection guidance.
 WEBHOOK_TOLERANCE_SECONDS = 300
 
-# Currencies Stripe treats as having no minor unit, so the amount is not x100.
+# Currencies with no minor unit: the amount is passed as-is, not multiplied.
 _ZERO_DECIMAL_CURRENCIES = {
     "BIF", "CLP", "DJF", "GNF", "JPY", "KMF", "KRW", "MGA",
     "PYG", "RWF", "UGX", "VND", "VUV", "XAF", "XOF", "XPF",
 }
+# Currencies with 1000 minor units to the major unit. Treating these as 2-decimal
+# undercharges the customer by a factor of ten.
+_THREE_DECIMAL_CURRENCIES = {"BHD", "JOD", "KWD", "OMR", "TND"}
 
 
 class StripeError(Exception):
     """Raised when Stripe rejects a request or is unreachable."""
 
 
+def currency_exponent(currency_code: str) -> int:
+    """Number of decimal places in the currency's minor unit."""
+    code = (currency_code or "USD").upper()
+    if code in _ZERO_DECIMAL_CURRENCIES:
+        return 0
+    if code in _THREE_DECIMAL_CURRENCIES:
+        return 3
+    return 2
+
+
 def to_stripe_amount(amount: Decimal, currency_code: str) -> int:
-    """Convert a decimal amount to Stripe's integer minor units."""
-    currency = (currency_code or "USD").upper()
-    if currency in _ZERO_DECIMAL_CURRENCIES:
-        return int(Decimal(str(amount)).to_integral_value())
-    return int((Decimal(str(amount)) * 100).to_integral_value())
+    """Convert a decimal amount to Stripe's integer minor units.
+
+    Refuses to charge an amount the currency cannot express rather than
+    truncating it, so a rounding mistake surfaces as an error instead of a
+    silently wrong charge.
+    """
+    value = Decimal(str(amount))
+    if not value.is_finite() or value < 0:
+        raise ValueError("Amount must be finite and non-negative")
+
+    exponent = currency_exponent(currency_code)
+    scaled = value * (Decimal(10) ** exponent)
+    if scaled != scaled.to_integral_value():
+        raise ValueError(
+            f"{(currency_code or 'USD').upper()} supports at most "
+            f"{exponent} decimal place{'s' if exponent != 1 else ''}"
+        )
+    return int(scaled)
 
 
 def from_stripe_amount(amount: int, currency_code: str) -> Decimal:
     """Convert Stripe's integer minor units back to a decimal amount."""
-    currency = (currency_code or "USD").upper()
-    if currency in _ZERO_DECIMAL_CURRENCIES:
-        return Decimal(str(amount))
-    return (Decimal(str(amount)) / Decimal("100")).quantize(Decimal("0.01"))
+    exponent = currency_exponent(currency_code)
+    return Decimal(amount) / (Decimal(10) ** exponent)
 
 
 def get_stripe_secret_key(profile: BusinessProfile) -> str | None:

@@ -99,15 +99,6 @@ def _get_encryption_key() -> bytes:
     return _cached_key
 
 
-def generate_encryption_key() -> str:
-    """
-    Generate a new encryption key for use in INVOICE_MACHINE_ENCRYPTION_KEY.
-
-    Returns a base64-encoded 32-byte key suitable for Fernet encryption.
-    """
-    return Fernet.generate_key().decode()
-
-
 def encrypt_credential(plaintext: str) -> str:
     """
     Encrypt a credential (password, API key, etc.) for storage.
@@ -255,34 +246,6 @@ def verify_api_key(api_key: str, hashed: str) -> bool:
         return secrets.compare_digest(computed_hash, stored_hash)
     except ValueError:
         return False
-
-
-def needs_credential_migration(value: str) -> bool:
-    """Check if a credential needs to be migrated (encrypted).
-
-    Args:
-        value: The stored credential value
-
-    Returns:
-        True if the credential is plaintext and needs encryption
-    """
-    if not value:
-        return False
-    return not value.startswith("enc:")
-
-
-def needs_api_key_migration(hashed: str) -> bool:
-    """Check if an API key needs to be migrated (hashed).
-
-    Args:
-        hashed: The stored API key value
-
-    Returns:
-        True if the API key is plaintext and needs hashing
-    """
-    if not hashed:
-        return False
-    return not hashed.startswith("hash:")
 
 
 def generate_api_key() -> str:

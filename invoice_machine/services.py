@@ -4,7 +4,6 @@ from invoice_machine.service.backups import BackupService, get_backup_service
 from invoice_machine.service.clients import ClientService
 from invoice_machine.service.common import (
     VALID_RECURRING_FREQUENCIES,
-    _replace_with_valid_day,
     calculate_due_date,
     format_currency,
     format_quantity,
@@ -32,7 +31,6 @@ __all__ = [
     "SearchService",
     "recalculate_invoice_payments",
     "VALID_RECURRING_FREQUENCIES",
-    "_replace_with_valid_day",
     "calculate_due_date",
     "format_currency",
     "format_quantity",

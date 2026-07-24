@@ -118,8 +118,15 @@ class BusinessProfile(Base):
     # Email template settings (optional - defaults used if not set)
     email_subject_template: Mapped[str | None] = mapped_column(String(500), nullable=True)
     email_body_template: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # IANA timezone the business operates in. Reminder timing and "days until
+    # due" are computed against this, not UTC.
+    business_timezone: Mapped[str] = mapped_column(
+        String(64), default="UTC", server_default="UTC"
+    )
     # Automated payment reminders
     reminders_enabled: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    # Local hour (0-23) at which the daily reminder sweep runs.
+    reminder_send_hour: Mapped[int] = mapped_column(Integer, default=9, server_default="9")
     # JSON array of day offsets relative to due date (negative = before due).
     reminder_offsets: Mapped[str | None] = mapped_column(Text, nullable=True)
     reminder_subject_template: Mapped[str | None] = mapped_column(String(500), nullable=True)

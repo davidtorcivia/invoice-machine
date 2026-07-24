@@ -413,3 +413,58 @@ class TestSupersededReminders:
 
         await db_session.refresh(invoice)
         assert invoice.reminders_sent_list == [-3, 1, 7, 14]
+
+
+class TestReminderTimezone:
+    """Reminder timing follows the business's local clock, not UTC."""
+
+    def test_valid_timezone_accepted(self):
+        from invoice_machine.service.reminders import validate_timezone
+
+        assert validate_timezone("America/New_York") == "America/New_York"
+        assert validate_timezone("") == "UTC"
+
+    def test_unknown_timezone_rejected(self):
+        from invoice_machine.service.reminders import validate_timezone
+
+        with pytest.raises(ValueError, match="Unknown timezone"):
+            validate_timezone("Mars/Olympus_Mons")
+
+    @pytest.mark.asyncio
+    async def test_business_now_follows_configured_zone(self, db_session, business_profile):
+        from invoice_machine.service.reminders import business_now
+
+        business_profile.business_timezone = "Pacific/Auckland"
+        await db_session.commit()
+
+        local = business_now(business_profile)
+        assert str(local.tzinfo) == "Pacific/Auckland"
+        assert local.utcoffset() != timedelta(0)
+
+    @pytest.mark.asyncio
+    async def test_corrupt_timezone_falls_back_to_utc(self, db_session, business_profile):
+        """A bad stored value must not stop reminders going out entirely."""
+        from invoice_machine.service.reminders import business_now
+
+        business_profile.business_timezone = "Not/AZone"
+        await db_session.commit()
+
+        assert business_now(business_profile).utcoffset() == timedelta(0)
+
+    @pytest.mark.asyncio
+    async def test_days_overdue_counted_in_local_time(
+        self, db_session, business_profile, test_client
+    ):
+        """An invoice due locally today is not yet overdue, whatever UTC says."""
+        from invoice_machine.service.reminders import business_now, due_offsets_for
+
+        business_profile.business_timezone = "Pacific/Auckland"
+        await db_session.commit()
+
+        invoice = await InvoiceService.create_invoice(db_session, client_id=test_client.id)
+        local_today = business_now(business_profile).date()
+        invoice.due_date = local_today
+
+        # Offset 0 is "on the due date"; offset 1 has not arrived yet.
+        assert due_offsets_for(invoice, [0, 1], local_today) == [0]
+        assert due_offsets_for(invoice, [1], local_today) == []

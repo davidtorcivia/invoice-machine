@@ -154,3 +154,45 @@ class TestEventExtraction:
             self._session_event(currency="jpy", amount_total=5000)
         )
         assert details["amount"] == Decimal("5000")
+
+
+class TestThreeDecimalCurrencies:
+    """Currencies with 1000 minor units must not be charged as if they had 100."""
+
+    def test_kuwaiti_dinar_uses_three_decimals(self):
+        """Treating KWD as 2-decimal would charge a tenth of the invoice."""
+        assert to_stripe_amount(Decimal("10.500"), "KWD") == 10500
+        assert from_stripe_amount(10500, "KWD") == Decimal("10.500")
+
+    def test_all_three_decimal_currencies(self):
+        for code in ("BHD", "JOD", "KWD", "OMR", "TND"):
+            assert to_stripe_amount(Decimal("1.000"), code) == 1000, code
+
+    def test_round_trip_across_exponents(self):
+        for code, amount in (("USD", "12.34"), ("JPY", "1200"), ("KWD", "10.500")):
+            value = Decimal(amount)
+            assert from_stripe_amount(to_stripe_amount(value, code), code) == value
+
+
+class TestAmountExactness:
+    """An amount the currency cannot express is an error, not a silent truncation."""
+
+    def test_sub_cent_usd_is_rejected(self):
+        with pytest.raises(ValueError, match="2 decimal places"):
+            to_stripe_amount(Decimal("12.345"), "USD")
+
+    def test_fractional_yen_is_rejected(self):
+        with pytest.raises(ValueError, match="0 decimal places"):
+            to_stripe_amount(Decimal("1200.50"), "JPY")
+
+    def test_sub_fils_kwd_is_rejected(self):
+        with pytest.raises(ValueError, match="3 decimal places"):
+            to_stripe_amount(Decimal("10.5005"), "KWD")
+
+    def test_negative_amount_is_rejected(self):
+        with pytest.raises(ValueError, match="non-negative"):
+            to_stripe_amount(Decimal("-1.00"), "USD")
+
+    def test_exact_amounts_still_pass(self):
+        assert to_stripe_amount(Decimal("12.30"), "USD") == 1230
+        assert to_stripe_amount(Decimal("0.01"), "USD") == 1

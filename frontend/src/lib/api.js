@@ -98,7 +98,7 @@ function createCrudApi(basePath, buildListParams) {
   };
 }
 
-export function getCsrfToken() {
+function getCsrfToken() {
   if (typeof document === 'undefined') return null;
   const match = document.cookie.match(/(?:^|; )csrf_token=([^;]+)/);
   return match ? decodeURIComponent(match[1]) : null;
@@ -107,7 +107,7 @@ export function getCsrfToken() {
 /**
  * @param {QueryParams} [params={}]
  */
-export function buildQuery(params = {}) {
+function buildQuery(params = {}) {
   const search = new URLSearchParams();
   Object.entries(params).forEach(([key, value]) => {
     if (value === undefined || value === null || value === '') return;

@@ -2,19 +2,35 @@
   import { createEventDispatcher } from 'svelte';
   import CollapsibleSection from '$lib/components/CollapsibleSection.svelte';
 
-  /** @type {{ reminders_enabled: boolean, reminder_offsets: number[], reminder_subject_template: string|null, reminder_body_template: string|null, smtp_enabled: boolean, default_subject?: string, default_body?: string }} */
+  /** @type {{ reminders_enabled: boolean, reminder_offsets: number[], reminder_subject_template: string|null, reminder_body_template: string|null, smtp_enabled: boolean, business_timezone?: string, reminder_send_hour?: number, local_time?: string|null, default_subject?: string, default_body?: string }} */
   export let settings = {
     reminders_enabled: false,
     reminder_offsets: [-3, 1, 7, 14],
     reminder_subject_template: null,
     reminder_body_template: null,
-    smtp_enabled: false
+    smtp_enabled: false,
+    business_timezone: 'UTC',
+    reminder_send_hour: 9
   };
   export let running = false;
 
   const dispatch = createEventDispatcher();
 
   let newOffset = '';
+
+  // Whatever the host platform knows about, so the list stays current without
+  // shipping a hardcoded copy of the tz database.
+  const timezones =
+    typeof Intl.supportedValuesOf === 'function' ? Intl.supportedValuesOf('timeZone') : ['UTC'];
+  const browserZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+  $: hours = Array.from({ length: 24 }, (_, hour) => hour);
+
+  function formatHour(hour) {
+    const suffix = hour < 12 ? 'am' : 'pm';
+    const display = hour % 12 === 0 ? 12 : hour % 12;
+    return `${display}:00 ${suffix}`;
+  }
 
   $: offsets = [...(settings.reminder_offsets || [])].sort((a, b) => a - b);
 
@@ -62,6 +78,35 @@
     have a balance. Each schedule point is sent at most once per invoice, and a
     fully paid invoice is never chased.
   </p>
+
+  <div class="form-row">
+    <div class="form-group">
+      <label for="business-timezone" class="label">Your timezone</label>
+      <select id="business-timezone" class="select" bind:value={settings.business_timezone}>
+        {#each timezones as zone (zone)}
+          <option value={zone}>{zone}</option>
+        {/each}
+      </select>
+      <p class="hint">
+        Sets when reminders send and how days until due are counted.
+        {#if settings.local_time}
+          Currently {settings.local_time} there.
+        {/if}
+        {#if browserZone && settings.business_timezone !== browserZone}
+          This browser is in {browserZone}.
+        {/if}
+      </p>
+    </div>
+
+    <div class="form-group">
+      <label for="reminder-hour" class="label">Send at</label>
+      <select id="reminder-hour" class="select" bind:value={settings.reminder_send_hour}>
+        {#each hours as hour (hour)}
+          <option value={hour}>{formatHour(hour)}</option>
+        {/each}
+      </select>
+    </div>
+  </div>
 
   <div class="form-group">
     <span class="label">Schedule</span>

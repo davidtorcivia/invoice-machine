@@ -22,7 +22,7 @@ try:
     from invoice_machine.pdf.generator import (
         format_money,
         generate_pdf,
-        get_logo_base64,
+        get_logo_data_uri,
         strftime_filter,
         zfill_filter,
     )
@@ -91,40 +91,40 @@ class TestFilters:
 class TestGetLogoBase64:
     """Tests for logo loading and path traversal protection."""
 
-    def test_get_logo_base64_no_path(self):
+    def test_get_logo_data_uri_no_path(self):
         """Return None when no logo path set."""
         profile = MagicMock(spec=BusinessProfile)
         profile.logo_path = None
-        assert get_logo_base64(profile) is None
+        assert get_logo_data_uri(profile) is None
 
-    def test_get_logo_base64_path_traversal_slash(self):
+    def test_get_logo_data_uri_path_traversal_slash(self):
         """Reject paths with forward slashes."""
         profile = MagicMock(spec=BusinessProfile)
         profile.logo_path = "../etc/passwd"
-        assert get_logo_base64(profile) is None
+        assert get_logo_data_uri(profile) is None
 
-    def test_get_logo_base64_path_traversal_backslash(self):
+    def test_get_logo_data_uri_path_traversal_backslash(self):
         """Reject paths with backslashes."""
         profile = MagicMock(spec=BusinessProfile)
         profile.logo_path = "..\\windows\\system.ini"
-        assert get_logo_base64(profile) is None
+        assert get_logo_data_uri(profile) is None
 
-    def test_get_logo_base64_path_traversal_dotdot(self):
+    def test_get_logo_data_uri_path_traversal_dotdot(self):
         """Reject paths with parent directory references."""
         profile = MagicMock(spec=BusinessProfile)
         profile.logo_path = "..logo.png"
-        assert get_logo_base64(profile) is None
+        assert get_logo_data_uri(profile) is None
 
-    def test_get_logo_base64_nonexistent(self):
+    def test_get_logo_data_uri_nonexistent(self):
         """Return None when logo file doesn't exist."""
         profile = MagicMock(spec=BusinessProfile)
         profile.logo_path = "nonexistent.png"
 
         with patch("invoice_machine.pdf.generator.settings") as mock_settings:
             mock_settings.logo_dir = Path(tempfile.gettempdir())
-            assert get_logo_base64(profile) is None
+            assert get_logo_data_uri(profile) is None
 
-    def test_get_logo_base64_valid_file(self):
+    def test_get_logo_data_uri_valid_file(self):
         """Successfully load and encode a valid logo file."""
         profile = MagicMock(spec=BusinessProfile)
         profile.logo_path = "test_logo.png"
@@ -137,12 +137,13 @@ class TestGetLogoBase64:
 
             with patch("invoice_machine.pdf.generator.settings") as mock_settings:
                 mock_settings.logo_dir = logo_dir
-                result = get_logo_base64(profile)
+                result = get_logo_data_uri(profile)
 
                 assert result is not None
-                # Verify it's valid base64
+                # A complete data: URI, with the payload still valid base64.
+                assert result.startswith("data:")
                 import base64
-                decoded = base64.b64decode(result)
+                decoded = base64.b64decode(result.split(",", 1)[1])
                 assert decoded == b"PNG fake image data"
 
 

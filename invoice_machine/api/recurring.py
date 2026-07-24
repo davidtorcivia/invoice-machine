@@ -4,7 +4,7 @@ from datetime import date
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, Field, model_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.requests import Request
 
@@ -30,40 +30,6 @@ def _validate_schedule_day_for_frequency(
 
     if frequency in {"monthly", "quarterly", "yearly"} and not (1 <= schedule_day <= 31):
         raise ValueError("For monthly/quarterly/yearly frequency, schedule_day must be 1-31")
-
-
-class RecurringScheduleSchema(BaseModel):
-    """Recurring schedule response schema."""
-
-    id: int
-    client_id: int
-    client_name: str | None = None
-    client_business: str | None = None
-    name: str
-    frequency: str
-    schedule_day: int
-    schedule_month: int | None = None
-    quarter_month: int = 1
-    currency_code: str
-    payment_terms_days: int
-    notes: str | None = None
-    use_default_notes: bool = True
-    line_items: list[dict] | None = None
-    show_payment_instructions: bool = True
-    selected_payment_methods: list[str] = []
-    auto_email_enabled: bool = False
-    email_subject_template: str | None = None
-    email_body_template: str | None = None
-    tax_enabled: bool | None = None
-    tax_rate: str | None = None
-    tax_name: str | None = None
-    is_active: bool
-    next_invoice_date: date
-    last_invoice_id: int | None = None
-    created_at: str
-    updated_at: str
-
-    model_config = ConfigDict(from_attributes=True)
 
 
 class RecurringScheduleCreate(BaseModel):

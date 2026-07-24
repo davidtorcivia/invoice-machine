@@ -28,6 +28,32 @@ DEFAULT_REMINDER_OFFSETS = (-3, 1, 7, 14)
 MIN_OFFSET = -365
 MAX_OFFSET = 365
 
+
+def validate_timezone(name: str) -> str:
+    """Validate an IANA timezone name, returning it unchanged."""
+    from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+    candidate = (name or "UTC").strip() or "UTC"
+    try:
+        ZoneInfo(candidate)
+    except (ZoneInfoNotFoundError, ValueError, KeyError):
+        raise ValueError(f"Unknown timezone: {candidate}") from None
+    return candidate
+
+
+def business_now(profile: BusinessProfile | None):
+    """Current time in the business's configured timezone."""
+    from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+    name = (profile.business_timezone if profile else None) or "UTC"
+    try:
+        zone = ZoneInfo(name)
+    except (ZoneInfoNotFoundError, ValueError, KeyError):
+        # A bad stored value must not stop reminders going out.
+        logger.warning("Unknown business timezone %r; falling back to UTC", name)
+        zone = ZoneInfo("UTC")
+    return utc_now().astimezone(zone)
+
 DEFAULT_REMINDER_SUBJECT = "Reminder: {document_type} {invoice_number} ({due_status})"
 DEFAULT_REMINDER_BODY = """Dear {client_name},
 
@@ -126,11 +152,15 @@ def due_offsets_for(invoice: Invoice, offsets: list[int], today: date) -> list[i
 
 
 async def send_due_reminders(session: AsyncSession, today: date | None = None) -> list[dict]:
-    """Send every reminder that is due today. Returns one result dict per attempt."""
+    """Send every reminder that is due today. Returns one result dict per attempt.
+
+    "Today" is the date in the business's own timezone. Using the UTC date would
+    misjudge how overdue an invoice is by a day for anyone far enough from UTC.
+    """
     from invoice_machine.service.email import send_invoice_email
 
-    today = today or utc_now().date()
     profile = await BusinessProfile.get(session)
+    today = today or business_now(profile).date()
 
     if not profile or not profile.reminders_enabled:
         return []
