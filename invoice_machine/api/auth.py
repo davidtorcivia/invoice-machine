@@ -261,7 +261,9 @@ async def verify_csrf_token(
 
 
 @router.get("/status", response_model=AuthStatus)
+@limiter.limit("120/minute")
 async def auth_status(
+    request: Request,
     db_session: AsyncSession = Depends(get_session),
     session_token: str | None = Cookie(None, alias=SESSION_COOKIE_NAME),
 ):
@@ -362,7 +364,9 @@ async def login(
 
 
 @router.post("/logout")
+@limiter.limit("30/minute")
 async def logout(
+    request: Request,
     response: Response,
     db_session: AsyncSession = Depends(get_session),
     session_token: str | None = Cookie(None, alias=SESSION_COOKIE_NAME),

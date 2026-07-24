@@ -1,12 +1,13 @@
 """Email templates API endpoints."""
 
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from invoice_machine.database import BusinessProfile, get_session
 from invoice_machine.email import DEFAULT_BODY_TEMPLATE, DEFAULT_SUBJECT_TEMPLATE, expand_template
+from invoice_machine.rate_limit import limiter
 from invoice_machine.services import InvoiceService
 
 router = APIRouter(tags=["email-templates"])
@@ -72,7 +73,9 @@ class EmailPreviewResponse(BaseModel):
 
 
 @router.get("/api/settings/email-templates")
+@limiter.limit("60/minute")
 async def get_email_templates(
+    request: Request,
     session: AsyncSession = Depends(get_session),
 ) -> EmailTemplatesSchema:
     """Get email templates and available placeholders."""
@@ -84,7 +87,9 @@ async def get_email_templates(
 
 
 @router.put("/api/settings/email-templates")
+@limiter.limit("30/hour")
 async def update_email_templates(
+    request: Request,
     data: EmailTemplatesUpdate,
     session: AsyncSession = Depends(get_session),
 ) -> EmailTemplatesSchema:
@@ -107,7 +112,9 @@ async def update_email_templates(
 
 
 @router.post("/api/invoices/{invoice_id}/email-preview")
+@limiter.limit("60/minute")
 async def preview_invoice_email(
+    request: Request,
     invoice_id: int,
     data: EmailPreviewRequest,
     session: AsyncSession = Depends(get_session),

@@ -385,7 +385,11 @@ class Invoice(Base):
         back_populates="invoice",
         cascade="all, delete-orphan",
         order_by="Payment.payment_date",
-        lazy="selectin",
+        # "raise", not "selectin": the balance lives in the denormalized
+        # amount_paid, and PaymentService queries the table directly, so eager
+        # loading only added a second query to every invoice list. Any accidental
+        # access is a loud error rather than a silent extra round trip.
+        lazy="raise",
     )
 
     __table_args__ = (

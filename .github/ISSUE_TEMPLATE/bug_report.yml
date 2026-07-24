@@ -1,0 +1,45 @@
+name: Bug report
+description: Something behaves differently than it should
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        For anything security-related, please use a private advisory instead. See SECURITY.md.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: Include the exact steps. If money or dates are involved, give the actual values.
+      placeholder: |
+        1. Created an invoice for 1,250.00 EUR due 2026-03-01
+        2. Recorded a partial payment of 400.00
+        3. The balance showed 850.00 but the aging report showed 1,250.00
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected instead
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version or commit
+      placeholder: v0.1.0, or the git SHA you deployed
+    validations:
+      required: true
+  - type: dropdown
+    id: deployment
+    attributes:
+      label: How are you running it
+      options: [Docker Compose, Docker, From source, Other]
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant log output
+      description: docker logs invoice-machine. Redact anything sensitive.
+      render: shell

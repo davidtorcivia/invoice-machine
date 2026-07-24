@@ -768,3 +768,55 @@ class TestRecurringScheduleFields:
         assert healthy_results, "healthy schedule should still have been processed"
         assert any(r.get("success") for r in healthy_results)
         assert broken.id != healthy.id
+
+
+class TestSearchFallbackRobustness:
+    """The LIKE fallback must not leak SQL wildcards from the user's query."""
+
+    @pytest.mark.asyncio
+    async def test_percent_in_query_is_not_a_wildcard(self, db_session, business_profile):
+        """Searching "100%" must not match every invoice starting with 100."""
+        from invoice_machine.service.search import SearchService
+
+        for number, notes in (("INV-1", "discount 100% applied"), ("INV-2", "1000 units")):
+            await InvoiceService.create_invoice(db_session, notes=notes)
+            invoice = (await InvoiceService.list_invoices(db_session, limit=1))[0]
+            invoice.invoice_number = number
+            await db_session.commit()
+
+        results = await SearchService._fallback_invoice_search(db_session, "100%", 20)
+        notes_found = {r["invoice_number"] for r in results}
+        # Only the invoice literally containing "100%" should match.
+        assert len(notes_found) <= 1, f"wildcard leaked, matched {notes_found}"
+
+    @pytest.mark.asyncio
+    async def test_underscore_in_query_is_literal(self, db_session, business_profile, test_client):
+        from invoice_machine.service.search import SearchService
+
+        await ClientService.update_client(db_session, test_client.id, notes="ref a_b")
+        matches = await SearchService._fallback_client_search(db_session, "a_b", 20)
+        assert len(matches) == 1
+
+        # "axb" must not match the literal "a_b" once the underscore is escaped.
+        no_matches = await SearchService._fallback_client_search(db_session, "axb", 20)
+        assert no_matches == []
+
+    @pytest.mark.asyncio
+    async def test_fallback_logs_when_fts_is_missing(self, db_session, business_profile, caplog):
+        """A broken index must be visible in the logs, not silently slow."""
+        import logging
+
+        from sqlalchemy import text
+
+        from invoice_machine.service.search import SearchService
+
+        await db_session.execute(text("DROP TABLE IF EXISTS invoices_fts"))
+        await db_session.commit()
+
+        with caplog.at_level(logging.WARNING, logger="invoice_machine.service.search"):
+            await SearchService.search(db_session, "anything", search_clients=False,
+                                       search_line_items=False)
+
+        assert any("FTS unavailable" in r.message for r in caplog.records), (
+            "falling back to a LIKE scan should be logged"
+        )

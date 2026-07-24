@@ -1,8 +1,22 @@
 """Search-related service operations."""
 
+import logging
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from invoice_machine.database import Client, Invoice, InvoiceItem
+
+logger = logging.getLogger(__name__)
+
+def _like_pattern(query: str) -> str:
+    """Build a contains-pattern with LIKE wildcards escaped.
+
+    Without this, a search for "100%" or "a_b" leaks SQL wildcards into the
+    pattern and matches far more than the user asked for.
+    """
+    escaped = query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    return f"%{escaped}%"
+
 
 
 class SearchService:
@@ -331,6 +345,11 @@ class SearchService:
                         "match_snippet": row.match_snippet,
                     })
             except Exception:
+                logger.warning(
+                    "FTS unavailable for invoice search; falling back to a LIKE scan. "
+                    "Run a reindex if this persists.",
+                    exc_info=True,
+                )
                 results["invoices"] = await SearchService._fallback_invoice_search(
                     session, query, limit
                 )
@@ -363,6 +382,11 @@ class SearchService:
                         "match_snippet": row.match_snippet,
                     })
             except Exception:
+                logger.warning(
+                    "FTS unavailable for client search; falling back to a LIKE scan. "
+                    "Run a reindex if this persists.",
+                    exc_info=True,
+                )
                 results["clients"] = await SearchService._fallback_client_search(
                     session, query, limit
                 )
@@ -407,6 +431,11 @@ class SearchService:
                         "is_deleted": row.deleted_at is not None,
                     })
             except Exception:
+                logger.warning(
+                    "FTS unavailable for line_items search; falling back to a LIKE scan. "
+                    "Run a reindex if this persists.",
+                    exc_info=True,
+                )
                 results["line_items"] = await SearchService._fallback_line_items_search(
                     session, query, limit
                 )
@@ -420,14 +449,15 @@ class SearchService:
         """Fallback LIKE-based search for invoices when FTS5 is unavailable."""
         from sqlalchemy import or_, select
 
+        term = _like_pattern(query)
         result = await session.execute(
             select(Invoice)
             .where(
                 or_(
-                    Invoice.invoice_number.ilike(f"%{query}%"),
-                    Invoice.client_name.ilike(f"%{query}%"),
-                    Invoice.client_business.ilike(f"%{query}%"),
-                    Invoice.notes.ilike(f"%{query}%"),
+                    Invoice.invoice_number.ilike(term, escape="\\"),
+                    Invoice.client_name.ilike(term, escape="\\"),
+                    Invoice.client_business.ilike(term, escape="\\"),
+                    Invoice.notes.ilike(term, escape="\\"),
                 )
             )
             .limit(limit)
@@ -454,14 +484,15 @@ class SearchService:
         """Fallback LIKE-based search for clients when FTS5 is unavailable."""
         from sqlalchemy import or_, select
 
+        term = _like_pattern(query)
         result = await session.execute(
             select(Client)
             .where(
                 or_(
-                    Client.name.ilike(f"%{query}%"),
-                    Client.business_name.ilike(f"%{query}%"),
-                    Client.email.ilike(f"%{query}%"),
-                    Client.notes.ilike(f"%{query}%"),
+                    Client.name.ilike(term, escape="\\"),
+                    Client.business_name.ilike(term, escape="\\"),
+                    Client.email.ilike(term, escape="\\"),
+                    Client.notes.ilike(term, escape="\\"),
                 )
             )
             .limit(limit)
@@ -489,7 +520,7 @@ class SearchService:
 
         result = await session.execute(
             select(InvoiceItem)
-            .where(InvoiceItem.description.ilike(f"%{query}%"))
+            .where(InvoiceItem.description.ilike(_like_pattern(query), escape="\\"))
             .options(selectinload(InvoiceItem.invoice))
             .limit(limit)
         )

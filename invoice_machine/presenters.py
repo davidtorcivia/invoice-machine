@@ -181,7 +181,6 @@ def serialize_invoice(
     include_formatted_total: bool = False,
     json_ready: bool = False,
     selected_payment_methods_as_list: bool = False,
-    include_payments: bool = False,
 ) -> dict:
     """Serialize invoice fields for API or MCP responses."""
     selected_payment_methods: Any = (
@@ -246,10 +245,6 @@ def serialize_invoice(
         data["items"] = [serialize_invoice_item(item) for item in invoice.items]
     else:
         data["items"] = []
-    if include_payments:
-        data["payments"] = [
-            serialize_payment(payment, json_ready=json_ready) for payment in invoice.payments
-        ]
     if include_formatted_total:
         from invoice_machine.services import format_currency
 

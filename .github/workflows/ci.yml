@@ -6,9 +6,22 @@ on:
     branches:
       - main
 
+# A newer push to the same branch makes the previous run irrelevant.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
 jobs:
   backend:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # The floor declared in pyproject, and a current release.
+        python-version: ["3.11", "3.13"]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -16,7 +29,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: ${{ matrix.python-version }}
           cache: pip
           cache-dependency-path: pyproject.toml
 
@@ -25,14 +38,22 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e ".[dev]"
 
-      - name: Verify MCP dependency
-        run: python -c "import mcp; print(getattr(mcp, '__version__', 'unknown'))"
-
       - name: Lint
         run: ruff check invoice_machine/ tests/
 
-      - name: Run tests (with coverage gate)
-        run: pytest -q --cov --cov-report=term-missing --cov-fail-under=60
+      - name: Check formatting
+        run: ruff format --check invoice_machine/ tests/
+
+      - name: Run tests
+        run: pytest -q --cov --cov-report=term-missing --cov-report=xml --cov-fail-under=70
+
+      - name: Upload coverage
+        if: matrix.python-version == '3.13'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: coverage.xml
+          retention-days: 7
 
   frontend:
     runs-on: ubuntu-latest
@@ -58,3 +79,79 @@ jobs:
 
       - name: Build
         run: npm run build
+
+  docker:
+    # The image is how this is deployed. A broken Dockerfile, or a migration
+    # that fails against a cold database, should fail here rather than at deploy.
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          load: true
+          tags: invoice-machine:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Boot the container and wait for health
+        run: |
+          docker run -d --name im-ci -p 8080:8080 \
+            -e ENVIRONMENT=development \
+            -e INVOICE_MACHINE_ENCRYPTION_KEY="$(python3 -c 'import secrets; print(secrets.token_hex(32))')" \
+            invoice-machine:ci
+          for i in $(seq 1 60); do
+            if curl -sf http://localhost:8080/health > /dev/null; then
+              echo "healthy after ${i}s"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "container never became healthy"
+          exit 1
+
+      - name: Confirm migrations reached head
+        run: docker logs im-ci 2>&1 | grep -q "Alembic migrations completed successfully"
+
+      - name: Container logs on failure
+        if: failure()
+        run: docker logs im-ci || true
+
+  audit:
+    runs-on: ubuntu-latest
+    # Advisory, not a gate. New CVEs land independently of anyone's pull request,
+    # and a red X on unrelated work teaches people to ignore CI. Read the summary
+    # and act on it; do not let it block a merge.
+    continue-on-error: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Audit Python dependencies
+        run: |
+          python -m pip install --upgrade pip pip-audit
+          pip install -e "."
+          pip-audit
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Audit npm dependencies
+        working-directory: frontend
+        run: npm audit --audit-level=high

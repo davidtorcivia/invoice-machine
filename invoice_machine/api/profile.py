@@ -356,7 +356,8 @@ async def delete_logo(
 
 
 @router.get("/logo/{filename:path}")
-async def get_logo(filename: str):
+@limiter.limit("120/minute")
+async def get_logo(request: Request, filename: str):
     """Serve uploaded logo."""
     # Sanitize filename to prevent path traversal
     safe_filename = sanitize_filename(filename)

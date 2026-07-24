@@ -340,7 +340,9 @@ async def create_invoice(
 
 
 @router.get("/{invoice_id}", response_model=InvoiceSchema)
+@limiter.limit("120/minute")
 async def get_invoice(
+    request: Request,
     invoice_id: int,
     session: AsyncSession = Depends(get_session),
 ) -> dict:
@@ -352,7 +354,9 @@ async def get_invoice(
 
 
 @router.put("/{invoice_id}", response_model=InvoiceSchema)
+@limiter.limit("120/minute")
 async def update_invoice(
+    request: Request,
     invoice_id: int,
     updates: InvoiceUpdate,
     session: AsyncSession = Depends(get_session),
@@ -410,7 +414,9 @@ async def convert_quote(
 
 
 @router.delete("/{invoice_id}", status_code=204)
+@limiter.limit("60/minute")
 async def delete_invoice(
+    request: Request,
     invoice_id: int,
     session: AsyncSession = Depends(get_session),
 ):
@@ -421,7 +427,9 @@ async def delete_invoice(
 
 
 @router.post("/{invoice_id}/restore", response_model=InvoiceSchema)
+@limiter.limit("60/minute")
 async def restore_invoice(
+    request: Request,
     invoice_id: int,
     session: AsyncSession = Depends(get_session),
 ) -> dict:
@@ -435,7 +443,9 @@ async def restore_invoice(
 
 
 @router.post("/{invoice_id}/items", response_model=InvoiceItemSchema, status_code=201)
+@limiter.limit("120/minute")
 async def add_invoice_item(
+    request: Request,
     invoice_id: int,
     description: str = Query(..., description="Item description"),
     # Decimal (not int) so fractional quantities like 1.5 / 0.25 hours can be
@@ -467,7 +477,9 @@ async def add_invoice_item(
 
 
 @router.put("/{invoice_id}/items/{item_id}", response_model=InvoiceItemSchema)
+@limiter.limit("120/minute")
 async def update_invoice_item(
+    request: Request,
     invoice_id: int,
     item_id: int,
     updates: InvoiceItemUpdate,
@@ -488,7 +500,9 @@ async def update_invoice_item(
 
 
 @router.delete("/{invoice_id}/items/{item_id}", status_code=204)
+@limiter.limit("120/minute")
 async def delete_invoice_item(
+    request: Request,
     invoice_id: int,
     item_id: int,
     session: AsyncSession = Depends(get_session),
@@ -530,7 +544,9 @@ async def generate_invoice_pdf(
 
 
 @router.get("/{invoice_id}/pdf")
+@limiter.limit("60/minute")
 async def get_invoice_pdf(
+    request: Request,
     invoice_id: int,
     session: AsyncSession = Depends(get_session),
 ):

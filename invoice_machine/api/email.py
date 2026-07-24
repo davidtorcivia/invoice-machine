@@ -1,10 +1,9 @@
 """Email/SMTP API endpoints."""
 
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
-from starlette.requests import Request
 
 from invoice_machine.crypto import encrypt_credential
 from invoice_machine.database import BusinessProfile, get_session
@@ -51,7 +50,9 @@ def _profile_to_smtp_settings(profile: BusinessProfile) -> dict:
 
 
 @router.get("/api/settings/smtp")
+@limiter.limit("60/minute")
 async def get_smtp_settings(
+    request: Request,
     session: AsyncSession = Depends(get_session),
 ) -> dict:
     """Get SMTP settings (password is masked)."""
@@ -60,7 +61,9 @@ async def get_smtp_settings(
 
 
 @router.put("/api/settings/smtp")
+@limiter.limit("20/hour")
 async def update_smtp_settings(
+    request: Request,
     data: SMTPSettingsUpdate,
     session: AsyncSession = Depends(get_session),
 ) -> dict:

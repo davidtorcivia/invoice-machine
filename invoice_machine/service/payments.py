@@ -214,9 +214,6 @@ class PaymentService:
 
         invoice = await session.get(Invoice, invoice_id)
         if invoice is not None:
-            # The relationship is selectin-loaded, so drop the stale cached row
-            # before recomputing from the table.
-            await session.refresh(invoice, ["payments"])
             await recalculate_invoice_payments(session, invoice)
 
         await session.commit()
