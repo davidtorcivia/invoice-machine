@@ -120,6 +120,19 @@ jobs:
       - name: Confirm migrations reached head
         run: docker logs im-ci 2>&1 | grep -q "Alembic migrations completed successfully"
 
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Smoke test the running app in a browser
+        # A green build and svelte-check cannot see a component that renders
+        # nothing or a CSP that stops the app booting. This drives the real UI.
+        # Runners ship Chrome at /usr/bin/google-chrome.
+        run: node frontend/tests/smoke.mjs
+        env:
+          BASE: http://localhost:8080
+
       - name: Container logs on failure
         if: failure()
         run: docker logs im-ci || true
