@@ -1,11 +1,13 @@
 <script>
-  import { createEventDispatcher } from 'svelte';
   import CollapsibleSection from '$lib/components/CollapsibleSection.svelte';
 
   
   
   /**
    * @typedef {Object} Props
+   * @property {(detail?: any) => void} [oncopied]
+   * @property {(detail?: any) => void} [oncopyfailed]
+   * @property {(detail?: any) => void} [ontest]
    * @property {{ payments_enabled: boolean, stripe_secret_key_set: boolean, stripe_webhook_secret_set: boolean, webhook_url: string|null }} [settings]
    * @property {string} [secretKey] - Write-only fields; blank means "leave the stored value alone".
    * @property {string} [webhookSecret]
@@ -22,18 +24,15 @@
   }),
     secretKey = $bindable(''),
     webhookSecret = $bindable(''),
-    testing = false
-  } = $props();
-
-  const dispatch = createEventDispatcher();
+    testing = false, oncopied, oncopyfailed, ontest } = $props();
 
   async function copyWebhookUrl() {
     if (!settings.webhook_url) return;
     try {
       await navigator.clipboard.writeText(settings.webhook_url);
-      dispatch('copied');
+      oncopied?.();
     } catch (error) {
-      dispatch('copyfailed');
+      oncopyfailed?.();
     }
   }
 </script>
@@ -112,7 +111,7 @@
   <button
     type="button"
     class="btn btn-secondary btn-sm"
-    onclick={() => dispatch('test')}
+    onclick={() => ontest?.()}
     disabled={testing || !settings.stripe_secret_key_set}
   >
     {testing ? 'Checking...' : 'Test credentials'}

@@ -1,11 +1,12 @@
 <script>
   import { self, preventDefault } from 'svelte/legacy';
-
-  import { createEventDispatcher, onMount } from 'svelte';
+  import { onMount } from 'svelte';
   import { formatCurrency } from '$lib/stores';
 
   /**
    * @typedef {Object} Props
+   * @property {(detail?: any) => void} [oncancel]
+   * @property {(detail?: any) => void} [onsave]
    * @property {boolean} [open]
    * @property {string} [currencyCode]
    * @property {string} [amountDue]
@@ -17,10 +18,7 @@
     open = false,
     currencyCode = 'USD',
     amountDue = '0',
-    saving = false
-  } = $props();
-
-  const dispatch = createEventDispatcher();
+    saving = false, oncancel, onsave } = $props();
 
   const METHODS = [
     { value: 'bank_transfer', label: 'Bank transfer' },
@@ -62,7 +60,7 @@
       error = 'That is more than the balance due. Tick "record as overpayment" to continue.';
       return;
     }
-    dispatch('save', {
+    onsave?.({
       amount: amountNum,
       payment_date: paymentDate,
       method,
@@ -73,7 +71,7 @@
   }
 
   function onKeydown(event) {
-    if (event.key === 'Escape') dispatch('cancel');
+    if (event.key === 'Escape') oncancel?.();
   }
 </script>
 
@@ -84,7 +82,7 @@
   <div
     class="modal-backdrop"
     role="presentation"
-    onclick={self(() => dispatch('cancel'))}
+    onclick={self(() => oncancel?.())}
   >
     <div class="modal" role="dialog" aria-modal="true" aria-labelledby="record-payment-title">
       <div class="modal-header">
@@ -92,7 +90,7 @@
         <button
           type="button"
           class="modal-close"
-          onclick={() => dispatch('cancel')}
+          onclick={() => oncancel?.()}
           aria-label="Close"
         >&times;</button>
       </div>
@@ -169,7 +167,7 @@
         </div>
 
         <div class="modal-footer">
-          <button type="button" class="btn btn-secondary" onclick={() => dispatch('cancel')}>
+          <button type="button" class="btn btn-secondary" onclick={() => oncancel?.()}>
             Cancel
           </button>
           <button type="submit" class="btn btn-primary" disabled={saving}>

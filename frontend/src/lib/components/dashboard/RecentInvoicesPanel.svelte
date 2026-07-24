@@ -1,12 +1,9 @@
 <script lang="ts">
-  import { createEventDispatcher } from 'svelte';
   import Icon from '$lib/components/Icons.svelte';
   import { formatCurrency, formatDate } from '$lib/stores';
   import { statusConfig, getEffectiveStatus } from '$lib/invoices/list';
 
-  let { recentInvoices = [] } = $props();
-
-  const dispatch = createEventDispatcher();
+  let { recentInvoices = [], onnew, onopen } = $props();
 </script>
 
 <div class="section">
@@ -33,7 +30,7 @@
         <tbody>
           {#each recentInvoices as invoice}
             {@const effectiveStatus = getEffectiveStatus(invoice)}
-            <tr onclick={() => dispatch('open', invoice.id)} class="clickable-row">
+            <tr onclick={() => onopen?.(invoice.id)} class="clickable-row">
               <td><span class="font-mono font-medium">#{invoice.invoice_number}</span></td>
               <td class="text-secondary">{invoice.client_business || invoice.client_name || '---'}</td>
               <td class="text-secondary">{formatDate(invoice.issue_date)}</td>
@@ -52,7 +49,7 @@
     <div class="invoice-cards">
       {#each recentInvoices as invoice}
         {@const effectiveStatus = getEffectiveStatus(invoice)}
-        <button class="invoice-card" onclick={() => dispatch('open', invoice.id)}>
+        <button class="invoice-card" onclick={() => onopen?.(invoice.id)}>
           <div class="invoice-card-header">
             <span class="invoice-card-number font-mono">#{invoice.invoice_number}</span>
             <span class="badge {statusConfig[effectiveStatus]?.class || 'badge-draft'}">
@@ -76,7 +73,7 @@
       <div class="empty-state-description">
         Create your first invoice to get started tracking your income.
       </div>
-      <button class="btn btn-primary mt-6" onclick={() => dispatch('new')}>
+      <button class="btn btn-primary mt-6" onclick={() => onnew?.()}>
         <Icon name="plus" size="sm" />
         Create Invoice
       </button>

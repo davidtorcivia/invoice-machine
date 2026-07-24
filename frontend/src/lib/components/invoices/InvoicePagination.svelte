@@ -1,7 +1,7 @@
 <script lang="ts">
-  import { createEventDispatcher } from 'svelte';
 
   interface Props {
+    onpagechange?: (detail?: any) => void;
     pageStart?: number;
     pageEnd?: number;
     pagination?: any;
@@ -18,10 +18,7 @@
     has_next: false,
     has_prev: false
   },
-    loading = false
-  }: Props = $props();
-
-  const dispatch = createEventDispatcher();
+    loading = false, onpagechange }: Props = $props();
 </script>
 
 <div class="pagination-bar">
@@ -29,11 +26,11 @@
     Showing {pageStart}-{pageEnd} of {pagination.total}
   </div>
   <div class="pagination-controls">
-    <button class="btn btn-secondary btn-sm" onclick={() => dispatch('pagechange', pagination.page - 1)} disabled={!pagination.has_prev || loading}>
+    <button class="btn btn-secondary btn-sm" onclick={() => onpagechange?.(pagination.page - 1)} disabled={!pagination.has_prev || loading}>
       Previous
     </button>
     <span class="pagination-page">Page {pagination.page} of {Math.max(1, pagination.total_pages)}</span>
-    <button class="btn btn-secondary btn-sm" onclick={() => dispatch('pagechange', pagination.page + 1)} disabled={!pagination.has_next || loading}>
+    <button class="btn btn-secondary btn-sm" onclick={() => onpagechange?.(pagination.page + 1)} disabled={!pagination.has_next || loading}>
       Next
     </button>
   </div>

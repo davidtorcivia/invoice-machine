@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { createEventDispatcher } from 'svelte';
   import Icon from '$lib/components/Icons.svelte';
   import InvoiceLineItemsCard from '$lib/components/invoices/InvoiceLineItemsCard.svelte';
   import InvoiceNotesCard from '$lib/components/invoices/InvoiceNotesCard.svelte';
@@ -9,6 +8,8 @@
   import { monthOptions, quarterMonthOptions, weekdayOptions } from '$lib/recurring/form';
 
   interface Props {
+    onclose?: (detail?: any) => void;
+    onsave?: (detail?: any) => void;
     show?: boolean;
     editingSchedule?: any;
     formData: any;
@@ -27,17 +28,14 @@
     availablePaymentMethods = [],
     defaultNotesText = '',
     smtpEnabled = false,
-    saving = false
-  }: Props = $props();
-
-  const dispatch = createEventDispatcher();
+    saving = false, onclose, onsave }: Props = $props();
 
   function closeModal() {
-    dispatch('close');
+    onclose?.();
   }
 
   function saveSchedule() {
-    dispatch('save');
+    onsave?.();
   }
 
   function handleModalKeydown(event) {

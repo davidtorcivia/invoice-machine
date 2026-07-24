@@ -106,7 +106,7 @@
       <p>Items in trash will be permanently deleted after 90 days.</p>
     </div>
 
-    <TrashList {items} on:restore={(event) => openRestoreModal(event.detail)} />
+    <TrashList {items} onrestore={(detail) => openRestoreModal(detail)} />
   {/if}
 </div>
 

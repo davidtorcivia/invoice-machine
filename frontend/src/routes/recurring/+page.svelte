@@ -191,10 +191,10 @@
         <RecurringScheduleCard
           {schedule}
           isTriggering={triggering === schedule.id}
-          on:trigger={() => triggerNow(schedule)}
-          on:toggle={() => toggleActive(schedule)}
-          on:edit={() => openEditModal(schedule)}
-          on:delete={() => openDeleteModal(schedule)}
+          ontrigger={() => triggerNow(schedule)}
+          ontoggle={() => toggleActive(schedule)}
+          onedit={() => openEditModal(schedule)}
+          ondelete={() => openDeleteModal(schedule)}
         />
       {/each}
     </div>
@@ -210,8 +210,8 @@
   {defaultNotesText}
   smtpEnabled={profile?.smtp_enabled}
   {saving}
-  on:close={closeModal}
-  on:save={saveSchedule}
+  onclose={closeModal}
+  onsave={saveSchedule}
 />
 
 <ConfirmModal

@@ -234,8 +234,13 @@ function drainEvents() {
     }
     if (event.method === 'Log.entryAdded' && event.params.entry.level === 'error') {
       const text = event.params.entry.text;
-      // A 401 from the auth probe before login is expected.
-      if (!/401|Failed to load resource/.test(text)) problems.push(`console: ${text}`);
+      const expected =
+        // The auth probe runs before login.
+        /401|Failed to load resource/.test(text) ||
+        // The unsaved-changes guard works correctly; Chrome refuses to show its
+        // confirm() because a scripted navigation carries no user gesture.
+        /beforeunload|unsaved changes/i.test(text);
+      if (!expected) problems.push(`console: ${text}`);
     }
   }
 }
@@ -405,6 +410,51 @@ check(
     taxPreview.includes('20.00') &&
     taxPreview.includes('220.00'),
   String(taxPreview).slice(0, 120),
+);
+
+// Component callbacks. svelte-check proves a callback prop is wired to a
+// declared prop; only clicking proves the child actually invokes it. A missed
+// call is a button that does nothing, with no error anywhere.
+await goto('/invoices');
+const navigated = await evaluate(`(async () => {
+  const row = document.querySelector('tbody tr, .invoice-card');
+  if (!row) return 'no invoice rows';
+  const before = location.pathname;
+  row.click();
+  await new Promise((r) => setTimeout(r, 1200));
+  return location.pathname === before ? 'did not navigate' : location.pathname;
+})()`);
+drainEvents();
+check(
+  'invoice row callback navigates to the detail page',
+  typeof navigated === 'string' &&
+    navigated.startsWith('/invoices/') &&
+    /^\d+$/.test(navigated.slice('/invoices/'.length)),
+  String(navigated),
+);
+
+// ConfirmModal backs every destructive action, so its cancel path is worth a check.
+await goto('/recurring');
+const modal = await evaluate(`(async () => {
+  const del = [...document.querySelectorAll('button')]
+    .find((b) => /delete/i.test(b.title || b.getAttribute('aria-label') || ''));
+  if (!del) return 'no schedules to exercise';
+  del.click();
+  await new Promise((r) => setTimeout(r, 700));
+  if (!document.querySelector('[role=dialog]')) return 'delete callback never opened the modal';
+
+  const cancel = [...document.querySelectorAll('[role=dialog] button')]
+    .find((b) => /cancel/i.test(b.textContent));
+  if (!cancel) return 'modal has no cancel button';
+  cancel.click();
+  await new Promise((r) => setTimeout(r, 700));
+  return document.querySelector('[role=dialog]') ? 'cancel callback did not close it' : 'ok';
+})()`);
+drainEvents();
+check(
+  'confirm-modal open and cancel callbacks fire',
+  modal === 'ok' || modal === 'no schedules to exercise',
+  String(modal),
 );
 
 drainEvents();

@@ -1,7 +1,7 @@
 <script lang="ts">
-  import { createEventDispatcher } from 'svelte';
 
   interface Props {
+    onpagechange?: (detail?: any) => void;
     pageStart?: number;
     pageEnd?: number;
     pagination?: any;
@@ -20,10 +20,7 @@
     has_prev: false
   },
     loading = false,
-    noun = 'item'
-  }: Props = $props();
-
-  const dispatch = createEventDispatcher();
+    noun = 'item', onpagechange }: Props = $props();
 </script>
 
 {#if pagination.total > 0}
@@ -32,11 +29,11 @@
       Showing {pageStart}-{pageEnd} of {pagination.total} {noun}{pagination.total === 1 ? '' : 's'}
     </div>
     <div class="pagination-controls">
-      <button class="btn btn-secondary btn-sm" onclick={() => dispatch('pagechange', pagination.page - 1)} disabled={!pagination.has_prev || loading}>
+      <button class="btn btn-secondary btn-sm" onclick={() => onpagechange?.(pagination.page - 1)} disabled={!pagination.has_prev || loading}>
         Previous
       </button>
       <span class="pagination-page">Page {pagination.page} of {Math.max(1, pagination.total_pages)}</span>
-      <button class="btn btn-secondary btn-sm" onclick={() => dispatch('pagechange', pagination.page + 1)} disabled={!pagination.has_next || loading}>
+      <button class="btn btn-secondary btn-sm" onclick={() => onpagechange?.(pagination.page + 1)} disabled={!pagination.has_next || loading}>
         Next
       </button>
     </div>

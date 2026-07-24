@@ -1,11 +1,12 @@
 <script>
-  import { createEventDispatcher } from 'svelte';
   import { formatCurrency, formatDate } from '$lib/stores';
   import Icons from '$lib/components/Icons.svelte';
 
   
   /**
    * @typedef {Object} Props
+   * @property {(detail?: any) => void} [ondelete]
+   * @property {(detail?: any) => void} [onrecord]
    * @property {{ id: number, amount: string, currency_code: string, payment_date: string, method?: string|null, reference?: string|null, provider?: string|null }[]} [payments]
    * @property {string} [currencyCode]
    * @property {string} [total]
@@ -21,10 +22,7 @@
     total = '0',
     amountPaid = '0',
     amountDue = '0',
-    busy = false
-  } = $props();
-
-  const dispatch = createEventDispatcher();
+    busy = false, ondelete, onrecord } = $props();
 
   const METHOD_LABELS = {
     bank_transfer: 'Bank transfer',
@@ -54,7 +52,7 @@
     <button
       type="button"
       class="btn btn-secondary btn-sm"
-      onclick={() => dispatch('record')}
+      onclick={() => onrecord?.()}
       disabled={busy}
     >
       <Icons name="plus" size="sm" />
@@ -114,7 +112,7 @@
             <button
               type="button"
               class="btn-danger-text"
-              onclick={() => dispatch('delete', payment)}
+              onclick={() => ondelete?.(payment)}
               disabled={busy}
               aria-label="Delete payment of {payment.amount}"
             >

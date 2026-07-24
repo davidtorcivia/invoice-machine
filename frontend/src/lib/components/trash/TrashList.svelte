@@ -1,12 +1,9 @@
 <script lang="ts">
-  import { createEventDispatcher } from 'svelte';
   import { formatDate } from '$lib/stores';
   import Icon from '$lib/components/Icons.svelte';
   import { getTrashItemIcon, getTrashItemName } from '$lib/trash/helpers';
 
-  let { items = [] } = $props();
-
-  const dispatch = createEventDispatcher();
+  let { items = [], onrestore } = $props();
 </script>
 
 {#if items.length > 0}
@@ -29,7 +26,7 @@
         </div>
 
         <div class="trash-item-actions">
-          <button class="btn btn-secondary btn-sm" onclick={() => dispatch('restore', item)}>
+          <button class="btn btn-secondary btn-sm" onclick={() => onrestore?.(item)}>
             <Icon name="refresh" size="sm" />
             Restore
           </button>

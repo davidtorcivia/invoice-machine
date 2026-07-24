@@ -73,10 +73,10 @@
     }
   }
 
-  async function savePayment(event) {
+  async function savePayment(detail) {
     savingPayment = true;
     try {
-      await paymentsApi.record(invoiceId, event.detail);
+      await paymentsApi.record(invoiceId, detail);
       toast.success('Payment recorded');
       showRecordPaymentModal = false;
       await loadInvoice();
@@ -265,9 +265,9 @@
       {invoice}
       {documentLabel}
       {generatingPdf}
-      on:generatepdf={generatePdf}
-      on:downloadpdf={downloadPdf}
-      on:sendemail={openSendEmailModal}
+      ongeneratepdf={generatePdf}
+      ondownloadpdf={downloadPdf}
+      onsendemail={openSendEmailModal}
     />
 
     <div class="invoice-layout">
@@ -275,9 +275,9 @@
         <InvoiceStatusBanner
           status={invoice.status}
           {isQuote}
-          on:statuschange={(event) => updateStatus(event.detail)}
-          on:convert={openConvertModal}
-          on:delete={openDeleteModal}
+          onstatuschange={(detail) => updateStatus(detail)}
+          onconvert={openConvertModal}
+          ondelete={openDeleteModal}
         />
         <InvoiceClientCard {invoice} />
         <InvoiceLineItemsSummaryCard {invoice} {items} />
@@ -303,8 +303,8 @@
             amountPaid={invoice.amount_paid}
             amountDue={invoice.amount_due}
             busy={paymentsBusy}
-            on:record={() => (showRecordPaymentModal = true)}
-            on:delete={(event) => (deletePaymentTarget = event.detail)}
+            onrecord={() => (showRecordPaymentModal = true)}
+            ondelete={(detail) => (deletePaymentTarget = detail)}
           />
 
           <div class="card">
@@ -415,8 +415,8 @@
   currencyCode={invoice?.currency_code || 'USD'}
   amountDue={invoice?.amount_due || '0'}
   saving={savingPayment}
-  on:save={savePayment}
-  on:cancel={() => (showRecordPaymentModal = false)}
+  onsave={savePayment}
+  oncancel={() => (showRecordPaymentModal = false)}
 />
 
 <ConfirmModal
@@ -440,8 +440,8 @@
   bind:emailRecipient
   bind:emailSubject
   bind:emailBody
-  on:cancel={cancelSendEmail}
-  on:confirm={confirmSendEmail}
+  oncancel={cancelSendEmail}
+  onconfirm={confirmSendEmail}
 />
 
 <style>

@@ -1,11 +1,15 @@
 <script>
-  import { createEventDispatcher } from 'svelte';
   import Icon from '$lib/components/Icons.svelte';
 
   
   
   /**
    * @typedef {Object} Props
+   * @property {(detail?: any) => void} [onclear]
+   * @property {(detail?: any) => void} [ondatechange]
+   * @property {(detail?: any) => void} [onfilterchange]
+   * @property {(detail?: any) => void} [onsortchange]
+   * @property {(detail?: any) => void} [onyearchange]
    * @property {any} [clients]
    * @property {any} [sortOptions]
    * @property {any} [yearOptions]
@@ -31,13 +35,10 @@
     filterYear = $bindable(''),
     filterFromDate = $bindable(''),
     filterToDate = $bindable(''),
-    hasFilters = false
-  } = $props();
-
-  const dispatch = createEventDispatcher();
+    hasFilters = false, onclear, ondatechange, onfilterchange, onsortchange, onyearchange } = $props();
 
   function handleSortChange(event) {
-    dispatch('sortchange', /** @type {HTMLSelectElement} */ (event.currentTarget).value);
+    onsortchange?.(/** @type {HTMLSelectElement} */ (event.currentTarget).value);
   }
 </script>
 
@@ -45,7 +46,7 @@
   <div class="filters-row">
     <div class="filter-group">
       <label for="status-filter" class="filter-label">Status</label>
-      <select id="status-filter" class="select" bind:value={filterStatus} onchange={() => dispatch('filterchange')}>
+      <select id="status-filter" class="select" bind:value={filterStatus} onchange={() => onfilterchange?.()}>
         <option value="">All Statuses</option>
         <option value="draft">Draft</option>
         <option value="sent">Sent</option>
@@ -57,7 +58,7 @@
 
     <div class="filter-group">
       <label for="type-filter" class="filter-label">Type</label>
-      <select id="type-filter" class="select" bind:value={filterDocumentType} onchange={() => dispatch('filterchange')}>
+      <select id="type-filter" class="select" bind:value={filterDocumentType} onchange={() => onfilterchange?.()}>
         <option value="">All Types</option>
         <option value="invoice">Invoices</option>
         <option value="quote">Quotes</option>
@@ -66,7 +67,7 @@
 
     <div class="filter-group">
       <label for="client-filter" class="filter-label">Client</label>
-      <select id="client-filter" class="select" bind:value={filterClient} onchange={() => dispatch('filterchange')}>
+      <select id="client-filter" class="select" bind:value={filterClient} onchange={() => onfilterchange?.()}>
         <option value="">All Clients</option>
         {#each clients as client}
           <option value={client.id}>{client.business_name || client.name}</option>
@@ -76,7 +77,7 @@
 
     <div class="filter-group">
       <label for="year-filter" class="filter-label">Year</label>
-      <select id="year-filter" class="select" bind:value={filterYear} onchange={() => dispatch('yearchange')}>
+      <select id="year-filter" class="select" bind:value={filterYear} onchange={() => onyearchange?.()}>
         <option value="">All Years</option>
         {#each yearOptions as year}
           <option value={year}>{year}</option>
@@ -92,7 +93,7 @@
           type="date"
           class="input input-sm"
           bind:value={filterFromDate}
-          onchange={() => dispatch('datechange')}
+          onchange={() => ondatechange?.()}
           placeholder="From"
         />
         <span class="date-range-separator">to</span>
@@ -101,7 +102,7 @@
           type="date"
           class="input input-sm"
           bind:value={filterToDate}
-          onchange={() => dispatch('datechange')}
+          onchange={() => ondatechange?.()}
           placeholder="To"
         />
       </div>
@@ -118,7 +119,7 @@
   </div>
 
   {#if hasFilters}
-    <button class="btn btn-ghost btn-sm clear-filters" onclick={() => dispatch('clear')}>
+    <button class="btn btn-ghost btn-sm clear-filters" onclick={() => onclear?.()}>
       <Icon name="x" size="sm" />
       Clear filters
     </button>

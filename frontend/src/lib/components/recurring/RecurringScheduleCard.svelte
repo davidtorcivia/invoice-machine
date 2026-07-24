@@ -1,16 +1,17 @@
 <script lang="ts">
-  import { createEventDispatcher } from 'svelte';
   import Icon from '$lib/components/Icons.svelte';
   import { formatFrequency, formatScheduleDate } from '$lib/recurring/form';
 
   interface Props {
+    ondelete?: (detail?: any) => void;
+    onedit?: (detail?: any) => void;
+    ontoggle?: (detail?: any) => void;
+    ontrigger?: (detail?: any) => void;
     schedule: any;
     isTriggering?: boolean;
   }
 
-  let { schedule, isTriggering = false }: Props = $props();
-
-  const dispatch = createEventDispatcher();
+  let { schedule, isTriggering = false, ondelete, onedit, ontoggle, ontrigger }: Props = $props();
 
   // $derived, not const: a const captures the value at component creation, so
   // an in-place update to the schedule (a rename, a client reassignment) would
@@ -55,7 +56,7 @@
   <div class="schedule-actions">
     <button
       class="btn btn-secondary btn-sm"
-      onclick={() => dispatch('trigger')}
+      onclick={() => ontrigger?.()}
       disabled={isTriggering}
       title="Create invoice now"
     >
@@ -69,17 +70,17 @@
 
     <button
       class="btn btn-ghost btn-sm"
-      onclick={() => dispatch('toggle')}
+      onclick={() => ontoggle?.()}
       title={schedule.is_active ? 'Pause schedule' : 'Activate schedule'}
     >
       <Icon name={schedule.is_active ? 'pause' : 'play'} size="sm" />
     </button>
 
-    <button class="btn btn-ghost btn-sm" onclick={() => dispatch('edit')} title="Edit schedule">
+    <button class="btn btn-ghost btn-sm" onclick={() => onedit?.()} title="Edit schedule">
       <Icon name="pencil" size="sm" />
     </button>
 
-    <button class="btn btn-ghost btn-sm btn-danger-text" onclick={() => dispatch('delete')} title="Delete schedule">
+    <button class="btn btn-ghost btn-sm btn-danger-text" onclick={() => ondelete?.()} title="Delete schedule">
       <Icon name="trash" size="sm" />
     </button>
   </div>

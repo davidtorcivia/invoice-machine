@@ -93,7 +93,7 @@
     <div class="client-layout">
       <div class="client-main">
         <ClientStatsGrid {invoices} />
-        <ClientInvoicesCard {invoices} on:newinvoice={() => goto(`/invoices/new?client=${clientId}`)} on:openinvoice={(event) => goto(`/invoices/${event.detail}`)} />
+        <ClientInvoicesCard {invoices} onnewinvoice={() => goto(`/invoices/new?client=${clientId}`)} onopeninvoice={(detail) => goto(`/invoices/${detail}`)} />
       </div>
 
       <div class="client-sidebar">

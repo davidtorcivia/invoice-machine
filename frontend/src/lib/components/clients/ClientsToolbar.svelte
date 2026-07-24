@@ -1,25 +1,25 @@
 <script>
-  import { createEventDispatcher } from 'svelte';
   import Icon from '$lib/components/Icons.svelte';
 
   /**
    * @typedef {Object} Props
+   * @property {(detail?: any) => void} [onclear]
+   * @property {(detail?: any) => void} [onsearch]
+   * @property {(detail?: any) => void} [onsortchange]
    * @property {string} [searchQuery]
    * @property {string} [selectedSortOption]
    * @property {any} [sortOptions]
    */
 
   /** @type {Props} */
-  let { searchQuery = $bindable(''), selectedSortOption = '', sortOptions = [] } = $props();
-
-  const dispatch = createEventDispatcher();
+  let { searchQuery = $bindable(''), selectedSortOption = '', sortOptions = [], onclear, onsearch, onsortchange } = $props();
 
   /**
    * @param {KeyboardEvent} event
    */
   function handleKeydown(event) {
     if (event.key === 'Enter') {
-      dispatch('search');
+      onsearch?.();
     }
   }
 
@@ -27,7 +27,7 @@
    * @param {Event} event
    */
   function handleSortChange(event) {
-    dispatch('sortchange', /** @type {HTMLSelectElement} */ (event.currentTarget).value);
+    onsortchange?.(/** @type {HTMLSelectElement} */ (event.currentTarget).value);
   }
 </script>
 
@@ -46,12 +46,12 @@
           onkeydown={handleKeydown}
         />
         {#if searchQuery}
-          <button class="btn btn-ghost btn-icon btn-sm clear-button" onclick={() => dispatch('clear')} aria-label="Clear search">
+          <button class="btn btn-ghost btn-icon btn-sm clear-button" onclick={() => onclear?.()} aria-label="Clear search">
             <Icon name="x" size="sm" />
           </button>
         {/if}
       </div>
-      <button class="btn btn-secondary search-button" onclick={() => dispatch('search')}>Search</button>
+      <button class="btn btn-secondary search-button" onclick={() => onsearch?.()}>Search</button>
     </div>
   </div>
   <div class="sort-group">

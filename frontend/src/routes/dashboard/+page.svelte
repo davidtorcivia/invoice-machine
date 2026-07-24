@@ -79,7 +79,7 @@
     </div>
   {:else}
     <DashboardStatsGrid {stats} />
-    <RecentInvoicesPanel {recentInvoices} on:open={(event) => goto(`/invoices/${event.detail}`)} on:new={() => goto('/invoices/new')} />
+    <RecentInvoicesPanel {recentInvoices} onopen={(detail) => goto(`/invoices/${detail}`)} onnew={() => goto('/invoices/new')} />
   {/if}
 </div>
 

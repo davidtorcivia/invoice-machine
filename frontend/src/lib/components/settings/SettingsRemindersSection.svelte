@@ -1,10 +1,10 @@
 <script>
-  import { createEventDispatcher } from 'svelte';
   import CollapsibleSection from '$lib/components/CollapsibleSection.svelte';
 
   
   /**
    * @typedef {Object} Props
+   * @property {(detail?: any) => void} [onrunnow]
    * @property {{ reminders_enabled: boolean, reminder_offsets: number[], reminder_subject_template: string|null, reminder_body_template: string|null, smtp_enabled: boolean, business_timezone?: string, reminder_send_hour?: number, local_time?: string|null, default_subject?: string, default_body?: string }} [settings]
    * @property {boolean} [running]
    */
@@ -18,9 +18,7 @@
     smtp_enabled: false,
     business_timezone: 'UTC',
     reminder_send_hour: 9
-  }), running = false } = $props();
-
-  const dispatch = createEventDispatcher();
+  }), running = false, onrunnow } = $props();
 
   let newOffset = $state('');
 
@@ -185,7 +183,7 @@
   <button
     type="button"
     class="btn btn-secondary btn-sm"
-    onclick={() => dispatch('runnow')}
+    onclick={() => onrunnow?.()}
     disabled={running || !settings.reminders_enabled}
   >
     {running ? 'Sending...' : 'Send due reminders now'}

@@ -1,8 +1,9 @@
 <script lang="ts">
-  import { createEventDispatcher } from 'svelte';
   import Icon from '$lib/components/Icons.svelte';
 
   interface Props {
+    oncancel?: (detail?: any) => void;
+    onconfirm?: (detail?: any) => void;
     show?: boolean;
     documentLabel?: string;
     emailLoading?: boolean;
@@ -19,28 +20,25 @@
     emailSending = false,
     emailRecipient = $bindable(''),
     emailSubject = $bindable(''),
-    emailBody = $bindable('')
-  }: Props = $props();
-
-  const dispatch = createEventDispatcher();
+    emailBody = $bindable(''), oncancel, onconfirm }: Props = $props();
 
   function handleKeydown(event) {
     if (event.key === 'Escape') {
-      dispatch('cancel');
+      oncancel?.();
     }
   }
 </script>
 
 {#if show}
   <div class="modal-overlay" role="presentation" tabindex="-1" onkeydown={handleKeydown}>
-    <button type="button" class="modal-backdrop" aria-label="Close send email dialog" onclick={() => dispatch('cancel')}></button>
+    <button type="button" class="modal-backdrop" aria-label="Close send email dialog" onclick={() => oncancel?.()}></button>
     <div class="modal-content email-modal" role="dialog" aria-modal="true" tabindex="-1">
       <div class="modal-header">
         <h2 class="modal-title">
           <Icon name="send" size="md" />
           Send {documentLabel} via Email
         </h2>
-        <button class="btn btn-ghost btn-sm" aria-label="Close" onclick={() => dispatch('cancel')}>
+        <button class="btn btn-ghost btn-sm" aria-label="Close" onclick={() => oncancel?.()}>
           <Icon name="x" size="sm" />
         </button>
       </div>
@@ -81,8 +79,8 @@
         </div>
 
         <div class="modal-actions">
-          <button class="btn btn-ghost" onclick={() => dispatch('cancel')}>Cancel</button>
-          <button class="btn btn-primary" onclick={() => dispatch('confirm')} disabled={emailSending || !emailRecipient}>
+          <button class="btn btn-ghost" onclick={() => oncancel?.()}>Cancel</button>
+          <button class="btn btn-primary" onclick={() => onconfirm?.()} disabled={emailSending || !emailRecipient}>
             {#if emailSending}
               <span class="spinner-sm"></span>
               Sending...

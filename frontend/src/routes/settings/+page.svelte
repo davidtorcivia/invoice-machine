@@ -725,7 +725,7 @@
       <SettingsRemindersSection
         bind:settings={remindersForm}
         running={runningReminders}
-        on:runnow={runRemindersNow}
+        onrunnow={runRemindersNow}
       />
 
       <SettingsPaymentsSection
@@ -733,9 +733,9 @@
         bind:secretKey={stripeSecretKey}
         bind:webhookSecret={stripeWebhookSecret}
         testing={testingPayments}
-        on:test={testPaymentCredentials}
-        on:copied={() => toast.success('Webhook URL copied')}
-        on:copyfailed={() => toast.error('Could not copy the URL')}
+        ontest={testPaymentCredentials}
+        oncopied={() => toast.success('Webhook URL copied')}
+        oncopyfailed={() => toast.error('Could not copy the URL')}
       />
 
       <SettingsFxRatesSection bind:fxRates />

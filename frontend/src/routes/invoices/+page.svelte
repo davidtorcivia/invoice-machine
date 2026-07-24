@@ -173,8 +173,8 @@
     loadFirstPage();
   }
 
-  function handleSortDropdown(event) {
-    const option = sortOptions.find((item) => item.value === event.detail);
+  function handleSortDropdown(value) {
+    const option = sortOptions.find((item) => item.value === value);
     if (!option) return;
     sortBy = option.field;
     sortDir = option.dir;
@@ -332,11 +332,11 @@
     bind:filterFromDate
     bind:filterToDate
     {hasFilters}
-    on:filterchange={loadFirstPage}
-    on:yearchange={handleYearChange}
-    on:datechange={handleDateChange}
-    on:sortchange={handleSortDropdown}
-    on:clear={clearAllFilters}
+    onfilterchange={loadFirstPage}
+    onyearchange={handleYearChange}
+    ondatechange={handleDateChange}
+    onsortchange={handleSortDropdown}
+    onclear={clearAllFilters}
   />
 
   {#if loading}
@@ -351,25 +351,25 @@
       {sortBy}
       {sortDir}
       {statusConfig}
-      on:navigate={(event) => goto(`/invoices/${event.detail}`)}
-      on:toggleselect={(event) => toggleSelect(event.detail)}
-      on:toggleselectall={toggleSelectAll}
-      on:sort={(event) => handleSort(event.detail)}
-      on:delete={(event) => openDeleteModal(event.detail)}
-      on:markpaid={(event) => markAsPaid(event.detail)}
+      onnavigate={(detail) => goto(`/invoices/${detail}`)}
+      ontoggleselect={(detail) => toggleSelect(detail)}
+      ontoggleselectall={toggleSelectAll}
+      onsort={(detail) => handleSort(detail)}
+      ondelete={(detail) => openDeleteModal(detail)}
+      onmarkpaid={(detail) => markAsPaid(detail)}
     />
 
     <InvoiceCards
       {invoices}
       {selectedIds}
       {statusConfig}
-      on:navigate={(event) => goto(`/invoices/${event.detail}`)}
-      on:toggleselect={(event) => toggleSelect(event.detail)}
-      on:delete={(event) => openDeleteModal(event.detail)}
-      on:markpaid={(event) => markAsPaid(event.detail)}
+      onnavigate={(detail) => goto(`/invoices/${detail}`)}
+      ontoggleselect={(detail) => toggleSelect(detail)}
+      ondelete={(detail) => openDeleteModal(detail)}
+      onmarkpaid={(detail) => markAsPaid(detail)}
     />
 
-    <InvoicePagination {pageStart} {pageEnd} {pagination} {loading} on:pagechange={(event) => changePage(event.detail)} />
+    <InvoicePagination {pageStart} {pageEnd} {pagination} {loading} onpagechange={(detail) => changePage(detail)} />
   {:else}
     <div class="empty-state">
       <div class="empty-state-icon">
@@ -395,8 +395,8 @@
   selectedCount={selectedIds.size}
   {canMarkSent}
   {canMarkPaid}
-  on:clear={clearSelection}
-  on:action={(event) => openBulkActionModal(event.detail)}
+  onclear={clearSelection}
+  onaction={(detail) => openBulkActionModal(detail)}
 />
 
 <ConfirmModal

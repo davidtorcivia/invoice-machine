@@ -1,41 +1,40 @@
 <script lang="ts">
-  import { createEventDispatcher } from 'svelte';
   import { fly } from 'svelte/transition';
   import Icon from '$lib/components/Icons.svelte';
 
   interface Props {
+    onaction?: (detail?: any) => void;
+    onclear?: (detail?: any) => void;
     selectedCount?: number;
     canMarkSent?: boolean;
     canMarkPaid?: boolean;
   }
 
-  let { selectedCount = 0, canMarkSent = false, canMarkPaid = false }: Props = $props();
-
-  const dispatch = createEventDispatcher();
+  let { selectedCount = 0, canMarkSent = false, canMarkPaid = false, onaction, onclear }: Props = $props();
 </script>
 
 {#if selectedCount > 0}
   <div class="bulk-action-bar" transition:fly={{ y: 50, duration: 200 }}>
     <div class="bulk-action-info">
       <span class="selection-count">{selectedCount} selected</span>
-      <button class="btn btn-ghost btn-sm" onclick={() => dispatch('clear')}>
+      <button class="btn btn-ghost btn-sm" onclick={() => onclear?.()}>
         Clear
       </button>
     </div>
     <div class="bulk-action-buttons">
       {#if canMarkSent}
-        <button class="btn btn-secondary btn-sm" onclick={() => dispatch('action', 'mark_sent')} title="Mark selected draft invoices as sent">
+        <button class="btn btn-secondary btn-sm" onclick={() => onaction?.('mark_sent')} title="Mark selected draft invoices as sent">
           <Icon name="send" size="sm" />
           <span class="btn-label">Mark Sent</span>
         </button>
       {/if}
       {#if canMarkPaid}
-        <button class="btn btn-secondary btn-sm" onclick={() => dispatch('action', 'mark_paid')} title="Mark selected sent or overdue invoices as paid">
+        <button class="btn btn-secondary btn-sm" onclick={() => onaction?.('mark_paid')} title="Mark selected sent or overdue invoices as paid">
           <Icon name="check" size="sm" />
           <span class="btn-label">Mark Paid</span>
         </button>
       {/if}
-      <button class="btn btn-danger btn-sm" onclick={() => dispatch('action', 'delete')} title="Delete selected invoices">
+      <button class="btn btn-danger btn-sm" onclick={() => onaction?.('delete')} title="Delete selected invoices">
         <Icon name="trash" size="sm" />
         <span class="btn-label">Delete</span>
       </button>

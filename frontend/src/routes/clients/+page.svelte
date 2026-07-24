@@ -145,12 +145,12 @@
     bind:searchQuery
     {selectedSortOption}
     sortOptions={clientSortOptions}
-    on:search={reloadFromFirstPage}
-    on:clear={() => {
+    onsearch={reloadFromFirstPage}
+    onclear={() => {
       searchQuery = '';
       reloadFromFirstPage();
     }}
-    on:sortchange={(event) => handleSortChange(event.detail)}
+    onsortchange={(detail) => handleSortChange(detail)}
   />
 
   {#if loading}
@@ -162,9 +162,9 @@
       {#each clients as client}
         <ClientListCard
           {client}
-          on:open={(event) => goto(`/clients/${event.detail}`)}
-          on:edit={(event) => goto(`/clients/${event.detail}/edit`)}
-          on:delete={(event) => openDeleteModal(event.detail)}
+          onopen={(detail) => goto(`/clients/${detail}`)}
+          onedit={(detail) => goto(`/clients/${detail}/edit`)}
+          ondelete={(detail) => openDeleteModal(detail)}
         />
       {/each}
     </div>
@@ -174,7 +174,7 @@
       {pagination}
       {loading}
       noun="client"
-      on:pagechange={(event) => changePage(event.detail)}
+      onpagechange={(detail) => changePage(detail)}
     />
   {:else}
     <div class="empty-state">

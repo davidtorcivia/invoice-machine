@@ -2,12 +2,17 @@
   import { createBubbler, stopPropagation } from 'svelte/legacy';
 
   const bubble = createBubbler();
-  import { createEventDispatcher } from 'svelte';
   import Icon from '$lib/components/Icons.svelte';
   import { formatDate, formatCurrency } from '$lib/stores';
   import { getEffectiveStatus, isOverdue } from '$lib/invoices/list';
 
   interface Props {
+    ondelete?: (detail?: any) => void;
+    onmarkpaid?: (detail?: any) => void;
+    onnavigate?: (detail?: any) => void;
+    onsort?: (detail?: any) => void;
+    ontoggleselect?: (detail?: any) => void;
+    ontoggleselectall?: (detail?: any) => void;
     invoices?: any;
     selectedIds?: any;
     allSelected?: boolean;
@@ -22,10 +27,7 @@
     allSelected = false,
     sortBy = 'issue_date',
     sortDir = 'desc',
-    statusConfig = {}
-  }: Props = $props();
-
-  const dispatch = createEventDispatcher();
+    statusConfig = {}, ondelete, onmarkpaid, onnavigate, onsort, ontoggleselect, ontoggleselectall }: Props = $props();
 </script>
 
 <div class="table-container table-view">
@@ -33,10 +35,10 @@
     <thead>
       <tr>
         <th class="checkbox-col">
-          <input type="checkbox" checked={allSelected} onchange={() => dispatch('toggleselectall')} aria-label="Select all invoices" />
+          <input type="checkbox" checked={allSelected} onchange={() => ontoggleselectall?.()} aria-label="Select all invoices" />
         </th>
         <th>
-          <button class="sortable-header" class:active={sortBy === 'invoice_number'} onclick={() => dispatch('sort', 'invoice_number')}>
+          <button class="sortable-header" class:active={sortBy === 'invoice_number'} onclick={() => onsort?.('invoice_number')}>
             Invoice
             {#if sortBy === 'invoice_number'}
               <Icon name={sortDir === 'asc' ? 'chevronUp' : 'chevronDown'} size="xs" />
@@ -44,7 +46,7 @@
           </button>
         </th>
         <th>
-          <button class="sortable-header" class:active={sortBy === 'client'} onclick={() => dispatch('sort', 'client')}>
+          <button class="sortable-header" class:active={sortBy === 'client'} onclick={() => onsort?.('client')}>
             Client
             {#if sortBy === 'client'}
               <Icon name={sortDir === 'asc' ? 'chevronUp' : 'chevronDown'} size="xs" />
@@ -53,7 +55,7 @@
         </th>
         <th>Line Items</th>
         <th>
-          <button class="sortable-header" class:active={sortBy === 'issue_date'} onclick={() => dispatch('sort', 'issue_date')}>
+          <button class="sortable-header" class:active={sortBy === 'issue_date'} onclick={() => onsort?.('issue_date')}>
             Date
             {#if sortBy === 'issue_date'}
               <Icon name={sortDir === 'asc' ? 'chevronUp' : 'chevronDown'} size="xs" />
@@ -61,7 +63,7 @@
           </button>
         </th>
         <th>
-          <button class="sortable-header" class:active={sortBy === 'due_date'} onclick={() => dispatch('sort', 'due_date')}>
+          <button class="sortable-header" class:active={sortBy === 'due_date'} onclick={() => onsort?.('due_date')}>
             Due Date
             {#if sortBy === 'due_date'}
               <Icon name={sortDir === 'asc' ? 'chevronUp' : 'chevronDown'} size="xs" />
@@ -69,7 +71,7 @@
           </button>
         </th>
         <th>
-          <button class="sortable-header" class:active={sortBy === 'status'} onclick={() => dispatch('sort', 'status')}>
+          <button class="sortable-header" class:active={sortBy === 'status'} onclick={() => onsort?.('status')}>
             Status
             {#if sortBy === 'status'}
               <Icon name={sortDir === 'asc' ? 'chevronUp' : 'chevronDown'} size="xs" />
@@ -77,7 +79,7 @@
           </button>
         </th>
         <th class="text-right">
-          <button class="sortable-header justify-end" class:active={sortBy === 'total'} onclick={() => dispatch('sort', 'total')}>
+          <button class="sortable-header justify-end" class:active={sortBy === 'total'} onclick={() => onsort?.('total')}>
             Total
             {#if sortBy === 'total'}
               <Icon name={sortDir === 'asc' ? 'chevronUp' : 'chevronDown'} size="xs" />
@@ -92,7 +94,7 @@
         {@const effectiveStatus = getEffectiveStatus(invoice)}
         {@const overdue = isOverdue(invoice)}
         <tr
-          onclick={() => dispatch('navigate', invoice.id)}
+          onclick={() => onnavigate?.(invoice.id)}
           class="clickable-row"
           class:row-overdue={overdue}
           class:row-selected={selectedIds.has(invoice.id)}
@@ -101,7 +103,7 @@
             <input
               type="checkbox"
               checked={selectedIds.has(invoice.id)}
-              onchange={() => dispatch('toggleselect', invoice.id)}
+              onchange={() => ontoggleselect?.(invoice.id)}
               aria-label="Select invoice {invoice.invoice_number}"
             />
           </td>
@@ -138,11 +140,11 @@
           <td class="actions-col">
             <div class="action-buttons">
               {#if invoice.document_type !== 'quote' && (invoice.status === 'sent' || invoice.status === 'overdue')}
-                <button class="btn btn-ghost btn-icon btn-sm" onclick={(event) => { event.stopPropagation(); dispatch('markpaid', invoice.id); }} title="Mark as paid">
+                <button class="btn btn-ghost btn-icon btn-sm" onclick={(event) => { event.stopPropagation(); onmarkpaid?.(invoice.id); }} title="Mark as paid">
                   <Icon name="check" size="sm" />
                 </button>
               {/if}
-              <button class="btn btn-ghost btn-icon btn-sm" onclick={(event) => { event.stopPropagation(); dispatch('delete', invoice); }} title="Delete">
+              <button class="btn btn-ghost btn-icon btn-sm" onclick={(event) => { event.stopPropagation(); ondelete?.(invoice); }} title="Delete">
                 <Icon name="trash" size="sm" />
               </button>
             </div>
