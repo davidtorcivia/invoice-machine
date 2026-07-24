@@ -325,6 +325,46 @@ await goto('/settings');
 const controls = await evaluate('document.querySelectorAll("button, summary").length');
 check('settings renders its sections', controls > 5, `${controls} controls`);
 
+// Two-way binding round trip. The settings page binds every field into a child
+// section component, so this proves the child's edits reach the parent, the
+// parent saves them, and they survive a reload. Rendering checks cannot see a
+// broken binding: the input still updates on screen while the parent keeps
+// stale values and silently saves the wrong thing.
+const marker = `Smoke ${Date.now()}`;
+const typed = await evaluate(`(async () => {
+  // Sections are collapsed by default and render no content until opened, so
+  // the toggle itself is part of what is being exercised here.
+  const header = [...document.querySelectorAll('button')]
+    .find((el) => /business information/i.test(el.textContent));
+  if (!header) return 'no Business Information section header';
+  if (header.getAttribute('aria-expanded') !== 'true') {
+    header.click();
+    await new Promise((r) => setTimeout(r, 500));
+  }
+
+  const field = document.querySelector('#business-name');
+  if (!field) return 'section did not expand (its open binding is broken)';
+
+  Object.getOwnPropertyDescriptor(Object.getPrototypeOf(field), 'value')
+    .set.call(field, ${JSON.stringify(marker)});
+  field.dispatchEvent(new Event('input', { bubbles: true }));
+  await new Promise((r) => setTimeout(r, 300));
+
+  const save = [...document.querySelectorAll('button')]
+    .find((b) => /save/i.test(b.textContent) && !b.disabled);
+  if (!save) return 'no enabled save button (parent never saw the edit)';
+  save.click();
+  return 'saved';
+})()`);
+await sleep(2200);
+drainEvents();
+check('settings edit reaches the parent and saves', typed === 'saved', String(typed));
+
+const persisted = await evaluate(
+  `fetch('/api/profile').then((r) => r.json()).then((p) => p.business_name)`,
+);
+check('edited value round-tripped to the server', persisted === marker, String(persisted));
+
 drainEvents();
 console.log('');
 if (problems.length) {
