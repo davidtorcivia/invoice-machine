@@ -246,8 +246,9 @@ class BackupService:
         """Keep only the most recent _MAX_PRE_RESTORE_BACKUPS pre-restore copies."""
         pre_restore = sorted(
             self.backup_dir.glob("pre_restore_*.db"),
-            key=lambda p: _parse_backup_timestamp(p.name)
-            or datetime.fromtimestamp(p.stat().st_mtime, tz=UTC),
+            key=lambda p: (
+                _parse_backup_timestamp(p.name) or datetime.fromtimestamp(p.stat().st_mtime, tz=UTC)
+            ),
             reverse=True,
         )
         deleted = 0
