@@ -627,10 +627,6 @@ input[type="number"]::-webkit-outer-spin-button {
   max-width: 400px;
 }
 
-.toast-success { border-left: 4px solid var(--color-success); }
-.toast-error { border-left: 4px solid var(--color-danger); }
-.toast-info { border-left: 4px solid var(--color-info); }
-
 @keyframes slideIn {
   from {
     transform: translateX(100%);

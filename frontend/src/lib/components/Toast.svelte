@@ -83,26 +83,14 @@
     border-radius: var(--radius-full);
   }
 
-  .toast-success {
-    border-left: 4px solid var(--color-success);
-  }
-
   .toast-success .toast-icon {
     color: var(--color-success);
     background: var(--color-success-light);
   }
 
-  .toast-error {
-    border-left: 4px solid var(--color-danger);
-  }
-
   .toast-error .toast-icon {
     color: var(--color-danger);
     background: var(--color-danger-light);
-  }
-
-  .toast-info {
-    border-left: 4px solid var(--color-info);
   }
 
   .toast-info .toast-icon {
