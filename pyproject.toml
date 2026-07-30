@@ -32,7 +32,9 @@ dev = [
     "pytest-asyncio>=0.23.0",
     "pytest-cov>=4.1.0",
     "httpx>=0.26.0",
-    "ruff>=0.1.0",
+    # Pinned to a minor series: ruff's formatter changes between releases, and
+    # an open-ended range means a ruff release turns CI red without a commit.
+    "ruff>=0.16,<0.17",
     "mcp>=1.0.0",
 ]
 

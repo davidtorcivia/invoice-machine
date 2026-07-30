@@ -118,7 +118,38 @@ jobs:
           exit 1
 
       - name: Confirm migrations reached head
-        run: docker logs im-ci 2>&1 | grep -q "Alembic migrations completed successfully"
+        # Ask the database what revision it is at and compare it to the newest
+        # revision on disk. This previously grepped the container logs for
+        # "Alembic migrations completed successfully", which never reaches
+        # stdout - so the step failed even against a container that had
+        # migrated cleanly and was serving traffic.
+        run: |
+          # set -e matters: without it a failing docker exec leaves both
+          # variables empty, they compare equal, and the step passes.
+          set -euo pipefail
+
+          head_rev=$(docker exec im-ci python -c "
+          from alembic.config import Config
+          from alembic.script import ScriptDirectory
+          print(ScriptDirectory.from_config(Config('alembic.ini')).get_current_head())
+          ")
+          db_rev=$(docker exec im-ci python -c "
+          import sqlite3
+          print(sqlite3.connect('/app/data/invoice_machine.db')
+                .execute('select version_num from alembic_version').fetchone()[0])
+          ")
+
+          echo "alembic head: $head_rev"
+          echo "database at:  $db_rev"
+
+          if [ -z "$head_rev" ] || [ -z "$db_rev" ]; then
+            echo "could not read a revision from the container"
+            exit 1
+          fi
+          if [ "$head_rev" != "$db_rev" ]; then
+            echo "database is not at head"
+            exit 1
+          fi
 
       - name: Set up Node
         uses: actions/setup-node@v4
