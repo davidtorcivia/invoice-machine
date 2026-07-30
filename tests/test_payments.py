@@ -306,3 +306,109 @@ class TestQuoteConversion:
     @pytest.mark.asyncio
     async def test_converting_a_missing_quote_returns_none(self, db_session):
         assert await InvoiceService.convert_quote_to_invoice(db_session, 999999) is None
+
+
+class TestPaymentIdempotency:
+    """A retried payment must not be recorded twice.
+
+    The outstanding-balance check already blocked a repeated *full* payment,
+    so the gap was partial payments: recording 400.00 twice against a 1000.00
+    invoice left it showing 800.00 received from a single real payment.
+    """
+
+    @pytest.mark.asyncio
+    async def test_replaying_a_key_returns_the_same_payment(
+        self, db_session, business_profile, test_client
+    ):
+        invoice = await _invoice(db_session, test_client)
+
+        first = await PaymentService.record_payment(
+            db_session, invoice.id, amount="400.00", idempotency_key="deposit-1"
+        )
+        second = await PaymentService.record_payment(
+            db_session, invoice.id, amount="400.00", idempotency_key="deposit-1"
+        )
+
+        assert second.id == first.id, "replay must return the original payment"
+
+        payments = await PaymentService.list_payments(db_session, invoice.id)
+        assert len(payments) == 1, "replay must not insert a second payment"
+
+        await db_session.refresh(invoice)
+        assert invoice.amount_paid == Decimal("400.00")
+        assert invoice.amount_due == Decimal("600.00")
+
+    @pytest.mark.asyncio
+    async def test_distinct_keys_still_record_separate_payments(
+        self, db_session, business_profile, test_client
+    ):
+        """A client really can pay the same amount twice."""
+        invoice = await _invoice(db_session, test_client)
+
+        await PaymentService.record_payment(
+            db_session, invoice.id, amount="400.00", idempotency_key="instalment-1"
+        )
+        await PaymentService.record_payment(
+            db_session, invoice.id, amount="400.00", idempotency_key="instalment-2"
+        )
+
+        await db_session.refresh(invoice)
+        assert invoice.amount_paid == Decimal("800.00")
+
+    @pytest.mark.asyncio
+    async def test_replay_does_not_depend_on_matching_amount(
+        self, db_session, business_profile, test_client
+    ):
+        """The key identifies the payment; the rest of the call is ignored.
+
+        A retry that reconstructs its arguments slightly differently must still
+        be recognised as the same payment rather than recorded afresh.
+        """
+        invoice = await _invoice(db_session, test_client)
+
+        first = await PaymentService.record_payment(
+            db_session, invoice.id, amount="400.00", idempotency_key="wobbly"
+        )
+        second = await PaymentService.record_payment(
+            db_session, invoice.id, amount="550.00", idempotency_key="wobbly"
+        )
+
+        assert second.id == first.id
+        assert second.amount == Decimal("400.00"), "the original amount stands"
+
+    @pytest.mark.asyncio
+    async def test_unkeyed_payments_are_unaffected(self, db_session, business_profile, test_client):
+        """Existing callers that pass no key keep working as before."""
+        invoice = await _invoice(db_session, test_client)
+
+        await PaymentService.record_payment(db_session, invoice.id, amount="400.00")
+        await PaymentService.record_payment(db_session, invoice.id, amount="300.00")
+
+        await db_session.refresh(invoice)
+        assert invoice.amount_paid == Decimal("700.00")
+
+    @pytest.mark.asyncio
+    async def test_blank_key_is_rejected(self, db_session, business_profile, test_client):
+        """Whitespace is not an idempotency key."""
+        invoice = await _invoice(db_session, test_client)
+
+        with pytest.raises(ValueError, match="blank"):
+            await PaymentService.record_payment(
+                db_session, invoice.id, amount="400.00", idempotency_key="   "
+            )
+
+    @pytest.mark.asyncio
+    async def test_duplicate_full_payment_is_still_rejected(
+        self, db_session, business_profile, test_client
+    ):
+        """The balance guard that already caught this must stay in place."""
+        invoice = await _invoice(db_session, test_client)
+
+        await PaymentService.record_payment(
+            db_session, invoice.id, amount="1000.00", idempotency_key="paid-in-full"
+        )
+
+        with pytest.raises(ValueError, match="exceeds the outstanding balance"):
+            await PaymentService.record_payment(
+                db_session, invoice.id, amount="1000.00", idempotency_key="different"
+            )

@@ -505,6 +505,9 @@ class Payment(Base):
     # Set only for payments created by a provider webhook (e.g. "stripe").
     provider: Mapped[str | None] = mapped_column(String(30), nullable=True)
     external_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # Caller-supplied replay guard for manually recorded payments. NULL for
+    # payments recorded before keys existed, and NULLs do not collide.
+    idempotency_key: Mapped[str | None] = mapped_column(String(255), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now, onupdate=utc_now)
 
@@ -515,6 +518,13 @@ class Payment(Base):
         Index("idx_payments_date", "payment_date"),
         # Webhook idempotency: one provider event can only ever land once.
         Index("idx_payments_provider_external", "provider", "external_id", unique=True),
+        # Caller idempotency, on the key alone rather than scoped by provider.
+        # Manually recorded payments leave provider NULL, and a unique index
+        # treats NULLs as distinct - so a (provider, idempotency_key) index
+        # would let two NULL-provider rows share a key and enforce nothing.
+        # Keys are only ever set on the manual path, so they need no scoping.
+        # NULL keys still do not collide, leaving unkeyed payments unconstrained.
+        Index("uq_payments_idempotency_key", "idempotency_key", unique=True),
     )
 
 

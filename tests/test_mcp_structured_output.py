@@ -151,3 +151,45 @@ async def test_nullable_result_still_validates(mcp_db):
         result = await mcp_client.call_tool("get_client", {"client_id": 999999})
 
     assert not result.is_error
+
+
+@pytest.mark.asyncio
+async def test_record_payment_requires_an_idempotency_key(mcp_db):
+    """The tool schema forces a key, so a retry cannot silently double-record."""
+    async with Client(_server()) as client:
+        tools = {t.name: t for t in (await client.list_tools()).tools}
+
+    schema = tools["record_payment"].input_schema
+    assert "idempotency_key" in schema["required"]
+    # And it is now advertised as safe to retry.
+    assert tools["record_payment"].annotations.idempotent_hint is True
+
+
+@pytest.mark.asyncio
+async def test_record_payment_replay_does_not_double_count(mcp_db):
+    """Calling the tool twice with one key leaves a single payment."""
+    client_rec = await client_tools.create_client(name="Retry Co")
+    created = await invoice_tools.create_invoice(
+        client_id=client_rec["id"],
+        items=[{"description": "Work", "quantity": 1, "unit_price": "100.00"}],
+    )
+    await invoice_tools.update_invoice(invoice_id=created["id"], status="sent")
+
+    args = {
+        "invoice_id": created["id"],
+        "amount": 40.0,
+        "idempotency_key": "mcp-retry-1",
+    }
+    async with Client(_server()) as client:
+        first = await client.call_tool("record_payment", args)
+        second = await client.call_tool("record_payment", args)
+        ledger = await client.call_tool("list_payments", {"invoice_id": created["id"]})
+
+    assert not first.is_error and not second.is_error
+
+    # record_payment returns a success/error envelope rather than a bare entity,
+    # so it publishes no output model; the ledger is where the effect shows.
+    ledger_data = _unwrap(ledger.structured_content)
+    payments = ledger_data["payments"]
+    assert len(payments) == 1, f"expected one payment, got {len(payments)}"
+    assert ledger_data["amount_paid"] == "40.00", "the retry was counted twice"

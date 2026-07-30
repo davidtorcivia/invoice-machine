@@ -227,8 +227,16 @@ money, and auto-approve accordingly:
 | --- | --- | --- |
 | `readOnlyHint` | Changes nothing | `list_invoices`, `get_revenue_summary` |
 | `destructiveHint` | Removes or reverses data | `delete_invoice`, `delete_payment` |
-| `idempotentHint` | Safe to retry | `update_client`, `generate_pdf` |
+| `idempotentHint` | Safe to retry | `update_client`, `generate_pdf`, `record_payment` |
 | `openWorldHint` | Reaches outside the app | `send_invoice_email`, `test_smtp_connection` |
+
+`record_payment` requires an `idempotency_key`. Replaying the same key returns
+the payment already recorded rather than adding a second one, so a retried call
+cannot double-record — the case that used to slip through was a repeated
+*partial* payment, since a repeated full one was already refused for exceeding
+the balance. Over REST, `POST /api/invoices/{id}/payments` accepts the same
+thing as an optional `Idempotency-Key` header (optional there because it is the
+browser path).
 
 Two tools additionally **ask before acting**, because their effects cannot be
 undone: `send_invoice_email` and `trigger_recurring_schedule`. The prompt names

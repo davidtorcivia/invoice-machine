@@ -3,7 +3,7 @@
 from datetime import date
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -99,8 +99,23 @@ async def record_payment(
     invoice_id: int,
     data: PaymentCreate,
     session: AsyncSession = Depends(get_session),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ) -> dict:
-    """Record a (possibly partial) payment against an invoice."""
+    """Record a (possibly partial) payment against an invoice.
+
+    Send an ``Idempotency-Key`` header to make a retry safe: replaying the same
+    key returns the payment already recorded rather than adding a second one.
+    Optional rather than required, because this is the browser path and the
+    existing UI does not send one.
+    """
+    if idempotency_key is not None:
+        idempotency_key = idempotency_key.strip()
+        if not (8 <= len(idempotency_key) <= 255):
+            raise HTTPException(
+                status_code=400,
+                detail="Idempotency-Key must be 8-255 characters",
+            )
+
     try:
         payment = await PaymentService.record_payment(
             session,
@@ -111,6 +126,7 @@ async def record_payment(
             reference=data.reference,
             notes=data.notes,
             allow_overpayment=data.allow_overpayment,
+            idempotency_key=idempotency_key,
         )
     except ValueError as exc:
         await session.rollback()
