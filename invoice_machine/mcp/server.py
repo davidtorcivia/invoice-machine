@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import logging
 
-# Import tool modules to register @mcp.tool() decorated functions.
-# New tools added to any module are automatically registered.
+# Import tool modules to register @mcp.tool() decorated functions, plus the
+# resource and prompt modules. New tools added to any module are automatically
+# registered.
 from . import (  # noqa: F401
     analytics_tools,
     client_tools,
@@ -14,8 +15,10 @@ from . import (  # noqa: F401
     invoice_tools,
     payment_tools,
     profile_tools,
+    prompts,
     recurring_tools,
     reminder_tools,
+    resources,
     search_tools,
 )
 from .context import mcp
@@ -28,65 +31,84 @@ def main():
     mcp.run()
 
 
-def run_sse_server(host: str = "0.0.0.0", port: int = 8081):
+def run_http_server(host: str = "0.0.0.0", port: int = 8081):
     """
-    Run the MCP server with SSE transport for remote access.
+    Run a standalone MCP server over Streamable HTTP for remote access.
 
-    This enables Claude Desktop to connect over HTTP from:
+    This enables Claude Desktop and other MCP clients to connect over HTTP from:
     - Another machine on your LAN
     - Remotely via Cloudflare Tunnel or similar
 
+    Prefer running the main web app, which already serves /mcp on the same port.
+    This entry point exists for deployments that want MCP on its own port.
+
     Usage:
-        python -m invoice_machine.mcp.server --sse --port 8081
+        python -m invoice_machine.mcp.server --http --port 8081
     """
     import asyncio
 
     import uvicorn
-    from mcp.server.sse import SseServerTransport
-    from starlette.applications import Starlette
+    from mcp.server.transport_security import TransportSecuritySettings
     from starlette.requests import Request
-    from starlette.responses import Response
-    from starlette.routing import Route
+    from starlette.responses import Response as StarletteResponse
 
     from invoice_machine.api.mcp import get_mcp_api_key_hash, verify_mcp_auth
 
-    sse = SseServerTransport("/messages/")
-
-    async def handle_sse(request: Request):
-        if not await verify_mcp_auth(request):
-            return Response("Unauthorized", status_code=401)
-
-        async with sse.connect_sse(
-            request.scope, request.receive, request._send
-        ) as streams:
-            await mcp._mcp_server.run(
-                streams[0], streams[1], mcp._mcp_server.create_initialization_options()
-            )
-        return Response()
-
-    async def handle_messages(request: Request):
-        if not await verify_mcp_auth(request):
-            return Response("Unauthorized", status_code=401)
-
-        await sse.handle_post_message(request.scope, request.receive, request._send)
-        return Response()
-
-    app = Starlette(
-        routes=[
-            Route("/sse", endpoint=handle_sse),
-            Route("/messages/", endpoint=handle_messages, methods=["POST"]),
-        ]
+    # Same configuration as the endpoint mounted in the main app: stateless
+    # JSON-over-POST, with Host validation left to the reverse proxy.
+    mcp_app = mcp.streamable_http_app(
+        streamable_http_path="/mcp",
+        json_response=True,
+        stateless_http=True,
+        transport_security=TransportSecuritySettings(
+            enable_dns_rebinding_protection=False
+        ),
     )
 
-    logger.info("Starting MCP SSE server on %s:%s", host, port)
-    api_key_hash = asyncio.run(get_mcp_api_key_hash())
+    class BearerAuth:
+        """Reject unauthenticated requests before they reach the MCP app.
+
+        Wraps the app rather than mounting it, so /mcp stays the exact path a
+        client posts to - a Mount would answer POST /mcp with a 307 to /mcp/.
+        Non-HTTP scopes (notably lifespan, which starts the session manager)
+        pass straight through.
+        """
+
+        def __init__(self, app):
+            self.app = app
+
+        async def __call__(self, scope, receive, send):
+            if scope["type"] != "http":
+                await self.app(scope, receive, send)
+                return
+
+            if not await verify_mcp_auth(Request(scope, receive, send)):
+                response = StarletteResponse("Unauthorized", status_code=401)
+                await response(scope, receive, send)
+                return
+            await self.app(scope, receive, send)
+
+    app = BearerAuth(mcp_app)
+
+    logger.info("Starting MCP Streamable HTTP server on %s:%s", host, port)
+
+    async def read_api_key_hash():
+        # Create the schema first: on a fresh database the profile table does
+        # not exist yet, and querying it here would kill the process before
+        # uvicorn ever binds.
+        from .context import ensure_mcp_schema_initialized
+
+        await ensure_mcp_schema_initialized()
+        return await get_mcp_api_key_hash()
+
+    api_key_hash = asyncio.run(read_api_key_hash())
     if api_key_hash:
         logger.info("MCP API key authentication is ENABLED")
     else:
         logger.warning(
             "No MCP API key configured - connections will be rejected until one is generated."
         )
-    logger.info("MCP SSE endpoint: http://%s:%s/sse", host, port)
+    logger.info("MCP endpoint: http://%s:%s/mcp", host, port)
 
     uvicorn.run(app, host=host, port=port)
 
@@ -94,11 +116,13 @@ def run_sse_server(host: str = "0.0.0.0", port: int = 8081):
 if __name__ == "__main__":
     import sys
 
-    if "--sse" in sys.argv:
+    # --sse is the pre-2026 spelling; the SSE transport is deprecated, so it
+    # now starts the Streamable HTTP server that superseded it.
+    if "--http" in sys.argv or "--sse" in sys.argv:
         port = 8081
         for i, arg in enumerate(sys.argv):
             if arg == "--port" and i + 1 < len(sys.argv):
                 port = int(sys.argv[i + 1])
-        run_sse_server(port=port)
+        run_http_server(port=port)
     else:
         main()

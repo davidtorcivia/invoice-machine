@@ -71,19 +71,32 @@ async def streamable_http_lifespan():
     """
     global _http_session_manager
 
-    from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
+    from mcp.server.transport_security import TransportSecuritySettings
 
     from invoice_machine.mcp.server import mcp
 
-    manager = StreamableHTTPSessionManager(
-        app=mcp._mcp_server,
+    # streamable_http_app() is the SDK's public builder: it configures the
+    # transport and instantiates a fresh session manager, which it then exposes
+    # via mcp.session_manager for exactly this "mount into an existing app"
+    # case. The Starlette app it returns is unused - we serve the endpoint
+    # through MCPStreamableHTTPHandler so our Bearer auth runs first.
+    mcp.streamable_http_app(
         # Stateless + JSON responses: every MCP call is an independent POST
         # with no server-side session and no long-lived stream, so proxies
         # (Cloudflare) dropping idle connections can't strand the client the
-        # way the SSE transport's per-connection sessions could.
+        # way the SSE transport's per-connection sessions could. Under spec
+        # 2026-07-28 this is the protocol's own model; the flag now only
+        # governs how pre-2026 clients are served.
         json_response=True,
-        stateless=True,
+        stateless_http=True,
+        # We terminate TLS and validate the Host at the reverse proxy, and the
+        # public hostname is deployment-specific, so leave the SDK's
+        # DNS-rebinding check off rather than hardcode an allowed-hosts list.
+        transport_security=TransportSecuritySettings(
+            enable_dns_rebinding_protection=False
+        ),
     )
+    manager = mcp.session_manager
     _http_session_manager = manager
     try:
         async with manager.run():
@@ -125,8 +138,10 @@ def get_sse_transport():
 
         from invoice_machine.mcp.server import mcp
 
+        # security_settings=None leaves DNS-rebinding checks off, matching the
+        # Streamable HTTP endpoint above (Host is validated at the proxy).
         _sse_transport = SseServerTransport("/messages/")
-        _mcp_server = mcp._mcp_server
+        _mcp_server = mcp._lowlevel_server
 
     return _sse_transport, _mcp_server
 
@@ -177,12 +192,25 @@ class MCPStatusHandler:
     async def __call__(self, scope, receive, send):
         import json
 
+        from mcp_types import (
+            HANDSHAKE_PROTOCOL_VERSIONS,
+            LATEST_PROTOCOL_VERSION,
+            MODERN_PROTOCOL_VERSIONS,
+        )
+
         api_key_hash = await get_mcp_api_key_hash()
         body = json.dumps({
             "enabled": bool(api_key_hash),
             "endpoint": "/mcp",
             "transport": "streamable-http",
             "legacy_sse_endpoint": "/mcp/sse",
+            # One endpoint serves both protocol eras: modern clients send a
+            # self-describing request, older ones still get the handshake.
+            "protocol_version": LATEST_PROTOCOL_VERSION,
+            "supported_protocol_versions": [
+                *HANDSHAKE_PROTOCOL_VERSIONS,
+                *MODERN_PROTOCOL_VERSIONS,
+            ],
         })
 
         response = StarletteResponse(

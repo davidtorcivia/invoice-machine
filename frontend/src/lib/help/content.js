@@ -272,7 +272,24 @@ export const helpSections = [
   <li><strong>macOS:</strong> <code>~/Library/Application Support/Claude/claude_desktop_config.json</code></li>
   <li><strong>Windows:</strong> <code>%APPDATA%\\Claude\\claude_desktop_config.json</code></li>
 </ul>
-<p>The older SSE endpoint at <code>/mcp/sse</code> still works for existing configs, but the <code>/mcp</code> endpoint is more reliable and recommended.</p>`
+<h3>Protocol Version</h3>
+<p>Invoice Machine implements MCP spec <strong>2026-07-28</strong> and answers every earlier revision from the same endpoint, so there is nothing to configure — new and old clients both connect.</p>
+<p>Under this revision there is no session and no connection handshake: each request carries everything the server needs. That is what lets the endpoint sit behind a tunnel or proxy that drops idle connections without breaking your session. The tool list is also cacheable now, so clients stop re-fetching it on every reconnect.</p>
+<p>The older SSE endpoint at <code>/mcp/sse</code> still works for existing configs, but it is deprecated in the MCP spec — point new clients at <code>/mcp</code>.</p>
+<h3>What Claude Can and Cannot Do On Its Own</h3>
+<p>Every tool is labelled so Claude knows which are safe lookups and which change something. Reading invoices, listing clients and running reports change nothing. Creating, editing and deleting are marked as changes, and anything that leaves the app — sending email, refunding a payment — is marked as reaching the outside world.</p>
+<p>Four actions <strong>ask you first</strong>, because they cannot be undone:</p>
+<ul>
+  <li>Emailing an invoice to a client</li>
+  <li>Sending the batch of due reminders</li>
+  <li>Recording a refund</li>
+  <li>Triggering a recurring schedule early</li>
+</ul>
+<p>The confirmation names the actual recipient or amount, and saying no stops it. If your client does not support these prompts, nothing breaks — it falls back to its own approval flow.</p>
+<p>One thing to be aware of: recording a manual payment has no duplicate protection, so asking twice records two payments. Refunds are protected against this.</p>
+<h3>Resources and Prompts</h3>
+<p>Some data is readable directly, without Claude having to search for it: an invoice by its number (<code>invoice://20250115-1</code>), a client, everything currently outstanding, and your business profile.</p>
+<p>Clients with a prompt picker also offer three shortcuts: <strong>Draft an invoice</strong>, <strong>Chase overdue invoices</strong>, and <strong>Month-end summary</strong>. All three draft and report only — they never send anything without you.</p>`
   },
   {
     key: 'botApiIntegration',

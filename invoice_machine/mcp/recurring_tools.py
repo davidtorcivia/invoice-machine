@@ -4,18 +4,24 @@ from __future__ import annotations
 
 from datetime import date
 from decimal import Decimal
+from typing import Annotated
+
+from mcp.server.mcpserver import Context, Elicit, Resolve
 
 from invoice_machine.presenters import serialize_recurring_schedule
 from invoice_machine.services import RecurringService
 
+from .annotations import ADDITIVE, DESTRUCTIVE, OUTWARD, READ_ONLY, UPDATE
+from .confirmations import Confirmation, confirmed, ensure_confirmed
 from .context import get_session, mcp
+from .schemas import RecurringScheduleOut
 
 
-@mcp.tool()
+@mcp.tool(annotations=READ_ONLY)
 async def list_recurring_schedules(
     client_id: int | None = None,
     include_paused: bool = False,
-) -> list:
+) -> list[RecurringScheduleOut]:
     """
     List recurring invoice schedules.
 
@@ -35,8 +41,8 @@ async def list_recurring_schedules(
         return [serialize_recurring_schedule(schedule, json_ready=True) for schedule in schedules]
 
 
-@mcp.tool()
-async def get_recurring_schedule(schedule_id: int) -> dict | None:
+@mcp.tool(annotations=READ_ONLY)
+async def get_recurring_schedule(schedule_id: int) -> RecurringScheduleOut | None:
     """
     Get a recurring schedule by ID.
 
@@ -53,7 +59,7 @@ async def get_recurring_schedule(schedule_id: int) -> dict | None:
         return serialize_recurring_schedule(schedule, json_ready=True)
 
 
-@mcp.tool()
+@mcp.tool(annotations=ADDITIVE)
 async def create_recurring_schedule(
     client_id: int,
     name: str,
@@ -70,7 +76,7 @@ async def create_recurring_schedule(
     auto_send: bool = False,
     reminders_enabled: bool = True,
     online_payment_enabled: bool = False,
-) -> dict:
+) -> RecurringScheduleOut:
     """
     Create a recurring invoice schedule.
 
@@ -124,7 +130,7 @@ async def create_recurring_schedule(
         return serialize_recurring_schedule(schedule, json_ready=True)
 
 
-@mcp.tool()
+@mcp.tool(annotations=UPDATE)
 async def update_recurring_schedule(
     schedule_id: int,
     name: str | None = None,
@@ -141,7 +147,7 @@ async def update_recurring_schedule(
     auto_send: bool | None = None,
     reminders_enabled: bool | None = None,
     online_payment_enabled: bool | None = None,
-) -> dict | None:
+) -> RecurringScheduleOut | None:
     """
     Update a recurring schedule.
 
@@ -203,7 +209,7 @@ async def update_recurring_schedule(
         return serialize_recurring_schedule(schedule, json_ready=True)
 
 
-@mcp.tool()
+@mcp.tool(annotations=DESTRUCTIVE)
 async def delete_recurring_schedule(schedule_id: int) -> bool:
     """
     Delete a recurring schedule.
@@ -218,7 +224,7 @@ async def delete_recurring_schedule(schedule_id: int) -> bool:
         return await RecurringService.delete_schedule(session, schedule_id)
 
 
-@mcp.tool()
+@mcp.tool(annotations=UPDATE)
 async def pause_recurring_schedule(schedule_id: int) -> bool:
     """
     Pause a recurring schedule.
@@ -235,7 +241,7 @@ async def pause_recurring_schedule(schedule_id: int) -> bool:
         return await RecurringService.pause_schedule(session, schedule_id)
 
 
-@mcp.tool()
+@mcp.tool(annotations=UPDATE)
 async def resume_recurring_schedule(schedule_id: int) -> bool:
     """
     Resume a paused recurring schedule.
@@ -250,12 +256,32 @@ async def resume_recurring_schedule(schedule_id: int) -> bool:
         return await RecurringService.resume_schedule(session, schedule_id)
 
 
-@mcp.tool()
-async def trigger_recurring_schedule(schedule_id: int) -> dict:
+async def _confirm_trigger(
+    schedule_id: int,
+    ctx: Context,
+) -> Confirmation | Elicit[Confirmation]:
+    """Ask before an off-cycle run, since it also moves the next due date."""
+    async with get_session() as session:
+        schedule = await RecurringService.get_schedule(session, schedule_id)
+        label = getattr(schedule, "name", None) or f"schedule {schedule_id}"
+
+    return confirmed(
+        ctx,
+        f"Trigger {label} now? This creates an invoice immediately and advances "
+        "the next scheduled date.",
+    )
+
+
+@mcp.tool(annotations=OUTWARD)
+async def trigger_recurring_schedule(
+    schedule_id: int,
+    confirmation: Annotated[Confirmation, Resolve(_confirm_trigger)],
+) -> dict:
     """
     Manually trigger a recurring schedule to create an invoice now.
 
     This creates an invoice immediately and updates the next scheduled date.
+    Asks the user to confirm first, where the client supports it.
 
     Args:
         schedule_id: The schedule ID
@@ -263,6 +289,8 @@ async def trigger_recurring_schedule(schedule_id: int) -> dict:
     Returns:
         Result with invoice details or error
     """
+    ensure_confirmed(confirmation, "Triggering this schedule")
+
     async with get_session() as session:
         return await RecurringService.trigger_schedule(session, schedule_id)
 

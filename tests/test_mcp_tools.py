@@ -18,6 +18,7 @@ from invoice_machine.mcp import (
     recurring_tools,
     search_tools,
 )
+from invoice_machine.mcp.confirmations import Confirmation
 
 
 @pytest_asyncio.fixture(scope="function")
@@ -137,7 +138,11 @@ async def test_recurring_schedule_validates_items(mcp_db):
         client_id=client["id"], name="Good", frequency="monthly", schedule_day=15,
         items=[{"description": "Retainer", "quantity": 1, "unit_price": 500}],
     )
-    triggered = await recurring_tools.trigger_recurring_schedule(good["id"])
+    # Calling the tool function directly bypasses the MCP layer that would
+    # normally resolve the confirmation by asking the client, so supply it.
+    triggered = await recurring_tools.trigger_recurring_schedule(
+        good["id"], Confirmation(confirm=True)
+    )
     assert triggered["success"] is True
 
 

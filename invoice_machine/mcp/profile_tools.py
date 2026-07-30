@@ -9,10 +9,11 @@ from invoice_machine.database import BusinessProfile
 from invoice_machine.presenters import dump_json_list, serialize_business_profile
 from invoice_machine.utils import utc_now
 
+from .annotations import ADDITIVE, DESTRUCTIVE, READ_ONLY, UPDATE
 from .context import get_session, mcp
 
 
-@mcp.tool()
+@mcp.tool(annotations=READ_ONLY)
 async def get_business_profile() -> dict:
     """
     Retrieve the current business profile.
@@ -30,7 +31,7 @@ async def get_business_profile() -> dict:
         )
 
 
-@mcp.tool()
+@mcp.tool(annotations=UPDATE)
 async def update_business_profile(
     name: str | None = None,
     business_name: str | None = None,
@@ -160,7 +161,7 @@ async def update_business_profile(
         )
 
 
-@mcp.tool()
+@mcp.tool(annotations=ADDITIVE)
 async def add_payment_method(
     name: str,
     instructions: str,
@@ -198,7 +199,7 @@ async def add_payment_method(
         return new_method
 
 
-@mcp.tool()
+@mcp.tool(annotations=DESTRUCTIVE)
 async def remove_payment_method(method_id: str) -> bool:
     """
     Remove a payment method from the business profile.

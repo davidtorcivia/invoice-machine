@@ -133,6 +133,17 @@
           <li><strong>macOS:</strong> <code>~/Library/Application Support/Claude/claude_desktop_config.json</code></li>
           <li><strong>Windows:</strong> <code>%APPDATA%\Claude\claude_desktop_config.json</code></li>
         </ul>
+        <p class="mt-2">
+          Speaks MCP spec <strong>2026-07-28</strong> and every earlier revision on the
+          same endpoint, so any client version connects without extra configuration.
+          The older <code>/mcp/sse</code> endpoint still works but is deprecated.
+        </p>
+        <p class="mt-2">
+          Actions that cannot be undone — emailing an invoice, sending reminders,
+          recording a refund, triggering a schedule early — ask for confirmation
+          before they run, naming the recipient or amount. See the Help page for
+          the full breakdown.
+        </p>
       </div>
     </details>
   </div>

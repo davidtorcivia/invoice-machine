@@ -7,11 +7,12 @@ from invoice_machine.database import Client, Invoice
 from invoice_machine.services import InvoiceService
 from invoice_machine.utils import ensure_utc, utc_now
 
+from .annotations import ADDITIVE_IDEMPOTENT, READ_ONLY
 from .context import get_session, mcp
 
 settings = get_settings()
 
-@mcp.tool()
+@mcp.tool(annotations=ADDITIVE_IDEMPOTENT)
 async def generate_pdf(invoice_id: int) -> dict:
     """
     Generate or regenerate PDF for an invoice.
@@ -53,7 +54,7 @@ async def generate_pdf(invoice_id: int) -> dict:
 # ============================================================================
 
 
-@mcp.tool()
+@mcp.tool(annotations=READ_ONLY)
 async def list_trash() -> list:
     """
     List all trashed invoices and clients.
