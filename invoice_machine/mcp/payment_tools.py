@@ -13,7 +13,7 @@ from invoice_machine.database import Invoice, Payment
 from invoice_machine.presenters import serialize_payment
 from invoice_machine.service.payments import PaymentService
 
-from .annotations import ADDITIVE, OUTWARD_REVERSAL, READ_ONLY, UPDATE
+from .annotations import ADDITIVE_IDEMPOTENT, OUTWARD_REVERSAL, READ_ONLY, UPDATE
 from .confirmations import Confirmation, confirmed, ensure_confirmed
 from .context import get_session, mcp
 from .schemas import PaymentLedgerOut, PaymentOut
@@ -41,14 +41,27 @@ async def list_invoice_payments(invoice_id: int) -> PaymentLedgerOut:
         }
 
 
-@mcp.tool(annotations=ADDITIVE)
+@mcp.tool(annotations=ADDITIVE_IDEMPOTENT)
 async def record_invoice_payment(
     invoice_id: int,
     amount: float,
+    idempotency_key: str,
     occurred_at: str | None = None,
     notes: str | None = None,
 ) -> PaymentOut:
-    """Record a manual payment. This works without any online provider."""
+    """Record a manual payment. This works without any online provider.
+
+    Args:
+        invoice_id: The invoice being paid
+        amount: Amount received
+        idempotency_key: A unique string identifying this payment. Reusing a
+            key returns the payment already recorded under it instead of
+            recording a second one, so a retried call cannot double-count.
+            Use a fresh key for each genuinely separate payment, including a
+            second payment of the same amount.
+        occurred_at: When the payment was received (ISO format, defaults to now)
+        notes: Free-text note against the payment
+    """
     async with get_session() as session:
         payment = await PaymentService.record_manual_payment(
             session,
@@ -56,6 +69,7 @@ async def record_invoice_payment(
             Decimal(str(amount)),
             occurred_at=datetime.fromisoformat(occurred_at) if occurred_at else None,
             notes=notes,
+            idempotency_key=idempotency_key,
         )
         return serialize_payment(payment, json_ready=True)
 

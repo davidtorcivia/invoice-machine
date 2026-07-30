@@ -327,9 +327,15 @@ money, and auto-approve accordingly:
 | `idempotentHint` | Safe to retry | `update_client`, `generate_pdf` |
 | `openWorldHint` | Reaches outside the app | `send_invoice_email`, `test_smtp_connection` |
 
-Worth knowing: `record_invoice_payment` is **not** idempotent — it has no
-idempotency key, so calling it twice records two payments. `record_invoice_refund`
-does take one and is safe to retry.
+Both `record_invoice_payment` and `record_invoice_refund` require an
+`idempotency_key`. Reusing a key returns the entry already recorded under it
+rather than adding a second, so a retried call cannot double-count. Use a fresh
+key for each genuinely separate payment — including a second payment of the same
+amount, which is a legitimate thing for a client to do.
+
+The REST endpoint `POST /api/payments/invoices/{id}/manual` accepts the same
+protection through an optional `Idempotency-Key` header (8–255 characters),
+which also makes a double-submitted form safe.
 
 Four tools additionally **ask before acting**, because their effects cannot be
 undone: `send_invoice_email`, `process_due_invoice_reminders`,

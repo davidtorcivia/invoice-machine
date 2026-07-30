@@ -84,7 +84,30 @@ class PaymentService:
         notes: str | None = None,
         commit: bool = True,
         allow_unissued: bool = False,
+        idempotency_key: str | None = None,
     ) -> Payment:
+        """Record a manual payment.
+
+        Pass `idempotency_key` to make the call replay-safe: a repeat with the
+        same key returns the payment already recorded instead of adding a
+        second one. This matters for partial payments specifically - the
+        outstanding-balance check below already rejects a repeated *full*
+        payment, but recording 40.00 twice against a 100.00 invoice would
+        otherwise look like 80.00 received.
+
+        Keys are unique per provider, so two genuinely separate payments of the
+        same amount are still fine; they just need different keys.
+        """
+        if idempotency_key is not None:
+            idempotency_key = idempotency_key.strip()
+            if not idempotency_key:
+                raise ValueError("idempotency_key must not be blank")
+            existing = await PaymentService._find_by_idempotency_key(
+                session, idempotency_key
+            )
+            if existing is not None:
+                return existing
+
         invoice = await session.get(Invoice, invoice_id)
         if not invoice or invoice.deleted_at is not None:
             raise ValueError("Invoice not found")
@@ -112,9 +135,26 @@ class PaymentService:
             status="succeeded",
             notes=notes,
             occurred_at=ensure_utc(occurred_at) or utc_now(),
+            idempotency_key=idempotency_key,
         )
         session.add(payment)
-        await session.flush()
+        try:
+            await session.flush()
+        except IntegrityError:
+            # Two concurrent calls raced past the lookup above and both tried to
+            # insert the same key; the unique index let exactly one through.
+            # Return the winner rather than failing the caller, which is the
+            # whole point of supplying a key.
+            if idempotency_key is None:
+                raise
+            await session.rollback()
+            existing = await PaymentService._find_by_idempotency_key(
+                session, idempotency_key
+            )
+            if existing is None:
+                raise
+            return existing
+
         await PaymentService._sync_invoice_state(session, invoice)
         if commit:
             await session.commit()
@@ -122,6 +162,19 @@ class PaymentService:
         else:
             await session.flush()
         return payment
+
+    @staticmethod
+    async def _find_by_idempotency_key(
+        session: AsyncSession, idempotency_key: str
+    ) -> Payment | None:
+        """Find an existing manual payment recorded under this key."""
+        result = await session.execute(
+            select(Payment).where(
+                Payment.provider == "manual",
+                Payment.idempotency_key == idempotency_key,
+            )
+        )
+        return result.scalar_one_or_none()
 
     @staticmethod
     async def record_provider_payment(

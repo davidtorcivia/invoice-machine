@@ -400,3 +400,70 @@ async def test_provider_refund_is_initiated_and_waits_for_webhook(test_client, m
 
     updated = await test_client.get(f"/api/payments/invoices/{invoice_id}")
     assert updated.json()["summary"]["outstanding"] == "0.40"
+
+
+@pytest.mark.asyncio
+async def test_manual_payment_api_honours_idempotency_key(test_client):
+    """A double-submitted form must not record the payment twice.
+
+    Uses a partial payment on purpose: a repeated full payment was already
+    rejected by the outstanding-balance check, so it would pass regardless of
+    whether the key works.
+    """
+    created = await test_client.post(
+        "/api/invoices",
+        json={"items": [{"description": "Work", "quantity": 1, "unit_price": "100.00"}]},
+    )
+    invoice_id = created.json()["id"]
+    await test_client.put(f"/api/invoices/{invoice_id}", json={"status": "sent"})
+
+    request = {
+        "json": {"amount": "40.00"},
+        "headers": {"Idempotency-Key": "manual-payment-api-1"},
+    }
+    first = await test_client.post(
+        f"/api/payments/invoices/{invoice_id}/manual", **request
+    )
+    second = await test_client.post(
+        f"/api/payments/invoices/{invoice_id}/manual", **request
+    )
+
+    assert first.status_code == 201
+    assert second.status_code == 201
+    assert second.json()["id"] == first.json()["id"]
+
+    detail = await test_client.get(f"/api/invoices/{invoice_id}")
+    assert detail.json()["amount_paid"] == "40.00", "the retry was counted twice"
+
+
+@pytest.mark.asyncio
+async def test_manual_payment_api_still_works_without_a_key(test_client):
+    """The header is optional here so the existing UI keeps working."""
+    created = await test_client.post(
+        "/api/invoices",
+        json={"items": [{"description": "Work", "quantity": 1, "unit_price": "10.00"}]},
+    )
+    invoice_id = created.json()["id"]
+    await test_client.put(f"/api/invoices/{invoice_id}", json={"status": "sent"})
+
+    response = await test_client.post(
+        f"/api/payments/invoices/{invoice_id}/manual", json={"amount": "10.00"}
+    )
+    assert response.status_code == 201
+
+
+@pytest.mark.asyncio
+async def test_manual_payment_api_rejects_a_too_short_key(test_client):
+    created = await test_client.post(
+        "/api/invoices",
+        json={"items": [{"description": "Work", "quantity": 1, "unit_price": "10.00"}]},
+    )
+    invoice_id = created.json()["id"]
+    await test_client.put(f"/api/invoices/{invoice_id}", json={"status": "sent"})
+
+    response = await test_client.post(
+        f"/api/payments/invoices/{invoice_id}/manual",
+        json={"amount": "10.00"},
+        headers={"Idempotency-Key": "short"},
+    )
+    assert response.status_code == 400

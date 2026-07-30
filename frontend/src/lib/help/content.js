@@ -286,7 +286,7 @@ export const helpSections = [
   <li>Triggering a recurring schedule early</li>
 </ul>
 <p>The confirmation names the actual recipient or amount, and saying no stops it. If your client does not support these prompts, nothing breaks — it falls back to its own approval flow.</p>
-<p>One thing to be aware of: recording a manual payment has no duplicate protection, so asking twice records two payments. Refunds are protected against this.</p>
+<p>Recording a payment and recording a refund are both protected against duplicates: if the same request is retried, you get the entry that was already recorded rather than a second one. Asking for two genuinely separate payments of the same amount still works — they are treated as different payments, not a retry.</p>
 <h3>Resources and Prompts</h3>
 <p>Some data is readable directly, without Claude having to search for it: an invoice by its number (<code>invoice://20250115-1</code>), a client, everything currently outstanding, and your business profile.</p>
 <p>Clients with a prompt picker also offer three shortcuts: <strong>Draft an invoice</strong>, <strong>Chase overdue invoices</strong>, and <strong>Month-end summary</strong>. All three draft and report only — they never send anything without you.</p>`

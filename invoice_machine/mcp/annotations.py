@@ -50,8 +50,10 @@ ADDITIVE = ToolAnnotations(
     open_world_hint=False,
 )
 
-# Creates or refreshes a derived artifact where a repeat call just redoes the
-# same work (regenerating a PDF, restoring an already-restored record).
+# Creates something, but a repeat call is a no-op rather than a second one:
+# either because it just redoes the same work (regenerating a PDF, restoring an
+# already-restored record), or because the caller supplies an idempotency key
+# that a replay is recognised by (recording a payment).
 ADDITIVE_IDEMPOTENT = ToolAnnotations(
     read_only_hint=False,
     destructive_hint=False,

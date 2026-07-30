@@ -423,6 +423,9 @@ class Payment(Base):
     provider_payment_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     provider_checkout_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     provider_charge_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # Caller-supplied replay guard. Unique per provider (see the index below);
+    # NULL for payments recorded before keys existed, and NULLs do not collide.
+    idempotency_key: Mapped[str | None] = mapped_column(String(255), nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     occurred_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now, nullable=False)
@@ -460,6 +463,17 @@ class Payment(Base):
         ),
         UniqueConstraint(
             "provider", "provider_checkout_id", name="uq_payments_provider_checkout"
+        ),
+        # A unique index rather than a UniqueConstraint like its neighbours:
+        # SQLite cannot add a constraint in place, so declaring one would make
+        # migration 015 rebuild the whole payments table. CREATE UNIQUE INDEX
+        # needs no rebuild and enforces the same thing. NULL keys do not
+        # collide, so unkeyed payments are unconstrained.
+        Index(
+            "uq_payments_provider_idempotency_key",
+            "provider",
+            "idempotency_key",
+            unique=True,
         ),
     )
 

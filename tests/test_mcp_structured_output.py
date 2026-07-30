@@ -144,3 +144,48 @@ async def test_nullable_result_still_validates(mcp_db):
         result = await mcp_client.call_tool("get_client", {"client_id": 999999})
 
     assert not result.is_error
+
+
+@pytest.mark.asyncio
+async def test_record_payment_requires_an_idempotency_key(mcp_db):
+    """The tool schema forces a key, so a retry cannot silently double-record.
+
+    record_invoice_refund already required one; making the pair consistent is
+    what closes the partial-payment replay gap.
+    """
+    async with Client(_server()) as client:
+        tools = {t.name: t for t in (await client.list_tools()).tools}
+
+    schema = tools["record_invoice_payment"].input_schema
+    assert "idempotency_key" in schema["required"]
+    # And it is now advertised as safe to retry.
+    assert tools["record_invoice_payment"].annotations.idempotent_hint is True
+
+
+@pytest.mark.asyncio
+async def test_record_payment_replay_does_not_double_count(mcp_db):
+    """Calling the tool twice with one key leaves a single payment."""
+    client_rec = await client_tools.create_client(name="Retry Co")
+    created = await invoice_tools.create_invoice(
+        client_id=client_rec["id"],
+        items=[{"description": "Work", "quantity": 1, "unit_price": "100.00"}],
+    )
+    await invoice_tools.update_invoice(invoice_id=created["id"], status="sent")
+
+    args = {
+        "invoice_id": created["id"],
+        "amount": 40.0,
+        "idempotency_key": "mcp-retry-1",
+    }
+    async with Client(_server()) as client:
+        first = await client.call_tool("record_invoice_payment", args)
+        second = await client.call_tool("record_invoice_payment", args)
+        ledger = await client.call_tool(
+            "list_invoice_payments", {"invoice_id": created["id"]}
+        )
+
+    assert not first.is_error and not second.is_error
+    assert _unwrap(second.structured_content)["id"] == _unwrap(first.structured_content)["id"]
+
+    payments = _unwrap(ledger.structured_content)["payments"]
+    assert len(payments) == 1, f"expected one payment, got {len(payments)}"
