@@ -7,11 +7,13 @@ from datetime import date
 from invoice_machine.presenters import serialize_payment
 from invoice_machine.services import InvoiceService, PaymentService
 
+from .annotations import ADDITIVE, DESTRUCTIVE, READ_ONLY
 from .context import get_session, mcp
+from .schemas import PaymentLedgerOut
 
 
-@mcp.tool()
-async def list_payments(invoice_id: int) -> dict | None:
+@mcp.tool(annotations=READ_ONLY)
+async def list_payments(invoice_id: int) -> PaymentLedgerOut | None:
     """
     List payments recorded against an invoice, with the resulting balance.
 
@@ -40,7 +42,7 @@ async def list_payments(invoice_id: int) -> dict | None:
         }
 
 
-@mcp.tool()
+@mcp.tool(annotations=ADDITIVE)
 async def record_payment(
     invoice_id: int,
     amount: float | str,
@@ -97,7 +99,7 @@ async def record_payment(
         }
 
 
-@mcp.tool()
+@mcp.tool(annotations=DESTRUCTIVE)
 async def delete_payment(payment_id: int) -> bool:
     """
     Delete a recorded payment and resync the invoice balance.
@@ -114,7 +116,7 @@ async def delete_payment(payment_id: int) -> bool:
         return await PaymentService.delete_payment(session, payment_id)
 
 
-@mcp.tool()
+@mcp.tool(annotations=READ_ONLY)
 async def get_aging_report(as_of: str | None = None) -> dict:
     """
     Accounts-receivable aging: outstanding balances bucketed by how overdue.

@@ -9,10 +9,12 @@ from invoice_machine.presenters import dump_json_list, serialize_invoice, serial
 from invoice_machine.services import InvoiceService
 from invoice_machine.utils import utc_now
 
+from .annotations import ADDITIVE, ADDITIVE_IDEMPOTENT, DESTRUCTIVE, READ_ONLY, UPDATE
 from .context import get_session, mcp
+from .schemas import InvoiceItemOut, InvoiceOut
 
 
-@mcp.tool()
+@mcp.tool(annotations=READ_ONLY)
 async def list_invoices(
     status: str | None = None,
     document_type: str | None = None,
@@ -21,7 +23,7 @@ async def list_invoices(
     to_date: str | None = None,
     include_deleted: bool = False,
     limit: int = 50,
-) -> list:
+) -> list[InvoiceOut]:
     """
     List invoices with optional filters.
 
@@ -64,8 +66,8 @@ async def list_invoices(
         ]
 
 
-@mcp.tool()
-async def get_invoice(invoice_id: int) -> dict | None:
+@mcp.tool(annotations=READ_ONLY)
+async def get_invoice(invoice_id: int) -> InvoiceOut | None:
     """
     Get invoice or quote with line items.
 
@@ -88,7 +90,7 @@ async def get_invoice(invoice_id: int) -> dict | None:
         )
 
 
-@mcp.tool()
+@mcp.tool(annotations=ADDITIVE)
 async def create_invoice(
     client_id: int | None = None,
     issue_date: str | None = None,
@@ -105,7 +107,7 @@ async def create_invoice(
     tax_enabled: bool | None = None,
     tax_rate: float | None = None,
     tax_name: str | None = None,
-) -> dict:
+) -> InvoiceOut:
     """
     Create a new invoice or quote.
 
@@ -166,7 +168,7 @@ async def create_invoice(
         )
 
 
-@mcp.tool()
+@mcp.tool(annotations=UPDATE)
 async def update_invoice(
     invoice_id: int,
     issue_date: str | None = None,
@@ -180,7 +182,7 @@ async def update_invoice(
     tax_enabled: bool | None = None,
     tax_rate: float | None = None,
     tax_name: str | None = None,
-) -> dict | None:
+) -> InvoiceOut | None:
     """
     Update invoice or quote fields.
 
@@ -249,7 +251,7 @@ async def update_invoice(
         )
 
 
-@mcp.tool()
+@mcp.tool(annotations=ADDITIVE)
 async def convert_quote_to_invoice(
     quote_id: int,
     issue_date: str | None = None,
@@ -301,7 +303,7 @@ async def convert_quote_to_invoice(
         }
 
 
-@mcp.tool()
+@mcp.tool(annotations=DESTRUCTIVE)
 async def delete_invoice(invoice_id: int) -> bool:
     """
     Move invoice to trash (soft delete).
@@ -316,7 +318,7 @@ async def delete_invoice(invoice_id: int) -> bool:
         return await InvoiceService.delete_invoice(session, invoice_id)
 
 
-@mcp.tool()
+@mcp.tool(annotations=ADDITIVE_IDEMPOTENT)
 async def restore_invoice(invoice_id: int) -> bool:
     """
     Restore an invoice from trash.
@@ -336,14 +338,14 @@ async def restore_invoice(invoice_id: int) -> bool:
 # ============================================================================
 
 
-@mcp.tool()
+@mcp.tool(annotations=ADDITIVE)
 async def add_invoice_item(
     invoice_id: int,
     description: str,
     quantity: float | str = 1,
     unit_price: float | str = 0,
     unit_type: str = "qty",
-) -> dict:
+) -> InvoiceItemOut:
     """
     Add a line item to an invoice.
 
@@ -370,14 +372,14 @@ async def add_invoice_item(
         return serialize_invoice_item(item)
 
 
-@mcp.tool()
+@mcp.tool(annotations=UPDATE)
 async def update_invoice_item(
     item_id: int,
     description: str | None = None,
     quantity: float | str | None = None,
     unit_price: float | str | None = None,
     unit_type: str | None = None,
-) -> dict | None:
+) -> InvoiceItemOut | None:
     """
     Update a line item.
 
@@ -404,7 +406,7 @@ async def update_invoice_item(
         return serialize_invoice_item(item)
 
 
-@mcp.tool()
+@mcp.tool(annotations=DESTRUCTIVE)
 async def remove_invoice_item(item_id: int) -> bool:
     """
     Remove a line item from its invoice.

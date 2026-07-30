@@ -195,6 +195,72 @@ Generate a key under Settings > MCP Integration, then add this to your Claude De
 
 The endpoint runs on the same port as the web app and works behind any reverse proxy. `/mcp` uses the stateless Streamable HTTP transport, so connections survive proxy idle timeouts and app restarts. Clients with native remote MCP support can point at the URL directly with the same bearer token and skip `mcp-remote`. The legacy SSE transport stays available at `/mcp/sse`.
 
+### Protocol version
+
+The server implements MCP spec **2026-07-28** and still answers every earlier
+revision from the same endpoint, so old and new clients both work without
+configuration:
+
+| Client speaks | What happens |
+| --- | --- |
+| 2026-07-28 | No handshake. Each request carries its own protocol version and identity, so any request can hit any instance. |
+| 2025-11-25 and earlier | The `initialize` handshake, exactly as before. |
+
+`GET /mcp/status` reports the version the server prefers and the full list it
+accepts.
+
+Two things the 2026-07-28 revision changes that are worth knowing:
+
+- **`tools/list` is cacheable.** The server advertises a 5-minute TTL
+  (`ttlMs`), so clients stop re-fetching the tool list on every reconnect. The
+  list only changes when the app restarts.
+- **Sessions are gone.** There is no `Mcp-Session-Id` and no server-side state
+  between calls, which is what makes the endpoint safe to run behind a proxy
+  that drops idle connections.
+
+### Safety: what a client knows before it calls
+
+Every tool is annotated so a client can tell a lookup from something that moves
+money, and auto-approve accordingly:
+
+| Hint | Meaning | Examples |
+| --- | --- | --- |
+| `readOnlyHint` | Changes nothing | `list_invoices`, `get_revenue_summary` |
+| `destructiveHint` | Removes or reverses data | `delete_invoice`, `delete_payment` |
+| `idempotentHint` | Safe to retry | `update_client`, `generate_pdf` |
+| `openWorldHint` | Reaches outside the app | `send_invoice_email`, `test_smtp_connection` |
+
+Two tools additionally **ask before acting**, because their effects cannot be
+undone: `send_invoice_email` and `trigger_recurring_schedule`. The prompt names
+the actual recipient or schedule. Declining stops the call. Clients that do not
+support elicitation are not blocked — they proceed as before and rely on the
+annotations above for their own approval flow.
+
+### Resources
+
+Read-only data is addressable directly, without spending a tool call:
+
+| URI | Contents |
+| --- | --- |
+| `invoice://{invoice_number}` | One invoice or quote with line items, e.g. `invoice://20250115-1` |
+| `client://{client_id}` | One client's details and terms |
+| `invoices://outstanding` | Everything still owed, due date first |
+| `profile://business` | Your own business details (never secrets) |
+
+Invoices are addressed by the number printed on the document, not the database
+ID.
+
+### Prompts
+
+Three starting points appear in clients that show a prompt picker:
+
+- **Draft an invoice** — matches the client's previous rates and wording
+- **Chase overdue invoices** — triages what is owed and drafts chase emails
+- **Month-end summary** — revenue, outstanding balances, and top clients
+
+All three stop short of sending anything; they draft and report, and leave the
+send to you.
+
 Running locally with Docker, you can use stdio instead:
 
 ```json

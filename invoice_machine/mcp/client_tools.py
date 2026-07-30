@@ -5,14 +5,16 @@ from __future__ import annotations
 from invoice_machine.presenters import serialize_client
 from invoice_machine.services import ClientService
 
+from .annotations import ADDITIVE, ADDITIVE_IDEMPOTENT, DESTRUCTIVE, READ_ONLY, UPDATE
 from .context import get_session, mcp
+from .schemas import ClientOut
 
 
-@mcp.tool()
+@mcp.tool(annotations=READ_ONLY)
 async def list_clients(
     search: str | None = None,
     include_deleted: bool = False,
-) -> list:
+) -> list[ClientOut]:
     """
     List all clients.
 
@@ -30,8 +32,8 @@ async def list_clients(
         return [serialize_client(client, json_ready=True) for client in clients]
 
 
-@mcp.tool()
-async def get_client(client_id: int) -> dict | None:
+@mcp.tool(annotations=READ_ONLY)
+async def get_client(client_id: int) -> ClientOut | None:
     """
     Get client by ID.
 
@@ -48,7 +50,7 @@ async def get_client(client_id: int) -> dict | None:
         return serialize_client(client, json_ready=True)
 
 
-@mcp.tool()
+@mcp.tool(annotations=ADDITIVE)
 async def create_client(
     name: str | None = None,
     business_name: str | None = None,
@@ -65,7 +67,7 @@ async def create_client(
     tax_enabled: int | None = None,
     tax_rate: float | None = None,
     tax_name: str | None = None,
-) -> dict:
+) -> ClientOut:
     """
     Create a new client.
 
@@ -119,7 +121,7 @@ async def create_client(
         return serialize_client(client, json_ready=True)
 
 
-@mcp.tool()
+@mcp.tool(annotations=UPDATE)
 async def update_client(
     client_id: int,
     name: str | None = None,
@@ -137,7 +139,7 @@ async def update_client(
     tax_enabled: int | None = None,
     tax_rate: float | None = None,
     tax_name: str | None = None,
-) -> dict | None:
+) -> ClientOut | None:
     """
     Update client fields.
 
@@ -199,7 +201,7 @@ async def update_client(
         return serialize_client(client, json_ready=True)
 
 
-@mcp.tool()
+@mcp.tool(annotations=DESTRUCTIVE)
 async def delete_client(client_id: int) -> bool:
     """
     Move client to trash (soft delete).
@@ -214,7 +216,7 @@ async def delete_client(client_id: int) -> bool:
         return await ClientService.delete_client(session, client_id)
 
 
-@mcp.tool()
+@mcp.tool(annotations=ADDITIVE_IDEMPOTENT)
 async def restore_client(client_id: int) -> bool:
     """
     Restore a client from trash.

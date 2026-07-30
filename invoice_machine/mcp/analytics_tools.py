@@ -21,10 +21,11 @@ from invoice_machine.services import (
 )
 from invoice_machine.utils import utc_now
 
+from .annotations import READ_ONLY
 from .context import get_session, mcp
 
 
-@mcp.tool()
+@mcp.tool(annotations=READ_ONLY)
 async def get_revenue_summary(
     from_date: str | None = None,
     to_date: str | None = None,
@@ -54,7 +55,7 @@ async def get_revenue_summary(
         )
 
 
-@mcp.tool()
+@mcp.tool(annotations=READ_ONLY)
 async def get_client_lifetime_value(
     client_id: int | None = None,
     limit: int = 20,
@@ -76,7 +77,7 @@ async def get_client_lifetime_value(
         )
 
 
-@mcp.tool()
+@mcp.tool(annotations=READ_ONLY)
 async def get_client_invoice_context(
     client_id: int,
     limit: int = 3,

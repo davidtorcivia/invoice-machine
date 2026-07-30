@@ -4,10 +4,11 @@ from __future__ import annotations
 
 from invoice_machine.services import SearchService
 
+from .annotations import READ_ONLY
 from .context import get_session, mcp
 
 
-@mcp.tool()
+@mcp.tool(annotations=READ_ONLY)
 async def search(
     query: str,
     search_invoices: bool = True,

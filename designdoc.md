@@ -46,7 +46,7 @@ A minimal, self-hosted invoicing application designed for freelancers and small 
 | Database | SQLite | Single file, no separate service, sufficient for low volume |
 | Web UI | Svelte + TailwindCSS | Lightweight, fast, good DX |
 | PDF Generation | WeasyPrint | Python-native, HTML/CSS templates, quality typography |
-| MCP Server | Python (mcp package) | Native integration with Claude Desktop |
+| MCP Server | Python (`mcp` SDK v2, spec 2026-07-28) | Native integration with Claude Desktop |
 | Deployment | Docker Compose | Single container, easy to manage |
 
 ---
@@ -213,7 +213,9 @@ def generate_invoice_number(issue_date: date) -> str:
 
 ## MCP Server Interface
 
-The MCP server exposes tools for full invoice management. Claude Desktop connects via stdio.
+The MCP server exposes tools for full invoice management. Clients connect over
+stdio (local) or Streamable HTTP at `/mcp` (remote). It implements spec
+2026-07-28 and still serves earlier revisions from the same endpoint.
 
 ### Tools
 
@@ -600,19 +602,23 @@ Add to Claude Desktop's `claude_desktop_config.json`:
 
 **Option B: Remote server (different machine)**
 
-If running on a VPS or home server, expose MCP over SSE:
+If running on a VPS or home server, expose MCP over Streamable HTTP:
 
 ```json
 {
   "mcpServers": {
     "invoicely": {
-      "url": "https://invoices.yourdomain.com/mcp/sse"
+      "url": "https://invoices.yourdomain.com/mcp"
     }
   }
 }
 ```
 
-Requires implementing SSE transport endpoint in FastAPI (protected by Cloudflare Access).
+The endpoint is served by the FastAPI app on the same port as the web UI, and
+is protected by a Bearer API key (and optionally Cloudflare Access).
+
+Streamable HTTP replaced the SSE transport this document originally specified;
+SSE is deprecated as of spec 2026-07-28 and remains only for older clients.
 
 ---
 

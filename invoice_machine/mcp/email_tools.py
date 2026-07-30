@@ -2,16 +2,50 @@
 
 from __future__ import annotations
 
+from typing import Annotated
+
+from mcp.server.mcpserver import Context, Elicit, Resolve
+
 from invoice_machine.database import BusinessProfile
 from invoice_machine.services import InvoiceService
 from invoice_machine.utils import utc_now
 
+from .annotations import OUTWARD, READ_ONLY, READ_ONLY_REMOTE, UPDATE
+from .confirmations import Confirmation, confirmed, ensure_confirmed
 from .context import get_session, mcp
 
 
-@mcp.tool()
+async def _confirm_send(
+    invoice_id: int,
+    recipient_email: str | None,
+    ctx: Context,
+) -> Confirmation | Elicit[Confirmation]:
+    """Ask before an invoice leaves for a real inbox.
+
+    Names the actual recipient rather than the invoice ID, because the risk
+    being confirmed is "this goes to that person", and the address may come
+    from the client record rather than the caller.
+    """
+    async with get_session() as session:
+        invoice = await InvoiceService.get_invoice(session, invoice_id)
+        number = invoice.invoice_number if invoice else invoice_id
+        # Mirror EmailService.send_invoice's own resolution exactly
+        # (`recipient_email or invoice.client_email`) so the address quoted in
+        # the prompt is the address that will actually receive the mail, not
+        # the client record's current one.
+        to = recipient_email or (invoice.client_email if invoice else None)
+
+    return confirmed(
+        ctx,
+        f"Send invoice {number} to {to or 'the client on file'}? "
+        "The email cannot be recalled once sent.",
+    )
+
+
+@mcp.tool(annotations=OUTWARD)
 async def send_invoice_email(
     invoice_id: int,
+    confirmation: Annotated[Confirmation, Resolve(_confirm_send)],
     recipient_email: str | None = None,
     subject: str | None = None,
     body: str | None = None,
@@ -20,6 +54,8 @@ async def send_invoice_email(
     Send an invoice PDF via email.
 
     Requires SMTP to be configured in business profile settings.
+
+    Asks the user to confirm before sending, where the client supports it.
 
     Args:
         invoice_id: The invoice ID to send
@@ -32,6 +68,8 @@ async def send_invoice_email(
     """
     from invoice_machine.service.email import send_invoice_email as send_invoice_email_service
 
+    ensure_confirmed(confirmation, "Sending this invoice")
+
     async with get_session() as session:
         return await send_invoice_email_service(
             session,
@@ -42,7 +80,7 @@ async def send_invoice_email(
         )
 
 
-@mcp.tool()
+@mcp.tool(annotations=READ_ONLY_REMOTE)
 async def test_smtp_connection() -> dict:
     """
     Test SMTP connection without sending an email.
@@ -65,7 +103,7 @@ async def test_smtp_connection() -> dict:
         return await email_service.test_connection()
 
 
-@mcp.tool()
+@mcp.tool(annotations=READ_ONLY)
 async def get_email_templates() -> dict:
     """
     Get the current email templates for invoice/quote emails.
@@ -102,7 +140,7 @@ async def get_email_templates() -> dict:
         }
 
 
-@mcp.tool()
+@mcp.tool(annotations=UPDATE)
 async def update_email_templates(
     email_subject_template: str | None = None,
     email_body_template: str | None = None,
@@ -138,7 +176,7 @@ async def update_email_templates(
         }
 
 
-@mcp.tool()
+@mcp.tool(annotations=READ_ONLY)
 async def preview_invoice_email(
     invoice_id: int,
     subject_template: str | None = None,

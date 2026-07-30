@@ -38,6 +38,18 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e ".[dev]"
 
+      - name: Verify MCP dependency
+        # The SDK exposes no __version__, so check the v2 API and the spec
+        # revision instead - a silent downgrade to v1 would fail here.
+        run: |
+          python - <<'PY'
+          import importlib.metadata as md
+          from mcp.server import MCPServer  # v2-only import path
+          from mcp_types import LATEST_PROTOCOL_VERSION
+          print("mcp", md.version("mcp"), "| spec", LATEST_PROTOCOL_VERSION)
+          assert LATEST_PROTOCOL_VERSION == "2026-07-28", LATEST_PROTOCOL_VERSION
+          PY
+
       - name: Lint
         run: ruff check invoice_machine/ tests/
 
