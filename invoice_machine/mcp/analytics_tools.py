@@ -177,7 +177,7 @@ async def get_client_invoice_context(
         }
 
 
-@mcp.tool()
+@mcp.tool(annotations=READ_ONLY)
 async def get_consolidated_summary(
     from_date: str | None = None,
     to_date: str | None = None,

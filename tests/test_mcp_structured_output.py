@@ -193,3 +193,18 @@ async def test_record_payment_replay_does_not_double_count(mcp_db):
     payments = ledger_data["payments"]
     assert len(payments) == 1, f"expected one payment, got {len(payments)}"
     assert ledger_data["amount_paid"] == "40.00", "the retry was counted twice"
+
+
+@pytest.mark.asyncio
+async def test_every_tool_is_annotated(mcp_db):
+    """No tool may ship unlabelled.
+
+    Annotations are how a client tells a lookup from something that moves money.
+    A tool added without them silently reads as "unknown risk", so this guards
+    the whole set rather than any single tool.
+    """
+    async with Client(_server()) as client:
+        tools = (await client.list_tools()).tools
+
+    missing = sorted(t.name for t in tools if t.annotations is None)
+    assert not missing, f"tools without annotations: {missing}"

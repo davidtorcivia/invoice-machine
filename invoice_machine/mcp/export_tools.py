@@ -6,6 +6,7 @@ from datetime import date
 
 from invoice_machine.service.export import EXPORT_KINDS, export_csv_text
 
+from .annotations import READ_ONLY
 from .context import get_session, mcp
 
 # Cap MCP exports so a large ledger can't be pulled wholesale into a model
@@ -13,7 +14,7 @@ from .context import get_session, mcp
 _MCP_MAX_ROWS = 500
 
 
-@mcp.tool()
+@mcp.tool(annotations=READ_ONLY)
 async def export_csv(
     kind: str = "invoices",
     from_date: str | None = None,
