@@ -25,6 +25,13 @@ dependencies = [
     # It arrived transitively via mcp before; declared explicitly so the payment
     # integration cannot break on an unrelated dependency change.
     "httpx>=0.26.0",
+    # zoneinfo has no bundled IANA database: it reads the host's, and falls back
+    # to this package when there is none. Windows ships no tz database at all,
+    # and slim container images frequently drop it, so validate_timezone() would
+    # reject every valid zone and reminders would silently run in UTC. Declared
+    # unconditionally rather than gated on sys_platform -- the failure is silent
+    # and billing-relevant, and the package is ~500KB.
+    "tzdata>=2024.1",
 ]
 
 [project.optional-dependencies]
