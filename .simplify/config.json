@@ -1,0 +1,18 @@
+{
+  "stacks": ["python"],
+  "_scope_note": "PDF and email-send paths are OUT OF SCOPE this pass. The two deselected tests fail only because WeasyPrint needs GTK native libs absent on Windows; they pass in CI. Do not edit invoice_machine/pdf/** or the email-send path while they are deselected.",
+  "test_command": ".venv\\Scripts\\python.exe -m pytest -q --tb=no -p no:cacheprovider --deselect tests/api/test_search_email.py::TestEmailEndpoints::test_send_invoice_email_no_smtp --deselect tests/api/test_validation_hardening.py::test_pdf_endpoint_does_not_rerender_a_fresh_pdf",
+  "warn_command": ".venv\\Scripts\\python.exe -m ruff check .",
+  "golden_paths": ["tests/golden/*.json"],
+  "source_globs": ["invoice_machine/**/*.py", "tests/**/*.py"],
+  "exclude_globs": [
+    "**/node_modules/**",
+    "**/build/**",
+    "**/dist/**",
+    "**/.venv/**",
+    "**/__pycache__/**",
+    "invoice_machine/alembic/versions/**"
+  ],
+  "test_timeout_sec": 1800,
+  "warn_timeout_sec": 900
+}
