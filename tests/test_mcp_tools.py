@@ -7,7 +7,6 @@ they exercise the same code paths Claude Desktop / the bot would.
 """
 
 import pytest
-import pytest_asyncio
 
 from invoice_machine.mcp import (
     analytics_tools,
@@ -19,33 +18,6 @@ from invoice_machine.mcp import (
     search_tools,
 )
 from invoice_machine.mcp.confirmations import Confirmation
-
-
-@pytest_asyncio.fixture(scope="function")
-async def mcp_db():
-    """Point the MCP tools at a fresh temp database and skip schema bootstrap."""
-    from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
-
-    import invoice_machine.database as db
-    from invoice_machine.database import Base, register_sqlite_pragmas
-    from invoice_machine.mcp import context
-
-    engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
-    register_sqlite_pragmas(engine)
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-
-    original_maker = db.async_session_maker
-    db.async_session_maker = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
-    # Schema already built via create_all; stop the tools running real migrations.
-    original_initialized = context._schema_initialized
-    context._schema_initialized = True
-
-    yield
-
-    db.async_session_maker = original_maker
-    context._schema_initialized = original_initialized
-    await engine.dispose()
 
 
 @pytest.mark.asyncio

@@ -19,6 +19,7 @@ from decimal import Decimal
 from pathlib import Path
 
 import pytest
+import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from invoice_machine.database import Base, BusinessProfile, Client, Invoice, InvoiceItem
@@ -88,6 +89,43 @@ async def db_session(session_maker):
     """Get a database session for tests."""
     async with session_maker() as session:
         yield session
+
+
+@pytest_asyncio.fixture(scope="function")
+async def mcp_db():
+    """Point the MCP tools at a fresh temp database and skip schema bootstrap.
+
+    The MCP tools resolve their session from the module-level maker at call
+    time rather than taking one as an argument, so pointing them at a test
+    database means swapping that module global and putting it back afterwards.
+
+    The imports stay inside the function on purpose: this module sets
+    ENVIRONMENT and friends before anything from invoice_machine is imported
+    (see the header), and hoisting these to module scope would import
+    database.py -- and therefore call get_settings() -- during collection.
+    """
+    from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+
+    import invoice_machine.database as db
+    from invoice_machine.database import Base, register_sqlite_pragmas
+    from invoice_machine.mcp import context
+
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+    register_sqlite_pragmas(engine)
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
+    original_maker = db.async_session_maker
+    db.async_session_maker = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
+    # Schema already built via create_all; stop the tools running real migrations.
+    original_initialized = context._schema_initialized
+    context._schema_initialized = True
+
+    yield
+
+    db.async_session_maker = original_maker
+    context._schema_initialized = original_initialized
+    await engine.dispose()
 
 
 @pytest.fixture
