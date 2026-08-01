@@ -37,8 +37,25 @@ def temp_db_path():
     with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
         path = f.name
     yield path
-    # Cleanup
-    Path(path).unlink(missing_ok=True)
+
+    # Cleanup. Two portability details, both invisible on POSIX:
+    #
+    # 1. register_sqlite_pragmas puts the database in WAL mode, which creates
+    #    "-wal" and "-shm" sidecars next to the file. Unlinking only the .db
+    #    leaks two files per test into the temp directory.
+    # 2. Windows refuses to unlink a file while any handle is open. aiosqlite
+    #    drives sqlite on a worker thread, so engine.dispose() returning does
+    #    not guarantee the OS handle is closed yet -- a test whose body raised
+    #    (e.g. an IntegrityError left mid-transaction) can still be holding it
+    #    when this runs, turning cleanup into a teardown ERROR.
+    #
+    # Failing to delete a scratch file in the OS temp directory is not a test
+    # result, so cleanup is best-effort.
+    for target in (Path(path), Path(f"{path}-wal"), Path(f"{path}-shm")):
+        try:
+            target.unlink(missing_ok=True)
+        except PermissionError:
+            pass
 
 
 @pytest.fixture(scope="function")
