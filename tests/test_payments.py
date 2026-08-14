@@ -41,6 +41,24 @@ class TestPartialPayments:
         assert invoice.status == "sent"
 
     @pytest.mark.asyncio
+    async def test_payment_against_a_quote_is_refused(
+        self, db_session, business_profile, test_client
+    ):
+        quote = await InvoiceService.create_invoice(
+            db_session,
+            client_id=test_client.id,
+            document_type="quote",
+            items=[{"description": "Proposal", "quantity": 1, "unit_price": "500.00"}],
+        )
+
+        with pytest.raises(ValueError, match="quote"):
+            await PaymentService.record_payment(db_session, quote.id, amount="100.00")
+
+        await db_session.refresh(quote)
+        assert quote.amount_paid == Decimal("0.00")
+        assert await PaymentService.list_payments(db_session, quote.id) == []
+
+    @pytest.mark.asyncio
     async def test_payments_totalling_the_invoice_mark_it_paid(
         self, db_session, business_profile, test_client
     ):

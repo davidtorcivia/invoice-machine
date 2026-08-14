@@ -21,6 +21,11 @@ from invoice_machine.utils import utc_now
 
 _UNPAYABLE_STATUSES = ("cancelled",)
 
+# A quote is not a bill: the PDF never prints a balance or pay link for one and
+# the UI hides the payments panel, so the service layer must refuse money
+# against quotes too — every surface (REST, MCP, webhook) routes through here.
+_UNPAYABLE_DOCUMENT_TYPES = ("quote",)
+
 
 def _coerce_amount(value: Decimal | float | int | str) -> Decimal:
     """Coerce a payment amount to a positive, cent-quantized Decimal."""
@@ -145,6 +150,11 @@ class PaymentService:
 
         if invoice.status in _UNPAYABLE_STATUSES:
             raise ValueError(f"Cannot record a payment against a {invoice.status} invoice")
+
+        if getattr(invoice, "document_type", "invoice") in _UNPAYABLE_DOCUMENT_TYPES:
+            raise ValueError(
+                "Cannot record a payment against a quote. Convert it to an invoice first."
+            )
 
         payment_amount = _coerce_amount(amount)
 

@@ -85,3 +85,29 @@ async def test_payment_api_rejects_a_too_short_key(test_client):
     )
     assert response.status_code == 400
     assert "8-255" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_payment_api_rejects_payments_against_quotes(test_client):
+    """A quote is not a receivable: no money may be recorded against one."""
+    quote = await test_client.post(
+        "/api/invoices",
+        json={
+            "document_type": "quote",
+            "items": [{"description": "Proposal", "quantity": 1, "unit_price": "500.00"}],
+        },
+    )
+    assert quote.status_code == 201, quote.text
+    quote_id = quote.json()["id"]
+    await test_client.put(f"/api/invoices/{quote_id}", json={"status": "sent"})
+
+    payment = await test_client.post(
+        f"/api/invoices/{quote_id}/payments",
+        json={"amount": "100.00"},
+    )
+    assert payment.status_code == 400
+    assert "quote" in payment.json()["detail"].lower()
+
+    link = await test_client.post(f"/api/invoices/{quote_id}/payment-link")
+    assert link.status_code == 400
+    assert "quote" in link.json()["detail"].lower()

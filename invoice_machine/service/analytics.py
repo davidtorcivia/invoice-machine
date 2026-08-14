@@ -62,7 +62,16 @@ async def dashboard_summary(session: AsyncSession) -> dict:
                 Invoice.currency_code.label("currency"),
                 func.coalesce(
                     func.sum(
-                        case((Invoice.status.in_(["sent", "overdue"]), Invoice.total), else_=0)
+                        case(
+                            (
+                                Invoice.status.in_(["sent", "overdue"]),
+                                # The balance actually owed, not the paper total:
+                                # a partially-paid sent invoice is only owed its
+                                # remainder (floored at 0 for overpayments).
+                                func.max(Invoice.total - func.coalesce(Invoice.amount_paid, 0), 0),
+                            ),
+                            else_=0,
+                        )
                     ),
                     0,
                 ).label("outstanding"),
@@ -212,12 +221,29 @@ async def revenue_summary(
                 Invoice.currency_code.label("currency"),
                 func.coalesce(
                     func.sum(
-                        case((Invoice.status.in_(["sent", "overdue"]), Invoice.total), else_=0)
+                        case(
+                            (
+                                Invoice.status.in_(["sent", "overdue"]),
+                                # Balance owed, not paper total (partial payments
+                                # reduce what is actually outstanding).
+                                func.max(Invoice.total - func.coalesce(Invoice.amount_paid, 0), 0),
+                            ),
+                            else_=0,
+                        )
                     ),
                     0,
                 ).label("total_outstanding"),
                 func.coalesce(
-                    func.sum(case((is_effectively_overdue, Invoice.total), else_=0)), 0
+                    func.sum(
+                        case(
+                            (
+                                is_effectively_overdue,
+                                func.max(Invoice.total - func.coalesce(Invoice.amount_paid, 0), 0),
+                            ),
+                            else_=0,
+                        )
+                    ),
+                    0,
                 ).label("total_overdue"),
             )
             .where(global_filter)

@@ -75,6 +75,33 @@ class TestAnalyticsEndpoints:
         assert data["invoice_count"] == 3
 
     @pytest.mark.asyncio
+    async def test_outstanding_is_net_of_partial_payments(self, test_client):
+        """Outstanding reports the balance still owed, not the paper total.
+
+        A partially-paid sent invoice must reduce dashboard and revenue
+        outstanding by what has already been collected.
+        """
+        invoice = await test_client.post(
+            "/api/invoices",
+            json={
+                "document_type": "invoice",
+                "items": [{"description": "Big job", "quantity": 1, "unit_price": 1000}],
+            },
+        )
+        invoice_id = invoice.json()["id"]
+        await test_client.put(f"/api/invoices/{invoice_id}", json={"status": "sent"})
+        await test_client.post(
+            f"/api/invoices/{invoice_id}/payments",
+            json={"amount": "400.00"},
+        )
+
+        dashboard = (await test_client.get("/api/analytics/dashboard")).json()
+        assert dashboard["total_outstanding"] == "600.00"
+
+        revenue = (await test_client.get("/api/analytics/revenue")).json()
+        assert revenue["totals"]["outstanding"] == "600.00"
+
+    @pytest.mark.asyncio
     async def test_get_revenue_with_invoices(self, test_client):
         """Get revenue analytics with invoices."""
         # Create an invoice with items

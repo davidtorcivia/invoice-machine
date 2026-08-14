@@ -204,6 +204,15 @@ async def create_payment_link(
     if not invoice or invoice.deleted_at is not None:
         raise HTTPException(status_code=404, detail="Invoice not found")
 
+    if invoice.document_type == "quote":
+        # A quote is a proposal, not a bill; the checkout flow, PDF and email all
+        # treat it that way already. Refuse here rather than collect money that
+        # has no receivable to settle.
+        raise HTTPException(
+            status_code=400,
+            detail="Quotes cannot have payment links. Convert the quote to an invoice first.",
+        )
+
     profile = await BusinessProfile.get_or_create(session)
     if not profile.payments_enabled:
         raise HTTPException(
