@@ -35,14 +35,6 @@
   let allowLeave = $state(false);
 
 
-  beforeNavigate((nav) => {
-    if (isDirty && !saving) {
-      if (!confirm('You have unsaved changes. Leave without saving?')) {
-        nav.cancel();
-      }
-    }
-  });
-
   // Form data
   let clientId = $state('');
   let issueDate = $state(new Date().toISOString().split('T')[0]);
@@ -65,6 +57,22 @@
   // Line items
   /** @type {InvoiceItemDraft[]} */
   let items = $state([{ description: '', quantity: 1, unit_price: '', unit_type: 'qty' }]);
+
+  // Warn before navigating away from a partially-filled form: any client chosen
+  // or line item started counts as work worth keeping.
+  let isDirty = $derived(
+    !allowLeave &&
+    (!!clientId ||
+      !!(notes && notes.trim()) ||
+      items.some((i) => (i.description || '').trim() || `${i.unit_price ?? ''}`.trim())));
+
+  beforeNavigate((nav) => {
+    if (isDirty && !saving) {
+      if (!confirm('You have unsaved changes. Leave without saving?')) {
+        nav.cancel();
+      }
+    }
+  });
 
   // Modal states
   let showClientModal = $state(false);
@@ -246,11 +254,6 @@
     allowLeave = true;
     goto('/invoices');
   }
-  let isDirty =
-    $derived(!allowLeave &&
-    (!!clientId ||
-      !!(notes && notes.trim()) ||
-      items.some((i) => (i.description || '').trim() || `${i.unit_price ?? ''}`.trim())));
   // Computed values
   let defaultNotesText = $derived(profile?.default_notes || '');
   let effectiveNotes = $derived(useDefaultNotes && defaultNotesText ? defaultNotesText : notes);
