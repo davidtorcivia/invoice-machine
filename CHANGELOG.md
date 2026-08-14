@@ -6,6 +6,18 @@ Notable changes to Invoice Machine. Format based on
 
 ## [Unreleased]
 
+## [0.2.0]
+
+### Fixed (in this release)
+
+- Dashboard and revenue "outstanding" totals summed the full invoice total for
+  sent/overdue invoices, ignoring partial payments — a half-paid invoice was
+  reported as fully owed. Both now report the balance still owed, consistent
+  with A/R aging and the consolidated roll-up.
+- Payments and payment links could be recorded against quotes. The UI and PDF
+  already treated quotes as unpayable; the API, MCP tools and webhook path now
+  enforce it too, with a clear error pointing at quote conversion.
+
 ### Added
 
 - **Payment tracking with partial payments.** Record what clients actually pay,
