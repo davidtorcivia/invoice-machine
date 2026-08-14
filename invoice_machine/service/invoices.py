@@ -156,7 +156,7 @@ class InvoiceService:
         show_payment_instructions: bool = True,
         selected_payment_methods: str | None = None,
         invoice_number_override: str | None = None,
-        tax_enabled: bool | None = None,
+        tax_enabled: bool | int | None = None,
         tax_rate: Decimal | None = None,
         tax_name: str | None = None,
         exchange_rate: Decimal | None = None,
@@ -329,7 +329,7 @@ class InvoiceService:
         client = await session.get(Client, invoice.client_id) if invoice.client_id else None
         client_changed = invoice.client_id != original_client_id
 
-        date_changed = bool(issue_date and issue_date != invoice.issue_date)
+        date_changed = issue_date is not None and issue_date != invoice.issue_date
         if date_changed:
             invoice.issue_date = issue_date
             if not due_date:

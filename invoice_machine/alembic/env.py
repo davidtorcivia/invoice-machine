@@ -6,11 +6,8 @@ from alembic import context
 from sqlalchemy import create_engine, pool
 
 from invoice_machine.config import get_settings
-
-# Import app models and config
 from invoice_machine.database import Base
 
-# This is the Alembic Config object
 config = context.config
 
 # Interpret the config file for Python logging

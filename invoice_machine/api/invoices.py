@@ -8,7 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from invoice_machine.api.schemas import LineItemCreate
-from invoice_machine.database import Invoice, get_session
+from invoice_machine.database import get_session
 from invoice_machine.presenters import serialize_invoice, serialize_invoice_item
 from invoice_machine.rate_limit import limiter
 from invoice_machine.services import InvoiceService
@@ -296,7 +296,7 @@ async def create_invoice(
     request: Request,
     invoice_data: InvoiceCreate,
     session: AsyncSession = Depends(get_session),
-) -> Invoice:
+) -> dict:
     """Create new invoice."""
     items_data = None
     if invoice_data.items:
@@ -437,6 +437,8 @@ async def restore_invoice(
         raise HTTPException(status_code=404, detail="Invoice not found or not deleted")
 
     invoice = await InvoiceService.get_invoice(session, invoice_id)
+    if not invoice:
+        raise HTTPException(status_code=404, detail="Invoice not found")
     return serialize_invoice(invoice)
 
 
@@ -537,7 +539,7 @@ async def generate_invoice_pdf(
         "invoice_id": invoice.id,
         "invoice_number": invoice.invoice_number,
         "pdf_url": f"{settings.app_base_url}/api/invoices/{invoice.id}/pdf",
-        "generated_at": invoice.pdf_generated_at.isoformat(),
+        "generated_at": invoice.pdf_generated_at.isoformat() if invoice.pdf_generated_at else None,
     }
 
 
@@ -562,36 +564,31 @@ async def get_invoice_pdf(
     # Renders only when missing or stale; a fresh PDF is served straight off disk.
     await store_invoice_pdf(session, invoice)
 
-    # Sanitize pdf_path to prevent path traversal
-    # Reject any path traversal attempts
+    # pdf_path is stored as "pdfs/{invoice-id}.pdf" and regenerated server-side,
+    # but treat it as untrusted anyway: reduce to the basename, reject anything
+    # but [A-Za-z0-9._-], and re-derive the path inside data_dir/pdfs so a
+    # tampered value can never escape the PDF directory.
     if not invoice.pdf_path or ".." in invoice.pdf_path:
         raise HTTPException(status_code=400, detail="Invalid PDF path")
 
-    # Extract just the filename (basename) to prevent directory traversal
-    # PDF paths are stored as "pdfs/{filename}.pdf"
     import os
 
     safe_filename = os.path.basename(invoice.pdf_path)
 
-    # Validate filename contains only safe characters
     if not safe_filename or not all(c.isalnum() or c in "._-" for c in safe_filename):
         raise HTTPException(status_code=400, detail="Invalid PDF path")
 
-    # Build the path - PDFs are always stored in the pdfs subdirectory
     pdf_path = (settings.data_dir / "pdfs" / safe_filename).resolve()
     data_dir_resolved = settings.data_dir.resolve()
 
-    # Final security check: ensure resolved path is within data directory
     if not str(pdf_path).startswith(str(data_dir_resolved) + os.sep):
         raise HTTPException(status_code=404, detail="PDF not found")
 
     if not pdf_path.exists() or not pdf_path.is_file():
         raise HTTPException(status_code=404, detail="PDF file not found")
 
-    # Build filename: "Client Company - Invoice#.pdf" or just "Invoice#.pdf"
     client_part = ""
     if invoice.client_business:
-        # Sanitize client name for filename
         safe_client = "".join(c for c in invoice.client_business if c.isalnum() or c in " -_")
         safe_client = safe_client.strip()
         if safe_client:

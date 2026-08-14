@@ -298,7 +298,6 @@ class EmailService:
         # Add body
         msg.attach(MIMEText(body, "plain"))
 
-        # Add attachment if provided
         if attachment_path and attachment_path.exists():
             with open(attachment_path, "rb") as f:
                 part = MIMEBase("application", "pdf")

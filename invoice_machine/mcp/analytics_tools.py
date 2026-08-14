@@ -108,7 +108,6 @@ async def get_client_invoice_context(
         )
         invoices = [inv for inv in invoices if is_invoice_document(inv)]
 
-        # Get all invoices for stats
         all_invoices = await InvoiceService.list_invoices(
             session,
             client_id=client_id,

@@ -196,7 +196,6 @@ async def add_payment_method(
         payment_methods = profile.payment_methods_list
         payment_methods.append(new_method)
 
-        # Save back to profile
         profile.payment_methods = dump_json_list(payment_methods)
         profile.updated_at = utc_now()
         await session.commit()

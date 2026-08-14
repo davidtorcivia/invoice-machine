@@ -202,7 +202,6 @@ async def generate_pdf(session: AsyncSession, invoice: Invoice) -> str:
 
     # Build payment instructions from selected methods
     if selected_payment_methods:
-        # Parse available payment methods from business profile
         available_methods = getattr(business, "payment_methods_list", [])
 
         # Filter to selected methods and build instructions
