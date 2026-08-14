@@ -71,6 +71,8 @@ def test_generator_check_mode_passes():
     """`generate.py --check` is the CI gate; it must agree with the committed files."""
     result = subprocess.run(
         [sys.executable, str(GENERATOR), "--check"],
-        capture_output=True, text=True, cwd=str(GOLDEN_DIR.parents[1]),
+        capture_output=True,
+        text=True,
+        cwd=str(GOLDEN_DIR.parents[1]),
     )
     assert result.returncode == 0, f"--check failed:\n{result.stdout}\n{result.stderr}"

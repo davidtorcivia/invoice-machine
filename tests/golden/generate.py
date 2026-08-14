@@ -58,10 +58,30 @@ CURRENCIES = ["USD", "EUR", "GBP", "JPY", "KWD", "BHD", "ISK"]
 # Rounding boundaries, sub-cent dust, negatives, and magnitudes big enough to
 # expose a float that sneaked into a Decimal path.
 AMOUNTS = [
-    "0", "0.001", "0.004", "0.005", "0.006", "0.01", "0.015", "0.025",
-    "1", "1.005", "1.045", "1.055", "2.675", "10.101", "99.994", "99.995",
-    "100", "1234.567", "999999.994", "999999.995", "1000000",
-    "-0.005", "-1.005", "-99.995",
+    "0",
+    "0.001",
+    "0.004",
+    "0.005",
+    "0.006",
+    "0.01",
+    "0.015",
+    "0.025",
+    "1",
+    "1.005",
+    "1.045",
+    "1.055",
+    "2.675",
+    "10.101",
+    "99.994",
+    "99.995",
+    "100",
+    "1234.567",
+    "999999.994",
+    "999999.995",
+    "1000000",
+    "-0.005",
+    "-1.005",
+    "-99.995",
 ]
 
 QUANTITIES = ["1", "0.25", "1.5", "0.0005", "0.001", "2.9995", "3.0004", "0", "-1", "abc"]
@@ -120,22 +140,33 @@ def build_quantities() -> dict:
             for q in ["1", "1.0", "1.50", "0.25", "2.000", "0", "0.001", "1234.5"]
         },
         "normalize_line_items": {
-            "typical": attempt(normalize_line_items, [
-                {"description": "Design", "quantity": "2", "unit_price": "150.00"},
-                {"description": "Hours", "quantity": 1.5, "unit_price": 99.99,
-                 "unit_type": "hours"},
-            ]),
+            "typical": attempt(
+                normalize_line_items,
+                [
+                    {"description": "Design", "quantity": "2", "unit_price": "150.00"},
+                    {
+                        "description": "Hours",
+                        "quantity": 1.5,
+                        "unit_price": 99.99,
+                        "unit_type": "hours",
+                    },
+                ],
+            ),
             "empty": attempt(normalize_line_items, []),
             "none": attempt(normalize_line_items, None),
-            "zero_quantity": attempt(normalize_line_items, [
-                {"description": "x", "quantity": "0", "unit_price": "1"}]),
-            "negative_price": attempt(normalize_line_items, [
-                {"description": "x", "quantity": "1", "unit_price": "-1"}]),
-            "missing_description": attempt(normalize_line_items, [
-                {"quantity": "1", "unit_price": "1"}]),
-            "bad_unit_type": attempt(normalize_line_items, [
-                {"description": "x", "quantity": "1", "unit_price": "1",
-                 "unit_type": "furlongs"}]),
+            "zero_quantity": attempt(
+                normalize_line_items, [{"description": "x", "quantity": "0", "unit_price": "1"}]
+            ),
+            "negative_price": attempt(
+                normalize_line_items, [{"description": "x", "quantity": "1", "unit_price": "-1"}]
+            ),
+            "missing_description": attempt(
+                normalize_line_items, [{"quantity": "1", "unit_price": "1"}]
+            ),
+            "bad_unit_type": attempt(
+                normalize_line_items,
+                [{"description": "x", "quantity": "1", "unit_price": "1", "unit_type": "furlongs"}],
+            ),
         },
     }
 
@@ -145,8 +176,7 @@ def build_stripe() -> dict:
         "currency_exponent": {c: attempt(currency_exponent, c) for c in CURRENCIES},
         "to_stripe_amount": {
             f"{a} {c}": attempt(to_stripe_amount, Decimal(a), c)
-            for a in ["0", "0.001", "0.005", "0.01", "1", "1.005", "19.99",
-                      "100", "1234.567", "-1"]
+            for a in ["0", "0.001", "0.005", "0.01", "1", "1.005", "19.99", "100", "1234.567", "-1"]
             for c in CURRENCIES
         },
         "from_stripe_amount": {
@@ -167,7 +197,8 @@ def build_dates() -> dict:
         },
         "calculate_due_date_explicit_wins": {
             "2025-01-15 terms=30 explicit=2025-02-01": attempt(
-                calculate_due_date, date(2025, 1, 15), 30, date(2025, 2, 1)),
+                calculate_due_date, date(2025, 1, 15), 30, date(2025, 2, 1)
+            ),
         },
     }
 
@@ -186,8 +217,9 @@ def serialize(payload: dict) -> str:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--check", action="store_true",
-                    help="exit 1 if any golden differs instead of rewriting it")
+    ap.add_argument(
+        "--check", action="store_true", help="exit 1 if any golden differs instead of rewriting it"
+    )
     args = ap.parse_args()
 
     drifted = []
@@ -205,9 +237,11 @@ def main() -> int:
     if args.check:
         if drifted:
             print("[golden] DRIFTED: " + ", ".join(drifted), file=sys.stderr)
-            print("[golden] If the change is intended, rerun without --check and "
-                  "review the diff as a behavior change, not a formatting one.",
-                  file=sys.stderr)
+            print(
+                "[golden] If the change is intended, rerun without --check and "
+                "review the diff as a behavior change, not a formatting one.",
+                file=sys.stderr,
+            )
             return 1
         print("[golden] all goldens match")
     return 0

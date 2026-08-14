@@ -84,6 +84,9 @@ node_modules/
 # Claude Code
 .claude/
 
+# Local agent session artifacts (.pi/tasks, fusion runs)
+.pi/
+
 # Misc
 *.bak
 *.tmp
