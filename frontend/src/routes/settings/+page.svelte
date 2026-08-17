@@ -27,13 +27,14 @@
     mapProfileToProfileForm,
     mapSmtpSettingsToForm
   } from '$lib/settings/forms';
-  import { toast } from '$lib/stores';
+  import { auth, toast } from '$lib/stores';
   import { countries } from '$lib/data/countries';
   import { currencies } from '$lib/data/currencies';
   import Header from '$lib/components/Header.svelte';
   import Icon from '$lib/components/Icons.svelte';
   import ConfirmModal from '$lib/components/ConfirmModal.svelte';
   import SettingsApiAccessSection from '$lib/components/settings/SettingsApiAccessSection.svelte';
+  import SettingsAccountSection from '$lib/components/settings/SettingsAccountSection.svelte';
   import SettingsAddressSection from '$lib/components/settings/SettingsAddressSection.svelte';
   import SettingsBackupSection from '$lib/components/settings/SettingsBackupSection.svelte';
   import SettingsBusinessInfoSection from '$lib/components/settings/SettingsBusinessInfoSection.svelte';
@@ -83,6 +84,7 @@
   let deletingBotKey = $state(false);
   let generatingMcpKey = $state(false);
   let generatingBotKey = $state(false);
+  let changingPassword = $state(false);
 
   let mcpEndpointUrl = $derived(apiAccess.appBaseUrl || (typeof window !== 'undefined' ? window.location.origin : ''));
 
@@ -631,6 +633,19 @@
     }
   }
 
+  async function changePassword(currentPassword, newPassword) {
+    changingPassword = true;
+    try {
+      await auth.changePassword(currentPassword, newPassword);
+      toast.success('Password updated. Other sessions have been signed out.');
+    } catch (error) {
+      toast.error(error.message || 'Failed to update password');
+      throw error;
+    } finally {
+      changingPassword = false;
+    }
+  }
+
   async function testS3Connection() {
     testingS3 = true;
     try {
@@ -660,6 +675,13 @@
         {logoUploading}
         {handleLogoSelect}
         {openDeleteLogoModal}
+      />
+
+      <SettingsAccountSection
+        bind:open={openSections.account}
+        username={$auth.username}
+        changing={changingPassword}
+        onchange={changePassword}
       />
 
       <SettingsBusinessInfoSection

@@ -7,7 +7,7 @@ from sqlalchemy import and_, asc, desc, func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from invoice_machine.database import BusinessProfile, Client, Invoice, InvoiceItem
+from invoice_machine.database import BusinessProfile, Client, Invoice, InvoiceItem, Payment
 from invoice_machine.service.common import (
     calculate_due_date,
     generate_invoice_number,
@@ -19,7 +19,21 @@ from invoice_machine.service.common import (
     resolve_exchange_rate,
     snapshot_client_info,
 )
+from invoice_machine.service.payments import recalculate_invoice_payments
 from invoice_machine.utils import normalize_invoice_number_override, utc_now
+
+
+async def _sync_invoice_money(session: AsyncSession, invoice: Invoice) -> None:
+    """Recompute totals, then paid/sent status when a payment ledger exists.
+
+    Line-item edits used to leave a fully-paid invoice marked paid after the
+    new total exceeded ``amount_paid``. Manual mark-paid with no recorded
+    payments is left alone so that workflow still works.
+    """
+    await recalculate_invoice_totals(session, invoice)
+    if invoice.amount_paid and invoice.amount_paid > 0:
+        await recalculate_invoice_payments(session, invoice)
+
 
 # How many times to retry invoice-number allocation under a concurrent-create race.
 _NUMBER_ALLOCATION_ATTEMPTS = 6
@@ -137,9 +151,16 @@ class InvoiceService:
         return invoices, total
 
     @staticmethod
-    async def get_invoice(session: AsyncSession, invoice_id: int) -> Invoice | None:
-        """Get an invoice by ID."""
-        return await session.get(Invoice, invoice_id)
+    async def get_invoice(
+        session: AsyncSession, invoice_id: int, *, include_deleted: bool = False
+    ) -> Invoice | None:
+        """Get an invoice by ID. Trashed invoices are hidden unless requested."""
+        invoice = await session.get(Invoice, invoice_id)
+        if invoice is None:
+            return None
+        if invoice.deleted_at is not None and not include_deleted:
+            return None
+        return invoice
 
     @staticmethod
     async def create_invoice(
@@ -351,18 +372,36 @@ class InvoiceService:
             valid_statuses = ["draft", "sent", "paid", "overdue", "cancelled"]
             if status not in valid_statuses:
                 raise ValueError(f"Invalid status. Must be one of: {valid_statuses}")
-            # Track when the invoice was paid for cash-basis reporting.
             if status == "paid" and invoice.status != "paid":
-                invoice.paid_at = utc_now()
-            elif status != "paid" and invoice.status == "paid":
-                invoice.paid_at = None
-            invoice.status = status
+                remaining = invoice.amount_due
+                if remaining > 0 and getattr(invoice, "document_type", "invoice") != "quote":
+                    session.add(
+                        Payment(
+                            invoice_id=invoice.id,
+                            amount=remaining,
+                            currency_code=invoice.currency_code,
+                            payment_date=utc_now().date(),
+                            method="other",
+                            notes="Marked paid",
+                        )
+                    )
+                    await session.flush()
+                    await recalculate_invoice_payments(session, invoice)
+                # Recalc never promotes a draft, so a "mark paid" on a draft
+                # still needs the explicit status write after the ledger is filled.
+                invoice.status = "paid"
+                if invoice.paid_at is None:
+                    invoice.paid_at = utc_now()
+            else:
+                if status != "paid" and invoice.status == "paid":
+                    invoice.paid_at = None
+                invoice.status = status
 
         if notes is not None:
             invoice.notes = notes
 
         if tax_fields_changed:
-            await recalculate_invoice_totals(session, invoice)
+            await _sync_invoice_money(session, invoice)
 
         # Re-snapshot only when the client was reassigned; otherwise the invoice
         # keeps the details captured at creation, so editing a client record (or
@@ -502,7 +541,7 @@ class InvoiceService:
         # Resolve the parent first: inserting against a missing invoice_id used to
         # trip the foreign key and surface as a 500 instead of a clean 404.
         invoice = await session.get(Invoice, invoice_id)
-        if invoice is None:
+        if invoice is None or invoice.deleted_at is not None:
             return None
 
         item = InvoiceItem(
@@ -517,7 +556,7 @@ class InvoiceService:
         session.add(item)
         await session.flush()
 
-        await recalculate_invoice_totals(session, invoice)
+        await _sync_invoice_money(session, invoice)
 
         await session.commit()
         await session.refresh(item)
@@ -562,7 +601,7 @@ class InvoiceService:
             item.unit_type = unit_type
 
         item.total = line_item_total(item.unit_price, item.quantity)
-        await recalculate_invoice_totals(session, item.invoice)
+        await _sync_invoice_money(session, item.invoice)
 
         await session.commit()
         await session.refresh(item)
@@ -587,7 +626,7 @@ class InvoiceService:
 
         invoice = await session.get(Invoice, item_invoice_id)
         if invoice:
-            await recalculate_invoice_totals(session, invoice)
+            await _sync_invoice_money(session, invoice)
 
         await session.commit()
         return True
@@ -602,6 +641,7 @@ class InvoiceService:
                     Invoice.status == "sent",
                     Invoice.due_date < utc_now().date(),
                     Invoice.deleted_at.is_(None),
+                    func.coalesce(Invoice.amount_paid, 0) < Invoice.total,
                 )
             )
             .values(status="overdue", updated_at=utc_now())
@@ -667,11 +707,27 @@ class InvoiceService:
                     .values(status="sent", updated_at=now)
                 )
             elif action == "mark_paid":
-                await session.execute(
-                    update(Invoice)
-                    .where(Invoice.id.in_(valid_ids))
-                    .values(status="paid", paid_at=now, updated_at=now)
-                )
+                for invoice_id in valid_ids:
+                    invoice = invoices[invoice_id]
+                    remaining = invoice.amount_due
+                    if remaining > 0 and getattr(invoice, "document_type", "invoice") != "quote":
+                        session.add(
+                            Payment(
+                                invoice_id=invoice.id,
+                                amount=remaining,
+                                currency_code=invoice.currency_code,
+                                payment_date=now.date(),
+                                method="other",
+                                notes="Marked paid",
+                            )
+                        )
+                await session.flush()
+                for invoice_id in valid_ids:
+                    invoice = invoices[invoice_id]
+                    await recalculate_invoice_payments(session, invoice)
+                    invoice.status = "paid"
+                    if invoice.paid_at is None:
+                        invoice.paid_at = now
             else:
                 await session.execute(
                     update(Invoice)

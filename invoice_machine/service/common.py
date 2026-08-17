@@ -322,13 +322,10 @@ def delete_invoice_pdf_files(pdf_paths: list[str]) -> int:
     import os
 
     from invoice_machine.config import get_settings
+    from invoice_machine.utils import confined_file
 
     logger = logging.getLogger(__name__)
     pdf_dir = get_settings().pdf_dir
-    try:
-        pdf_dir_resolved = pdf_dir.resolve()
-    except OSError:
-        return 0
 
     removed = 0
     for stored_path in pdf_paths:
@@ -336,12 +333,10 @@ def delete_invoice_pdf_files(pdf_paths: list[str]) -> int:
             continue
         # Stored as "pdfs/<name>.pdf"; only ever touch that one directory.
         name = os.path.basename(stored_path)
-        if not name or name in (".", ".."):
+        candidate = confined_file(pdf_dir, name)
+        if candidate is None:
             continue
-        candidate = pdf_dir / name
         try:
-            if candidate.resolve().parent != pdf_dir_resolved:
-                continue
             if candidate.is_file():
                 candidate.unlink()
                 removed += 1

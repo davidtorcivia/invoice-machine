@@ -6,6 +6,46 @@ Notable changes to Invoice Machine. Format based on
 
 ## [Unreleased]
 
+### Added
+
+- Password change from Settings > Account. Other sessions are revoked; the
+  current session stays signed in.
+- Marking an invoice paid now records the outstanding balance as a payment so
+  the ledger, Stripe links, and amount-due stay consistent.
+
+### Fixed
+
+- SMTP STARTTLS used Python's default `CERT_NONE` context, so a mail server
+  certificate was never verified. It now uses `ssl.create_default_context()`.
+- A stored SMTP password that failed to decrypt was sent to the server as the
+  ciphertext itself. That now fails with a re-save instruction.
+- Emailing an invoice joined `data_dir` to the stored `pdf_path` without
+  confinement, unlike the PDF download endpoint.
+- Adding a line item to a fully-paid invoice left the status as paid after the
+  new total exceeded `amount_paid`.
+- A concurrent Stripe webhook that raced past the external-id lookup could 500
+  instead of returning the payment the unique index already recorded.
+- FastAPI validation errors surfaced in the UI as `[object Object]`.
+- Document title was missing for Reports, Recurring, and Email Templates.
+- Package/app version still said `0.1.0` after the 0.2.0 release.
+
+### Changed
+
+- Hashed MCP/bot API keys and encrypted SMTP passwords now declare column
+  widths that actually fit the stored values (`hash:<salt>:<digest>` is 102
+  characters; Fernet ciphertext of a long SMTP password exceeds 255).
+- Logo, PDF, and backup path checks go through one `confined_file` helper that
+  uses `Path.relative_to` rather than a string prefix.
+- A successful login upgrades a leftover SHA-256 password hash to PBKDF2.
+- Two concurrent first-run `/setup` requests can no longer create two admins.
+- Client-page outstanding used the paper total and ignored partial payments.
+- The record-payment modal seeded $0 because it mounted before the invoice
+  balance was known.
+- Fully prepaid sent invoices were still flipped to overdue.
+- Production now refuses to start without `INVOICE_MACHINE_ENCRYPTION_KEY`, and
+  hides `/docs` / OpenAPI.
+- A failed `/auth/status` no longer dumps a first-run user onto the login page.
+
 ## [0.2.0]
 
 ### Fixed (in this release)

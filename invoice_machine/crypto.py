@@ -99,6 +99,19 @@ def _get_encryption_key() -> bytes:
     return _cached_key
 
 
+def require_production_encryption_key() -> None:
+    """Fail startup when production is missing a usable encryption key.
+
+    Encrypt/decrypt already refuse to run without a key, but a production
+    process that never touches a credential would otherwise serve traffic
+    and only fail later when the user saved SMTP or Stripe settings.
+    """
+    environment = os.environ.get("ENVIRONMENT", "development").lower()
+    if environment != "production":
+        return
+    _get_encryption_key()
+
+
 def encrypt_credential(plaintext: str) -> str:
     """
     Encrypt a credential (password, API key, etc.) for storage.

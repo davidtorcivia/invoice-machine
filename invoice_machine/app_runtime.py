@@ -204,6 +204,9 @@ def _acquire_scheduler_lock():
 async def lifespan(app: FastAPI):
     """FastAPI lifespan manager."""
     logger.info("Starting Invoice Machine...")
+    from invoice_machine.crypto import require_production_encryption_key
+
+    require_production_encryption_key()
     logger.info("Running database migrations...")
     await ensure_database_schema(apply_migrations=True)
     logger.info("Database initialized.")

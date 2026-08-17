@@ -14,6 +14,7 @@ from datetime import timedelta
 
 from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, Field
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.concurrency import run_in_threadpool
 
@@ -73,6 +74,11 @@ def hash_password(password: str) -> str:
     )
     # Format: salt$iterations$hash (all hex encoded)
     return f"{salt.hex()}$600000${hash_bytes.hex()}"
+
+
+def _is_legacy_password_hash(password_hash: str) -> bool:
+    """True for the pre-PBKDF2 ``salt$hash`` SHA-256 format."""
+    return password_hash.count("$") == 1
 
 
 def verify_password(password: str, password_hash: str) -> bool:
@@ -210,6 +216,13 @@ class LoginRequest(BaseModel):
     password: str = Field(..., max_length=128)
 
 
+class ChangePasswordRequest(BaseModel):
+    """Change the authenticated user's password."""
+
+    current_password: str = Field(..., max_length=128)
+    new_password: str = Field(..., min_length=8, max_length=128)
+
+
 def _set_session_cookies(response: Response, session: DbSession) -> None:
     """Set both session and CSRF cookies."""
     response.set_cookie(
@@ -318,7 +331,11 @@ async def setup(
         password_hash=await run_in_threadpool(hash_password, data.password),
     )
     db_session.add(user)
-    await db_session.commit()
+    try:
+        await db_session.commit()
+    except IntegrityError:
+        await db_session.rollback()
+        raise HTTPException(status_code=400, detail="Setup already completed")
     await db_session.refresh(user)
 
     # Create database-backed session with CSRF token
@@ -347,6 +364,12 @@ async def login(
     if not password_ok or not user:
         # Use generic error message to prevent username enumeration
         raise HTTPException(status_code=401, detail="Invalid username or password")
+
+    # Upgrade a leftover SHA-256 hash to PBKDF2 on a successful login so the
+    # weaker format is not kept around indefinitely.
+    if _is_legacy_password_hash(user.password_hash):
+        user.password_hash = await run_in_threadpool(hash_password, data.password)
+        await db_session.commit()
 
     # Create database-backed session with CSRF token
     user_session = await create_session(db_session, user.id, request)
@@ -383,4 +406,40 @@ async def logout(
         secure=settings.secure_cookies,
         samesite=samesite,
     )
+    return {"success": True}
+
+
+@router.post("/password")
+@limiter.limit("5/minute")
+async def change_password(
+    request: Request,
+    data: ChangePasswordRequest,
+    db_session: AsyncSession = Depends(get_session),
+    session_token: str | None = Cookie(None, alias=SESSION_COOKIE_NAME),
+):
+    """Change the current user's password and revoke every other session."""
+    if not session_token:
+        raise HTTPException(status_code=401, detail="Authentication required")
+
+    user_session = await get_session_data(db_session, session_token)
+    if not user_session or not user_session.user:
+        raise HTTPException(status_code=401, detail="Session expired")
+
+    user = user_session.user
+    current_ok = await run_in_threadpool(verify_password, data.current_password, user.password_hash)
+    if not current_ok:
+        raise HTTPException(status_code=401, detail="Current password is incorrect")
+
+    password_error = validate_password_complexity(data.new_password)
+    if password_error:
+        raise HTTPException(status_code=400, detail=password_error)
+
+    if secrets.compare_digest(data.current_password, data.new_password):
+        raise HTTPException(
+            status_code=400, detail="New password must be different from the current password"
+        )
+
+    user.password_hash = await run_in_threadpool(hash_password, data.new_password)
+    await db_session.commit()
+    await DbSession.delete_other_sessions(db_session, user.id, session_token)
     return {"success": True}

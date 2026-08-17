@@ -15,10 +15,10 @@ from pathlib import Path
 from starlette.concurrency import run_in_threadpool
 
 from invoice_machine.config import get_settings
-from invoice_machine.crypto import decrypt_credential
+from invoice_machine.crypto import UnencryptedCredentialError, decrypt_credential
 from invoice_machine.database import BusinessProfile, Invoice
 from invoice_machine.services import format_currency
-from invoice_machine.utils import sanitize_filename_component
+from invoice_machine.utils import confined_file, sanitize_filename_component
 
 settings = get_settings()
 
@@ -238,14 +238,17 @@ class EmailService:
         self.profile = profile
 
     def _get_smtp_password(self) -> str | None:
-        """Get decrypted SMTP password."""
+        """Decrypt the stored SMTP password, or None if none is set."""
         if not self.profile.smtp_password:
             return None
         try:
             return decrypt_credential(self.profile.smtp_password)
-        except ValueError:
-            # If decryption fails, try using as-is (for legacy unencrypted values)
-            return self.profile.smtp_password
+        except UnencryptedCredentialError:
+            raise
+        except ValueError as exc:
+            raise ValueError(
+                "Stored SMTP password could not be decrypted. Re-save it in settings."
+            ) from exc
 
     def _validate_config(self) -> None:
         """Validate SMTP configuration is complete."""
@@ -328,10 +331,11 @@ class EmailService:
                     server.login(self.profile.smtp_username, smtp_password)
                 server.send_message(msg)
         else:
-            # STARTTLS connection (port 587 or other)
+            # STARTTLS (port 587 or other). Pass a verifying context: the
+            # smtplib default is CERT_NONE, which accepts any certificate.
             with smtplib.SMTP(self.profile.smtp_host, port) as server:
                 if use_tls:
-                    server.starttls()
+                    server.starttls(context=ssl.create_default_context())
                 if self.profile.smtp_username and smtp_password:
                     server.login(self.profile.smtp_username, smtp_password)
                 server.send_message(msg)
@@ -386,11 +390,11 @@ class EmailService:
                 "error": "Invoice PDF not generated. Generate PDF first.",
             }
 
-        pdf_path = settings.data_dir / invoice.pdf_path
-        if not pdf_path.exists():
+        pdf_path = confined_file(settings.pdf_dir, Path(invoice.pdf_path).name)
+        if pdf_path is None or not pdf_path.is_file():
             return {
                 "success": False,
-                "error": f"Invoice PDF not found at {invoice.pdf_path}",
+                "error": "Invoice PDF not found.",
             }
 
         # Send email in thread pool
@@ -446,7 +450,7 @@ class EmailService:
                 else:
                     with smtplib.SMTP(self.profile.smtp_host, port) as server:
                         if use_tls:
-                            server.starttls()
+                            server.starttls(context=ssl.create_default_context())
                         if self.profile.smtp_username and smtp_password:
                             server.login(self.profile.smtp_username, smtp_password)
 

@@ -46,6 +46,10 @@ class User(Base):
     username: Mapped[str] = mapped_column(String(100), unique=True, nullable=False)
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
+    # Always 1. Unique so two concurrent /setup POSTs cannot both succeed.
+    singleton: Mapped[int] = mapped_column(
+        Integer, default=1, server_default="1", unique=True, nullable=False
+    )
 
     @classmethod
     async def get_by_username(cls, session: "AsyncSession", username: str) -> Optional["User"]:
@@ -93,9 +97,11 @@ class BusinessProfile(Base):
     payment_methods: Mapped[str | None] = mapped_column(Text, nullable=True)
     theme_preference: Mapped[str] = mapped_column(String(20), default="system")
     # MCP API key for remote access
-    mcp_api_key: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # Stored as hash:<salt>:<sha256> (~102 chars). 64 was the plaintext-key
+    # width and would truncate the hash on any engine that enforces VARCHAR.
+    mcp_api_key: Mapped[str | None] = mapped_column(String(128), nullable=True)
     # Bot API key for conventional REST API automation
-    bot_api_key: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    bot_api_key: Mapped[str | None] = mapped_column(String(128), nullable=True)
     # App base URL for links and MCP configuration
     app_base_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     # Backup settings
@@ -113,7 +119,8 @@ class BusinessProfile(Base):
     smtp_host: Mapped[str | None] = mapped_column(String(255), nullable=True)
     smtp_port: Mapped[int] = mapped_column(Integer, default=587)
     smtp_username: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    smtp_password: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # Fernet ciphertext of a long password plus the enc: prefix exceeds 255.
+    smtp_password: Mapped[str | None] = mapped_column(String(500), nullable=True)
     smtp_from_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
     smtp_from_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     smtp_use_tls: Mapped[int] = mapped_column(Integer, default=1)
@@ -620,6 +627,19 @@ class Session(Base):
         from sqlalchemy import delete
 
         result = await session.execute(delete(cls).where(cls.user_id == user_id))
+        await session.commit()
+        return result.rowcount
+
+    @classmethod
+    async def delete_other_sessions(
+        cls, session: "AsyncSession", user_id: int, keep_token: str
+    ) -> int:
+        """Delete every session for a user except the one that just authenticated."""
+        from sqlalchemy import delete
+
+        result = await session.execute(
+            delete(cls).where(cls.user_id == user_id, cls.token != keep_token)
+        )
         await session.commit()
         return result.rowcount
 

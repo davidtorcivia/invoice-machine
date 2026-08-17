@@ -3,7 +3,7 @@
  */
 import { writable, get } from 'svelte/store';
 import { browser } from '$app/environment';
-import { request } from '$lib/api';
+import { request, setCsrfToken } from '$lib/api';
 
 /**
  * @typedef {{ id: number, message: string, type: 'success' | 'error' | 'info' }} ToastMessage
@@ -16,6 +16,7 @@ const DEFAULT_AUTH_STATE = {
   authenticated: false,
   needsSetup: false,
   username: null,
+  checkFailed: false,
 };
 
 function buildAuthState(data = {}) {
@@ -24,6 +25,7 @@ function buildAuthState(data = {}) {
     authenticated: !!data.authenticated,
     needsSetup: !!data.needs_setup,
     username: data.username ?? null,
+    checkFailed: false,
   };
 }
 
@@ -38,11 +40,12 @@ function createAuthStore() {
     check: async () => {
       try {
         const data = await request('/auth/status');
+        if (data?.csrf_token) setCsrfToken(data.csrf_token);
         set(buildAuthState(data));
         return data;
       } catch (e) {
-        set(DEFAULT_AUTH_STATE);
-        return { authenticated: false, needs_setup: false };
+        set({ ...DEFAULT_AUTH_STATE, checkFailed: true });
+        return { authenticated: false, needs_setup: false, check_failed: true };
       }
     },
     login: async (username, password) => {
@@ -64,6 +67,12 @@ function createAuthStore() {
     logout: async () => {
       await request('/auth/logout', { method: 'POST' });
       set(DEFAULT_AUTH_STATE);
+    },
+    changePassword: async (currentPassword, newPassword) => {
+      return request('/auth/password', {
+        method: 'POST',
+        body: { current_password: currentPassword, new_password: newPassword },
+      });
     },
   };
 }

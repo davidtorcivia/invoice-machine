@@ -139,6 +139,91 @@ async def test_unsafe_method_requires_csrf_token(unauth_client):
 
 
 @pytest.mark.asyncio
+async def test_change_password_updates_hash_and_keeps_this_session(unauth_client):
+    await _setup(unauth_client)
+    csrf = unauth_client.cookies.get(CSRF_COOKIE_NAME)
+
+    response = await unauth_client.post(
+        "/api/auth/password",
+        json={"current_password": GOOD_PASSWORD, "new_password": "Newpass123"},
+        headers={"X-CSRF-Token": csrf},
+    )
+    assert response.status_code == 200
+
+    # Current session still works.
+    status = await unauth_client.get("/api/auth/status")
+    assert status.json()["authenticated"] is True
+
+    unauth_client.cookies.clear()
+    old = await unauth_client.post(
+        "/api/auth/login", json={"username": "admin", "password": GOOD_PASSWORD}
+    )
+    assert old.status_code == 401
+
+    new = await unauth_client.post(
+        "/api/auth/login", json={"username": "admin", "password": "Newpass123"}
+    )
+    assert new.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_change_password_rejects_wrong_current(unauth_client):
+    await _setup(unauth_client)
+    csrf = unauth_client.cookies.get(CSRF_COOKIE_NAME)
+
+    response = await unauth_client.post(
+        "/api/auth/password",
+        json={"current_password": "Wrong1234", "new_password": "Newpass123"},
+        headers={"X-CSRF-Token": csrf},
+    )
+    assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_change_password_requires_csrf(unauth_client):
+    await _setup(unauth_client)
+    response = await unauth_client.post(
+        "/api/auth/password",
+        json={"current_password": GOOD_PASSWORD, "new_password": "Newpass123"},
+    )
+    assert response.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_login_upgrades_legacy_sha256_hash(unauth_client):
+    from invoice_machine.api.auth import hash_password, verify_password
+    from invoice_machine.database import User, async_session_maker
+
+    await _setup(unauth_client)
+    unauth_client.cookies.clear()
+
+    # Plant a leftover SHA-256 hash the way pre-PBKDF2 accounts were stored.
+    import hashlib
+    import secrets
+
+    salt = secrets.token_hex(16)
+    legacy = f"{salt}${hashlib.sha256((salt + GOOD_PASSWORD).encode()).hexdigest()}"
+
+    async with async_session_maker() as session:
+        user = await User.get_by_username(session, "admin")
+        user.password_hash = legacy
+        await session.commit()
+
+    response = await unauth_client.post(
+        "/api/auth/login", json={"username": "admin", "password": GOOD_PASSWORD}
+    )
+    assert response.status_code == 200
+
+    async with async_session_maker() as session:
+        user = await User.get_by_username(session, "admin")
+        assert user.password_hash.count("$") == 2
+        assert verify_password(GOOD_PASSWORD, user.password_hash)
+        assert user.password_hash != legacy
+        # And the upgraded form is the current PBKDF2 hasher.
+        assert hash_password("x").count("$") == 2
+
+
+@pytest.mark.asyncio
 async def test_logout_invalidates_session(unauth_client):
     await _setup(unauth_client)
     csrf = unauth_client.cookies.get(CSRF_COOKIE_NAME)

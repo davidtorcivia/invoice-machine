@@ -1,6 +1,5 @@
 <script>
   import { self, preventDefault } from 'svelte/legacy';
-  import { onMount } from 'svelte';
   import { formatCurrency } from '$lib/stores';
 
   /**
@@ -44,10 +43,23 @@
   let amountNum = $derived(parseFloat(amount) || 0);
   let exceedsBalance = $derived(amountNum > dueNum);
 
-  onMount(() => {
-    amount = dueNum > 0 ? dueNum.toFixed(2) : '';
-    amountInput?.focus();
-    amountInput?.select();
+  let wasOpen = $state(false);
+  $effect(() => {
+    if (open && !wasOpen) {
+      const due = parseFloat(amountDue) || 0;
+      amount = due > 0 ? due.toFixed(2) : '';
+      paymentDate = new Date().toISOString().slice(0, 10);
+      method = 'bank_transfer';
+      reference = '';
+      notes = '';
+      allowOverpayment = false;
+      error = '';
+      queueMicrotask(() => {
+        amountInput?.focus();
+        amountInput?.select();
+      });
+    }
+    wasOpen = open;
   });
 
   function submit() {

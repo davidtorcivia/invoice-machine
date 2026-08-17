@@ -174,6 +174,88 @@ class TestPartialPayments:
         await db_session.refresh(invoice)
         assert invoice.amount_paid == Decimal("100.00")
 
+    @pytest.mark.asyncio
+    async def test_external_id_unique_race_returns_existing(
+        self, db_session, business_profile, test_client
+    ):
+        """If the pre-check misses a concurrent insert, the unique index still wins."""
+        from unittest.mock import patch
+
+        invoice = await _invoice(db_session, test_client)
+        invoice_id = invoice.id
+        first = await PaymentService.record_payment(
+            db_session, invoice_id, amount="100", provider="stripe", external_id="evt_race"
+        )
+        first_id = first.id
+
+        calls = {"n": 0}
+        real = PaymentService.find_by_external_id
+
+        async def miss_once(session, provider, external_id):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                return None
+            return await real(session, provider, external_id)
+
+        with patch.object(PaymentService, "find_by_external_id", side_effect=miss_once):
+            second = await PaymentService.record_payment(
+                db_session, invoice_id, amount="100", provider="stripe", external_id="evt_race"
+            )
+
+        assert second.id == first_id
+        payments = await PaymentService.list_payments(db_session, invoice_id)
+        assert len(payments) == 1
+
+    @pytest.mark.asyncio
+    async def test_adding_a_line_item_reverts_a_fully_paid_invoice(
+        self, db_session, business_profile, test_client
+    ):
+        """Raising the total above amount_paid must revert a paid invoice."""
+        invoice = await _invoice(db_session, test_client, total=Decimal("100.00"))
+        await PaymentService.record_payment(db_session, invoice.id, amount="100.00")
+        await db_session.refresh(invoice)
+        assert invoice.status == "paid"
+
+        await InvoiceService.add_item(
+            db_session, invoice.id, description="Extra", quantity=1, unit_price=50
+        )
+        await db_session.refresh(invoice)
+
+        assert invoice.total == Decimal("150.00")
+        assert invoice.amount_paid == Decimal("100.00")
+        assert invoice.status == "sent"
+        assert invoice.paid_at is None
+
+    @pytest.mark.asyncio
+    async def test_marking_paid_records_the_outstanding_balance(
+        self, db_session, business_profile, test_client
+    ):
+        invoice = await _invoice(db_session, test_client, total=Decimal("250.00"))
+        updated = await InvoiceService.update_invoice(db_session, invoice.id, status="paid")
+
+        assert updated.status == "paid"
+        assert updated.amount_paid == Decimal("250.00")
+        assert updated.amount_due == Decimal("0.00")
+        payments = await PaymentService.list_payments(db_session, invoice.id)
+        assert len(payments) == 1
+        assert payments[0].amount == Decimal("250.00")
+        assert payments[0].notes == "Marked paid"
+
+    @pytest.mark.asyncio
+    async def test_overdue_sweep_skips_a_fully_prepaid_invoice(
+        self, db_session, business_profile, test_client
+    ):
+        invoice = await _invoice(db_session, test_client, total=Decimal("80.00"), status="draft")
+        await PaymentService.record_payment(db_session, invoice.id, amount="80.00")
+        invoice = await InvoiceService.update_invoice(db_session, invoice.id, status="sent")
+        invoice.due_date = utc_now().date() - timedelta(days=3)
+        await db_session.commit()
+
+        count = await InvoiceService.update_overdue_invoices(db_session)
+        await db_session.refresh(invoice)
+        assert count == 0
+        assert invoice.status == "sent"
+
 
 class TestAgingReport:
     """A/R aging buckets."""
