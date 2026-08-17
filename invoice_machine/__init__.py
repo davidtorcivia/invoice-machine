@@ -1,3 +1,3 @@
 """Invoice Machine: AI-first invoicing application."""
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"

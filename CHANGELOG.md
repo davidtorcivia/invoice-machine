@@ -6,6 +6,8 @@ Notable changes to Invoice Machine. Format based on
 
 ## [Unreleased]
 
+## [0.3.0]
+
 ### Added
 
 - Password change from Settings > Account. Other sessions are revoked; the

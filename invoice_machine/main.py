@@ -9,6 +9,7 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 from starlette.applications import Starlette
 from starlette.routing import Route
 
+from invoice_machine import __version__
 from invoice_machine.api import (
     analytics,
     auth,
@@ -46,7 +47,7 @@ _is_production = settings.environment.lower() == "production"
 app = FastAPI(
     title="Invoice Machine",
     description="AI-first invoicing application",
-    version="0.2.0",
+    version=__version__,
     lifespan=lifespan,
     docs_url=None if _is_production else "/docs",
     redoc_url=None if _is_production else "/redoc",
