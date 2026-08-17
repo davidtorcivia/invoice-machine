@@ -15,4 +15,17 @@ fi
 echo "Running database migrations..."
 python -c "from alembic.config import Config; from alembic import command; command.upgrade(Config('alembic.ini'), 'head')"
 
+# uvicorn rewrites request.client from X-Forwarded-For when proxy-headers are
+# on. That must track TRUST_PROXY_HEADERS or a client can pick its rate-limit key.
+if [ "$1" = "uvicorn" ]; then
+    case "${TRUST_PROXY_HEADERS}" in
+        1|true|True|TRUE|yes|YES|on|ON)
+            set -- "$@" --proxy-headers --forwarded-allow-ips "*"
+            ;;
+        *)
+            set -- "$@" --no-proxy-headers
+            ;;
+    esac
+fi
+
 exec "$@"

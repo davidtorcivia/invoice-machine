@@ -47,7 +47,8 @@ own reverse proxy. That shapes the model:
 In production the app refuses to start without `INVOICE_MACHINE_ENCRYPTION_KEY`.
 Also set `SECURE_COOKIES=true`, point `CORS_ORIGINS` at your domain alone, and
 keep the encryption key backed up separately from the database. Without the key,
-stored credentials cannot be recovered.
+stored credentials cannot be recovered. Set `TRUST_PROXY_HEADERS=true` only
+when a reverse proxy overwrites `CF-Connecting-IP` / `X-Forwarded-For`.
 
 Prefer a Stripe [restricted key](https://docs.stripe.com/keys/restricted-api-keys)
 scoped to Checkout Sessions over a full secret key.
@@ -56,9 +57,8 @@ scoped to Checkout Sessions over a full secret key.
 
 These are accepted for the threat model above, and worth knowing:
 
-- `X-Forwarded-For` and `CF-Connecting-IP` are trusted when present, so
-  rate-limit keys can be spoofed if the app is exposed without a proxy that
-  overwrites them.
+- `X-Forwarded-For` and `CF-Connecting-IP` are read only when
+  `TRUST_PROXY_HEADERS=true`. Leave that off unless a proxy overwrites them.
 - The outbound-host guard resolves DNS before connecting, so a rebinding
   attack between the two is theoretically possible.
 - There is no audit log of administrative actions.

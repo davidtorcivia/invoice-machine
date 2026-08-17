@@ -45,6 +45,8 @@ class Settings(BaseSettings):
     cors_origins: str = "http://localhost:3000,http://localhost:8080"
     secure_cookies: bool = False  # Set to True when using HTTPS in production
     environment: str = "development"  # development, staging, production
+    # Trust CF-Connecting-IP / X-Forwarded-For. Off unless a proxy overwrites them.
+    trust_proxy_headers: bool = False
 
     # Paths
     data_dir: Path = Path("./data")

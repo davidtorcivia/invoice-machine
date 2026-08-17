@@ -31,6 +31,9 @@ Notable changes to Invoice Machine. Format based on
 
 ### Changed
 
+- `CF-Connecting-IP` and `X-Forwarded-For` are ignored unless
+  `TRUST_PROXY_HEADERS=true`. Set that behind Cloudflare or another proxy that
+  overwrites the headers.
 - Hashed MCP/bot API keys and encrypted SMTP passwords now declare column
   widths that actually fit the stored values (`hash:<salt>:<digest>` is 102
   characters; Fernet ciphertext of a long SMTP password exceeds 255).

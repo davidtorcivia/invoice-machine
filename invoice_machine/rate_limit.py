@@ -9,22 +9,23 @@ from slowapi.util import get_remote_address
 
 
 def get_client_ip(request) -> str:
-    """Best-effort real client IP for rate limiting and audit logging.
+    """Client IP for rate limiting and audit logging.
 
-    The app is intended to run behind a reverse proxy (Cloudflare). Cloudflare
-    sets ``CF-Connecting-IP`` and overwrites it on every request, so it is the
-    trustworthy source when present. We fall back to the first ``X-Forwarded-For``
-    hop, then the direct peer. Without ``CF-Connecting-IP``/XFF spoofing
-    mitigation a determined client could spoof XFF, but for a single-user
-    self-hosted app this is acceptable and far better than bucketing every
-    client behind the proxy into one shared limit.
+    Proxy headers are only read when ``trust_proxy_headers`` is on. Cloudflare
+    overwrites ``CF-Connecting-IP``; the first ``X-Forwarded-For`` hop is the
+    fallback. Direct exposure must not let a client pick its own rate-limit key.
+    The Docker entrypoint also passes ``--no-proxy-headers`` unless that flag
+    is on, so uvicorn cannot rewrite ``request.client`` from XFF either.
     """
-    cf_ip = request.headers.get("cf-connecting-ip")
-    if cf_ip:
-        return cf_ip.strip()
-    forwarded = request.headers.get("x-forwarded-for")
-    if forwarded:
-        return forwarded.split(",")[0].strip()
+    from invoice_machine.config import get_settings
+
+    if get_settings().trust_proxy_headers:
+        cf_ip = request.headers.get("cf-connecting-ip")
+        if cf_ip:
+            return cf_ip.strip()
+        forwarded = request.headers.get("x-forwarded-for")
+        if forwarded:
+            return forwarded.split(",")[0].strip()
     return get_remote_address(request)
 
 
