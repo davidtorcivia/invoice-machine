@@ -66,6 +66,7 @@ Set these in a `.env` file or as environment variables. See `.env.example` for a
 |----------|-------------|---------|
 | `INVOICE_MACHINE_ENCRYPTION_KEY` | Encrypts stored credentials. Required in production. | none |
 | `SECURE_COOKIES` | Enable secure cookies (requires HTTPS) | `false` |
+| `TRUST_PROXY_HEADERS` | Trust `CF-Connecting-IP` / `X-Forwarded-For` | `false` |
 | `CORS_ORIGINS` | Allowed origins, comma-separated | `http://localhost:3000,http://localhost:8080` |
 
 ### Invoice defaults
@@ -85,6 +86,7 @@ INVOICE_MACHINE_ENCRYPTION_KEY=your_64_character_hex_key_here
 APP_BASE_URL=https://invoices.yourdomain.com
 ENVIRONMENT=production
 SECURE_COOKIES=true
+TRUST_PROXY_HEADERS=true
 CORS_ORIGINS=https://invoices.yourdomain.com
 
 # Recommended: keep data outside the container
@@ -345,11 +347,12 @@ The `data/` directory holds everything: database, PDFs, logos, and backups. Copy
 
 1. Generate and set `INVOICE_MACHINE_ENCRYPTION_KEY`, `chmod 600` your `.env`, and back the key up somewhere separate
 2. Set `SECURE_COOKIES=true` behind HTTPS
-3. Point `CORS_ORIGINS` at your domain only
-4. Turn on automatic backups with S3 for offsite copies
-5. Put an access layer in front of it (Cloudflare Access, Tailscale, or a VPN)
-6. Use a Stripe restricted key rather than a secret key
-7. Pull new images regularly
+3. Set `TRUST_PROXY_HEADERS=true` only if a reverse proxy overwrites client IP headers
+4. Point `CORS_ORIGINS` at your domain only
+5. Turn on automatic backups with S3 for offsite copies
+6. Put an access layer in front of it (Cloudflare Access, Tailscale, or a VPN)
+7. Use a Stripe restricted key rather than a secret key
+8. Pull new images regularly
 
 ## Deployment
 
@@ -367,6 +370,7 @@ services:
       - APP_BASE_URL=https://invoices.yourdomain.com
       - ENVIRONMENT=production
       - SECURE_COOKIES=true
+      - TRUST_PROXY_HEADERS=true
       - CORS_ORIGINS=https://invoices.yourdomain.com
       - DATABASE_URL=sqlite+aiosqlite:////app/data/invoice_machine.db
       - DATA_DIR=/app/data
@@ -388,7 +392,7 @@ Two things that catch people out: `DATABASE_URL` needs four slashes (three for t
 cloudflared tunnel create invoice-machine
 ```
 
-Configure an Access policy in the Cloudflare dashboard, then set `APP_BASE_URL` and `SECURE_COOKIES=true`. The app reads `CF-Connecting-IP` for rate limiting and audit logging, so limits apply per client rather than to the tunnel as a whole.
+Configure an Access policy in the Cloudflare dashboard, then set `APP_BASE_URL`, `SECURE_COOKIES=true`, and `TRUST_PROXY_HEADERS=true`. The app then reads `CF-Connecting-IP` for rate limiting and audit logging, so limits apply per client rather than to the tunnel as a whole.
 
 ### Scheduled jobs
 

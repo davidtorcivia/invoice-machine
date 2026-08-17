@@ -391,6 +391,39 @@ class TestApiKeyHashing:
         assert is_encrypted("plain") is False
 
 
+class TestClientIp:
+    """Proxy headers must not choose the rate-limit key unless trusted."""
+
+    def _request(self, headers, peer="203.0.113.9"):
+        from types import SimpleNamespace
+
+        return SimpleNamespace(headers=headers, client=SimpleNamespace(host=peer, port=443))
+
+    def test_ignores_spoofed_headers_by_default(self, monkeypatch):
+        from invoice_machine.config import get_settings
+        from invoice_machine.rate_limit import get_client_ip
+
+        monkeypatch.setenv("TRUST_PROXY_HEADERS", "false")
+        get_settings.cache_clear()
+        try:
+            req = self._request({"cf-connecting-ip": "1.2.3.4", "x-forwarded-for": "5.6.7.8"})
+            assert get_client_ip(req) == "203.0.113.9"
+        finally:
+            get_settings.cache_clear()
+
+    def test_prefers_cf_connecting_ip_when_trusted(self, monkeypatch):
+        from invoice_machine.config import get_settings
+        from invoice_machine.rate_limit import get_client_ip
+
+        monkeypatch.setenv("TRUST_PROXY_HEADERS", "true")
+        get_settings.cache_clear()
+        try:
+            req = self._request({"cf-connecting-ip": "1.2.3.4", "x-forwarded-for": "5.6.7.8"})
+            assert get_client_ip(req) == "1.2.3.4"
+        finally:
+            get_settings.cache_clear()
+
+
 class TestSpaContentSecurityPolicy:
     """The SPA must boot under a strict CSP, on any deployment.
 
