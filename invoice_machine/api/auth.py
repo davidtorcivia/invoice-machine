@@ -227,7 +227,7 @@ def _set_session_cookies(response: Response, session: DbSession) -> None:
     """Set both session and CSRF cookies."""
     response.set_cookie(
         SESSION_COOKIE_NAME,
-        session.token,
+        getattr(session, "cookie_token", None) or session.token,
         httponly=True,
         secure=settings.secure_cookies,
         samesite="strict" if settings.secure_cookies else "lax",

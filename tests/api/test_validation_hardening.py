@@ -48,7 +48,7 @@ async def test_add_item_to_missing_invoice_returns_404(test_client):
     """Adding a line item to a nonexistent invoice must 404, not 500 on the FK."""
     response = await test_client.post(
         "/api/invoices/999999/items",
-        params={"description": "Service", "quantity": 1, "unit_price": "10"},
+        json={"description": "Service", "quantity": 1, "unit_price": "10"},
     )
     assert response.status_code == 404
 

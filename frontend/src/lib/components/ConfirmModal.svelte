@@ -1,6 +1,4 @@
 <script>
-  import { run } from 'svelte/legacy';
-
   import { tick } from 'svelte';
   import Icon from './Icons.svelte';
 
@@ -100,8 +98,7 @@
     }
   }
 
-  // Focus the primary action on open; restore focus to the trigger on close.
-  run(() => {
+  $effect(() => {
     if (show && !wasShown) {
       wasShown = true;
       openModal();

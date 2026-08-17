@@ -448,13 +448,7 @@ async def restore_invoice(
 async def add_invoice_item(
     request: Request,
     invoice_id: int,
-    description: str = Query(..., description="Item description"),
-    # Decimal (not int) so fractional quantities like 1.5 / 0.25 hours can be
-    # added to an existing invoice, matching invoice-create and item-update.
-    quantity: Decimal = Query(Decimal("1"), gt=0, le=10000, description="Quantity"),
-    unit_type: str = Query("qty", pattern="^(qty|hours)$", description="Unit type"),
-    unit_price: Decimal = Query(..., ge=0, description="Unit price"),
-    sort_order: int = Query(0, ge=0, description="Sort order"),
+    item: LineItemCreate,
     session: AsyncSession = Depends(get_session),
 ) -> dict:
     """Add line item to invoice."""
@@ -462,11 +456,11 @@ async def add_invoice_item(
         item = await InvoiceService.add_item(
             session,
             invoice_id,
-            description,
-            quantity,
-            unit_price,
-            sort_order,
-            unit_type,
+            item.description,
+            item.quantity,
+            item.unit_price,
+            item.sort_order,
+            item.unit_type,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))

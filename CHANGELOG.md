@@ -55,6 +55,12 @@ Notable changes to Invoice Machine. Format based on
 - Purging trash no longer 500s when a recurring schedule still pointed at a
   deleted invoice.
 - Removed the drifted `designdoc.md`. README is the source of truth.
+- Session cookies are stored as SHA-256 digests. Leftover plaintext rows are
+  upgraded on the next request.
+- Add-item is a JSON body, not query parameters.
+- Overdue and recurring "today" use the business timezone.
+- Unused frontend data stores and the no-op `hooks.server.js` are gone.
+- `npm audit` high (nanoid) is patched.
 
 ## [0.2.0]
 

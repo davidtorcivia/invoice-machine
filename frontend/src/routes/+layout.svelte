@@ -1,6 +1,4 @@
 <script lang="ts">
-  import { run } from 'svelte/legacy';
-
   import '@fontsource-variable/inter';
   import '../app.css';
   import { onMount } from 'svelte';
@@ -58,8 +56,7 @@
     await auth.check();
   });
 
-  // Reactive navigation based on auth state
-  run(() => {
+  $effect(() => {
     if (!loading && !checkFailed) {
       const path = $page.url.pathname;
 

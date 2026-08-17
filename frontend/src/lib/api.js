@@ -322,13 +322,13 @@ export const invoicesApi = {
 
   /** @param {number | string} id @param {{description?: string, quantity?: number, unit_type?: string, unit_price?: string | number, sort_order?: number}} item */
   addItem: (id, item) =>
-    post(withQuery(`/invoices/${id}/items`, {
+    post(`/invoices/${id}/items`, {
       description: item.description,
       quantity: item.quantity,
       unit_type: item.unit_type || 'qty',
       unit_price: item.unit_price,
       sort_order: item.sort_order || 0,
-    })),
+    }),
 
   /** @param {number | string} id @param {number | string} itemId @param {Record<string, unknown>} data */
   updateItem: (id, itemId, data) => put(`/invoices/${id}/items/${itemId}`, data),

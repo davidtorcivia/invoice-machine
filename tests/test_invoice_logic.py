@@ -88,7 +88,9 @@ async def test_update_kwargs_cannot_set_computed_totals(db_session, test_client)
 @pytest.mark.asyncio
 async def test_recurring_catches_up_missed_periods(db_session, test_client, monkeypatch):
     """A monthly schedule months overdue generates one invoice per missed period."""
-    monkeypatch.setattr("invoice_machine.service.recurring.utc_now", _fixed_now(2026, 4, 15))
+    frozen = _fixed_now(2026, 4, 15)
+    monkeypatch.setattr("invoice_machine.service.recurring.utc_now", frozen)
+    monkeypatch.setattr("invoice_machine.service.reminders.utc_now", frozen)
 
     schedule = await RecurringService.create_schedule(
         db_session,

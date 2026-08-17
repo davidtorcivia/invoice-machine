@@ -413,7 +413,10 @@ class RecurringService:
         next_invoice_date is advanced and committed after each invoice, so a
         crash mid-run cannot regenerate already-billed periods.
         """
-        today = utc_now().date()
+        from invoice_machine.service.reminders import business_now
+
+        profile = await BusinessProfile.get(session)
+        today = business_now(profile).date()
         result = await session.execute(
             select(RecurringSchedule)
             .join(Client, RecurringSchedule.client_id == Client.id)

@@ -654,12 +654,16 @@ class InvoiceService:
     @staticmethod
     async def update_overdue_invoices(session: AsyncSession) -> int:
         """Mark sent invoices as overdue when due_date has passed."""
+        from invoice_machine.database import BusinessProfile
+        from invoice_machine.service.reminders import business_now
+
+        today = business_now(await BusinessProfile.get(session)).date()
         result = await session.execute(
             update(Invoice)
             .where(
                 and_(
                     Invoice.status == "sent",
-                    Invoice.due_date < utc_now().date(),
+                    Invoice.due_date < today,
                     Invoice.deleted_at.is_(None),
                     func.coalesce(Invoice.amount_paid, 0) < Invoice.total,
                 )

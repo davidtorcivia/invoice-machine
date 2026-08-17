@@ -8,6 +8,7 @@ synthesized sessions directly and never covered these flows.
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy import select
 
 from invoice_machine.api.auth import CSRF_COOKIE_NAME, SESSION_COOKIE_NAME
 from invoice_machine.database import Base
@@ -76,6 +77,49 @@ async def test_setup_rejects_weak_password(unauth_client):
     # endpoint's complexity check rejects it (400, not a schema 422).
     response = await _setup(unauth_client, password="weakpassword")
     assert response.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_login_stores_a_hashed_session_token(unauth_client):
+    from invoice_machine.database import Session as DbSession
+    from invoice_machine.database import async_session_maker
+
+    await _setup(unauth_client)
+    cookie = unauth_client.cookies.get(SESSION_COOKIE_NAME)
+    assert cookie
+
+    async with async_session_maker() as session:
+        rows = (await session.execute(select(DbSession))).scalars().all()
+        assert len(rows) == 1
+        stored = rows[0].token
+        assert stored != cookie
+        assert len(stored) == 64
+        assert all(c in "0123456789abcdef" for c in stored)
+
+    status = await unauth_client.get("/api/auth/status")
+    assert status.json()["authenticated"] is True
+
+
+@pytest.mark.asyncio
+async def test_plaintext_session_token_is_upgraded(unauth_client):
+    from invoice_machine.database import Session as DbSession
+    from invoice_machine.database import async_session_maker
+
+    await _setup(unauth_client)
+    cookie = unauth_client.cookies.get(SESSION_COOKIE_NAME)
+
+    async with async_session_maker() as session:
+        row = (await session.execute(select(DbSession))).scalar_one()
+        row.token = cookie
+        await session.commit()
+
+    status = await unauth_client.get("/api/auth/status")
+    assert status.json()["authenticated"] is True
+
+    async with async_session_maker() as session:
+        stored = (await session.execute(select(DbSession))).scalar_one().token
+        assert stored != cookie
+        assert len(stored) == 64
 
 
 @pytest.mark.asyncio

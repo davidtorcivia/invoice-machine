@@ -1,5 +1,6 @@
 """Database models and connection management."""
 
+import hashlib
 from datetime import date, datetime
 from decimal import Decimal
 from typing import Optional
@@ -540,6 +541,11 @@ class Payment(Base):
     )
 
 
+def _digest_session_token(token: str) -> str:
+    """SHA-256 hex of a session cookie. Fits the existing VARCHAR(64) column."""
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
 class Session(Base):
     """Database-backed user session for secure session management.
 
@@ -582,11 +588,11 @@ class Session(Base):
         """Create a new session."""
         import secrets
 
-        token = secrets.token_urlsafe(48)  # 64 chars base64
+        plain = secrets.token_urlsafe(48)
         csrf_token = secrets.token_urlsafe(48)
 
         db_session = cls(
-            token=token,
+            token=_digest_session_token(plain),
             user_id=user_id,
             expires_at=expires_at,
             csrf_token=csrf_token,
@@ -596,24 +602,41 @@ class Session(Base):
         session.add(db_session)
         await session.commit()
         await session.refresh(db_session)
+        # Cookie still carries the plaintext; only the digest is stored.
+        db_session.cookie_token = plain
         return db_session
 
     @classmethod
     async def get_by_token(cls, session: "AsyncSession", token: str) -> Optional["Session"]:
-        """Get session by token if valid and not expired."""
+        """Get session by cookie token if valid and not expired."""
         from sqlalchemy import select
 
+        digest = _digest_session_token(token)
+        result = await session.execute(
+            select(cls).where(cls.token == digest, cls.expires_at > utc_now())
+        )
+        row = result.scalar_one_or_none()
+        if row is not None:
+            return row
+
+        # Leftover plaintext row from before tokens were hashed.
         result = await session.execute(
             select(cls).where(cls.token == token, cls.expires_at > utc_now())
         )
-        return result.scalar_one_or_none()
+        row = result.scalar_one_or_none()
+        if row is None:
+            return None
+        row.token = digest
+        await session.commit()
+        return row
 
     @classmethod
     async def delete_by_token(cls, session: "AsyncSession", token: str) -> bool:
-        """Delete a session by token."""
+        """Delete a session by cookie token (digest or leftover plaintext)."""
         from sqlalchemy import delete
 
-        result = await session.execute(delete(cls).where(cls.token == token))
+        digest = _digest_session_token(token)
+        result = await session.execute(delete(cls).where(cls.token.in_((digest, token))))
         await session.commit()
         return result.rowcount > 0
 
@@ -642,8 +665,12 @@ class Session(Base):
         """Delete every session for a user except the one that just authenticated."""
         from sqlalchemy import delete
 
+        digest = _digest_session_token(keep_token)
         result = await session.execute(
-            delete(cls).where(cls.user_id == user_id, cls.token != keep_token)
+            delete(cls).where(
+                cls.user_id == user_id,
+                cls.token.notin_((digest, keep_token)),
+            )
         )
         await session.commit()
         return result.rowcount

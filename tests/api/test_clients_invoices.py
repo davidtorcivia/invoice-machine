@@ -343,7 +343,7 @@ class TestInvoiceEndpoints:
         # Add item
         response = await test_client.post(
             f"/api/invoices/{invoice_id}/items",
-            params={
+            json={
                 "description": "New Service",
                 "quantity": 1,
                 "unit_price": "150.00",
@@ -363,7 +363,7 @@ class TestInvoiceEndpoints:
 
         response = await test_client.post(
             f"/api/invoices/{invoice_id}/items",
-            params={
+            json={
                 "description": "Consulting",
                 "quantity": 2,
                 "unit_type": "hours",
