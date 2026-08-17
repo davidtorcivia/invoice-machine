@@ -423,6 +423,12 @@ class TestClientIp:
         finally:
             get_settings.cache_clear()
 
+    def test_docker_entrypoint_gates_uvicorn_proxy_headers(self):
+        text = Path("docker-entrypoint.sh").read_text()
+        assert "TRUST_PROXY_HEADERS" in text
+        assert "--no-proxy-headers" in text
+        assert "--forwarded-allow-ips" in text
+
 
 class TestSpaContentSecurityPolicy:
     """The SPA must boot under a strict CSP, on any deployment.

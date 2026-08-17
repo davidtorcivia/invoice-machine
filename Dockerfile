@@ -72,8 +72,6 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=20s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"
 
 ENTRYPOINT ["docker-entrypoint.sh"]
-# --proxy-headers/--forwarded-allow-ips so the app sees the real scheme/IP
-# behind the reverse proxy (Cloudflare). Single worker: SQLite + the background
-# scheduler assume one process.
-CMD ["uvicorn", "invoice_machine.main:app", "--host", "0.0.0.0", "--port", "8080", \
-     "--proxy-headers", "--forwarded-allow-ips", "*"]
+# Proxy-header flags are added by the entrypoint when TRUST_PROXY_HEADERS is
+# on. Single worker: SQLite + the background scheduler assume one process.
+CMD ["uvicorn", "invoice_machine.main:app", "--host", "0.0.0.0", "--port", "8080"]

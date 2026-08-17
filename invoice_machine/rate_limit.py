@@ -14,6 +14,8 @@ def get_client_ip(request) -> str:
     Proxy headers are only read when ``trust_proxy_headers`` is on. Cloudflare
     overwrites ``CF-Connecting-IP``; the first ``X-Forwarded-For`` hop is the
     fallback. Direct exposure must not let a client pick its own rate-limit key.
+    The Docker entrypoint also passes ``--no-proxy-headers`` unless that flag
+    is on, so uvicorn cannot rewrite ``request.client`` from XFF either.
     """
     from invoice_machine.config import get_settings
 
