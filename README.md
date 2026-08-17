@@ -2,7 +2,7 @@
 
 Self-hosted invoicing for freelancers and small businesses. Write invoices and quotes, track what you are owed, get paid, and let an AI assistant do the typing.
 
-Everything runs on a single SQLite file and a single container. No accounts, no subscription, no third-party calls at runtime.
+Everything runs on a single SQLite file and a single container. No SaaS account, no subscription. SMTP, Stripe, and S3 stay optional and only talk to hosts you configure.
 
 ## Features
 

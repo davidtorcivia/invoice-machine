@@ -400,6 +400,11 @@ class Invoice(Base):
         Index("idx_invoices_status_deleted", "status", "deleted_at"),
         Index("idx_invoices_client_status", "client_id", "status"),
         Index("idx_invoices_date_status", "issue_date", "status"),
+        Index(
+            "uq_invoices_converted_from",
+            "converted_from_invoice_id",
+            unique=True,
+        ),
         Index("idx_invoices_client_deleted", "client_id", "deleted_at"),
         # Reminder sweep and A/R aging both scan open invoices by due date.
         Index("idx_invoices_due_status_deleted", "due_date", "status", "deleted_at"),

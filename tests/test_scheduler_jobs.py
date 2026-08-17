@@ -43,6 +43,11 @@ def test_seconds_until_hour_is_within_a_day():
     assert 0 < secs <= 86400
 
 
+def test_seconds_until_next_hour_is_at_most_one_hour():
+    secs = app_runtime._seconds_until_next_hour()
+    assert 1 <= secs <= 3600
+
+
 @pytest.mark.asyncio
 async def test_overdue_job_marks_past_due_sent_invoices(scheduler_db):
     from invoice_machine.database import Client

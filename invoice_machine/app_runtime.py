@@ -37,10 +37,17 @@ async def _wait_out_restore(app: FastAPI) -> None:
         await asyncio.sleep(_RESTORE_WAIT_SECONDS)
 
 
+def _seconds_until_next_hour() -> float:
+    """Seconds until the next UTC hour boundary (minimum 1s)."""
+    now = utc_now()
+    target = now.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
+    return max(1.0, (target - now).total_seconds())
+
+
 async def _run_hourly_task(app: FastAPI, name: str, job) -> None:
-    """Run a task once per hour. A failure is logged but never kills the loop."""
+    """Run a task at each UTC hour. A failure is logged but never kills the loop."""
     while True:
-        await asyncio.sleep(3600)
+        await asyncio.sleep(_seconds_until_next_hour())
         await _wait_out_restore(app)
         try:
             await job()
@@ -222,6 +229,7 @@ async def lifespan(app: FastAPI):
     for name, job in (
         ("Overdue check", _overdue_check_job),
         ("Recurring invoices", _recurring_invoice_job),
+        ("Payment reminders", _payment_reminder_job),
     ):
         try:
             await job()

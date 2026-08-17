@@ -45,6 +45,16 @@ Notable changes to Invoice Machine. Format based on
 - Production now refuses to start without `INVOICE_MACHINE_ENCRYPTION_KEY`, and
   hides `/docs` / OpenAPI.
 - A failed `/auth/status` no longer dumps a first-run user onto the login page.
+- S3 backup endpoints resolving to loopback or link-local addresses are refused,
+  matching the SMTP SSRF guard.
+- Quote-to-invoice conversion and recurring generation now commit the new
+  invoice and the schedule/quote link in one transaction. A quote can convert
+  only once (`uq_invoices_converted_from`).
+- Reminder sweeps align to the UTC hour boundary and run once at startup, so a
+  restart no longer skips the send hour.
+- Purging trash no longer 500s when a recurring schedule still pointed at a
+  deleted invoice.
+- Removed the drifted `designdoc.md`. README is the source of truth.
 
 ## [0.2.0]
 

@@ -12,7 +12,7 @@ from invoice_machine.services import (
     BackupService,
     InvoiceService,
 )
-from invoice_machine.utils import confined_file
+from invoice_machine.utils import confined_file, refuse_disallowed_host, refuse_disallowed_url
 
 
 class TestPathTraversalProtection:
@@ -89,6 +89,21 @@ class TestConfinedFile:
         target.write_bytes(b"x")
         (logos / "link.png").symlink_to(target)
         assert confined_file(logos, "link.png") is None
+
+
+class TestOutboundHostGuard:
+    def test_refuses_loopback_and_metadata(self):
+        for bad in ("127.0.0.1", "169.254.169.254", "0.0.0.0"):
+            with pytest.raises(ValueError, match="disallowed"):
+                refuse_disallowed_host(bad, 443)
+
+    def test_refuses_loopback_s3_url(self):
+        with pytest.raises(ValueError, match="disallowed"):
+            refuse_disallowed_url("http://127.0.0.1:9000", kind="S3 endpoint")
+
+    def test_refuses_non_http_scheme(self):
+        with pytest.raises(ValueError, match="http or https"):
+            refuse_disallowed_url("ftp://files.example.com")
 
 
 class TestApiKeyHashWidth:

@@ -1,9 +1,7 @@
 """Email service for sending invoices via SMTP."""
 
-import ipaddress
 import re
 import smtplib
-import socket
 import ssl
 from email import encoders
 from email.mime.base import MIMEBase
@@ -18,7 +16,7 @@ from invoice_machine.config import get_settings
 from invoice_machine.crypto import UnencryptedCredentialError, decrypt_credential
 from invoice_machine.database import BusinessProfile, Invoice
 from invoice_machine.services import format_currency
-from invoice_machine.utils import confined_file, sanitize_filename_component
+from invoice_machine.utils import confined_file, refuse_disallowed_host, sanitize_filename_component
 
 settings = get_settings()
 
@@ -28,38 +26,7 @@ EMAIL_REGEX = re.compile(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$")
 
 
 def _validate_smtp_target(host: str, port: int) -> None:
-    """Guard against SSRF: refuse SMTP hosts that resolve to loopback,
-    link-local (incl. the cloud metadata IP 169.254.169.254), multicast,
-    reserved, or unspecified addresses.
-
-    Private LAN ranges (RFC1918) are intentionally allowed so self-hosters can
-    relay through a mail server on their own network. DNS resolution happens on
-    the caller's worker thread (not the event loop).
-    """
-    if not host:
-        raise ValueError("SMTP host is not configured.")
-    try:
-        infos = socket.getaddrinfo(host, port, proto=socket.IPPROTO_TCP)
-    except socket.gaierror as exc:
-        raise ValueError(f"SMTP host '{host}' could not be resolved") from exc
-
-    for info in infos:
-        addr = info[4][0]
-        try:
-            ip = ipaddress.ip_address(addr)
-        except ValueError:
-            continue
-        if (
-            ip.is_loopback
-            or ip.is_link_local
-            or ip.is_multicast
-            or ip.is_reserved
-            or ip.is_unspecified
-        ):
-            raise ValueError(
-                "SMTP host resolves to a disallowed address "
-                "(loopback/link-local/metadata). Use a routable mail server."
-            )
+    refuse_disallowed_host(host, port, kind="SMTP host")
 
 
 def _sanitize_email(email: str) -> str:

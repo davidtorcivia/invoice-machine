@@ -18,7 +18,7 @@ from invoice_machine.database import BusinessProfile, close_db, get_session, ini
 from invoice_machine.rate_limit import limiter
 from invoice_machine.runtime_schema import ensure_database_schema
 from invoice_machine.services import BackupService
-from invoice_machine.utils import utc_now
+from invoice_machine.utils import refuse_disallowed_url, utc_now
 
 logger = logging.getLogger(__name__)
 
@@ -452,9 +452,13 @@ async def test_s3_connection(
         import boto3
         from botocore.config import Config
 
+        endpoint = s3_config.get("endpoint_url")
+        if endpoint:
+            refuse_disallowed_url(endpoint, kind="S3 endpoint")
+
         s3_client = boto3.client(
             "s3",
-            endpoint_url=s3_config.get("endpoint_url"),
+            endpoint_url=endpoint,
             aws_access_key_id=s3_config.get("access_key_id"),
             aws_secret_access_key=s3_config.get("secret_access_key"),
             region_name=s3_config.get("region", "auto"),
@@ -470,6 +474,8 @@ async def test_s3_connection(
         raise HTTPException(
             status_code=500, detail="boto3 is not installed. Run: pip install boto3"
         )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as e:
         logger.error(f"S3 connection failed: {e}", exc_info=True)
         # Don't expose detailed S3 error messages which may contain bucket names, regions, etc.

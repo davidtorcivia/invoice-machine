@@ -373,6 +373,7 @@ class RecurringService:
             tax_name=schedule.tax_name,
             show_payment_instructions=bool(schedule.show_payment_instructions),
             selected_payment_methods=schedule.selected_payment_methods,
+            commit=False,
         )
 
     @staticmethod
@@ -414,9 +415,12 @@ class RecurringService:
         """
         today = utc_now().date()
         result = await session.execute(
-            select(RecurringSchedule).where(
+            select(RecurringSchedule)
+            .join(Client, RecurringSchedule.client_id == Client.id)
+            .where(
                 RecurringSchedule.is_active == 1,
                 RecurringSchedule.next_invoice_date <= today,
+                Client.deleted_at.is_(None),
             )
         )
         due_schedules = list(result.scalars().all())

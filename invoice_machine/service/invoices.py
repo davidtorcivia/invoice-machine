@@ -182,6 +182,8 @@ class InvoiceService:
         tax_name: str | None = None,
         exchange_rate: Decimal | None = None,
         converted_from_invoice_id: int | None = None,
+        *,
+        commit: bool = True,
     ) -> Invoice:
         """Create a new invoice or quote, including optional line items."""
         business = await BusinessProfile.get_or_create(session)
@@ -279,10 +281,15 @@ class InvoiceService:
                     )
                     await session.flush()
                 await recalculate_invoice_totals(session, invoice)
-                await session.commit()
+                if commit:
+                    await session.commit()
+                else:
+                    await session.flush()
             except IntegrityError as exc:
                 await session.rollback()
                 last_error = exc
+                if converted_from_invoice_id is not None:
+                    raise ValueError("Quote was already converted") from exc
                 if override:
                     raise ValueError(f"Invoice number '{override_number}' already exists") from exc
                 # Re-resolve objects expired by the rollback before retrying.
@@ -482,6 +489,7 @@ class InvoiceService:
             tax_name=quote.tax_name,
             exchange_rate=quote.exchange_rate,
             converted_from_invoice_id=quote.id,
+            commit=False,
         )
 
         quote.converted_to_invoice_id = invoice.id
