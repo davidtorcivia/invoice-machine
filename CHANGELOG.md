@@ -56,7 +56,8 @@ Notable changes to Invoice Machine. Format based on
   deleted invoice.
 - Removed the drifted `designdoc.md`. README is the source of truth.
 - Session cookies are stored as SHA-256 digests. Leftover plaintext rows are
-  upgraded on the next request.
+  upgraded on the next request. A stored digest presented as the cookie is
+  rejected.
 - Add-item is a JSON body, not query parameters.
 - Overdue and recurring "today" use the business timezone.
 - Unused frontend data stores and the no-op `hooks.server.js` are gone.

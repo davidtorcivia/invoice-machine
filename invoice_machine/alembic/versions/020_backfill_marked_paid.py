@@ -45,10 +45,10 @@ def upgrade() -> None:
             sa.text(
                 """
                 INSERT INTO payments
-                    (invoice_id, amount, currency_code, payment_date, notes,
+                    (invoice_id, amount, currency_code, payment_date, method, notes,
                      created_at, updated_at)
                 VALUES
-                    (:invoice_id, :amount, :currency_code, :payment_date, :notes,
+                    (:invoice_id, :amount, :currency_code, :payment_date, :method, :notes,
                      CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
                 """
             ),
@@ -57,6 +57,7 @@ def upgrade() -> None:
                 "amount": row.total,
                 "currency_code": row.currency_code or "USD",
                 "payment_date": payment_date,
+                "method": "system_mark_paid",
                 "notes": BACKFILL_NOTE,
             },
         )
@@ -76,7 +77,10 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     conn = op.get_bind()
-    conn.execute(sa.text("DELETE FROM payments WHERE notes = :notes"), {"notes": BACKFILL_NOTE})
+    conn.execute(
+        sa.text("DELETE FROM payments WHERE method = :method"),
+        {"method": "system_mark_paid"},
+    )
     conn.execute(
         sa.text(
             """

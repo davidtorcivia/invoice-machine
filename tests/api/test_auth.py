@@ -101,6 +101,21 @@ async def test_login_stores_a_hashed_session_token(unauth_client):
 
 
 @pytest.mark.asyncio
+async def test_stored_digest_is_not_accepted_as_a_cookie(unauth_client):
+    from invoice_machine.database import Session as DbSession
+    from invoice_machine.database import async_session_maker
+
+    await _setup(unauth_client)
+    async with async_session_maker() as session:
+        digest = (await session.execute(select(DbSession))).scalar_one().token
+
+    unauth_client.cookies.clear()
+    unauth_client.cookies.set(SESSION_COOKIE_NAME, digest)
+    status = await unauth_client.get("/api/auth/status")
+    assert status.json()["authenticated"] is False
+
+
+@pytest.mark.asyncio
 async def test_plaintext_session_token_is_upgraded(unauth_client):
     from invoice_machine.database import Session as DbSession
     from invoice_machine.database import async_session_maker

@@ -69,7 +69,10 @@ async def recalculate_invoice_payments(session: AsyncSession, invoice: Invoice) 
         elif not fully_paid and invoice.status == "paid":
             # Reverted (payment deleted or invoice total raised): fall back to
             # overdue when past due, otherwise sent.
-            today = utc_now().date()
+            from invoice_machine.database import BusinessProfile
+            from invoice_machine.service.reminders import business_now
+
+            today = business_now(await BusinessProfile.get(session)).date()
             invoice.status = "overdue" if invoice.due_date and invoice.due_date < today else "sent"
             invoice.paid_at = None
 

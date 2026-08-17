@@ -434,7 +434,7 @@ async def change_password(
     if password_error:
         raise HTTPException(status_code=400, detail=password_error)
 
-    if secrets.compare_digest(data.current_password, data.new_password):
+    if data.current_password == data.new_password:
         raise HTTPException(
             status_code=400, detail="New password must be different from the current password"
         )

@@ -452,8 +452,8 @@ class RecurringService:
                         schedule.quarter_month,
                     )
                     schedule.updated_at = utc_now()
-                    # Persist the advance alongside the (already-committed) invoice
-                    # so this period is never regenerated on a later run.
+                    # Invoice and schedule advance commit together so a crash
+                    # cannot regenerate this period.
                     await session.commit()
                     generated += 1
 

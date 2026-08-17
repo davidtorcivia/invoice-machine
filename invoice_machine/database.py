@@ -546,6 +546,11 @@ def _digest_session_token(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
+def _looks_like_session_digest(token: str) -> bool:
+    """True for a stored digest. token_urlsafe cookies use base64 and almost never match."""
+    return len(token) == 64 and all(c in "0123456789abcdef" for c in token)
+
+
 class Session(Base):
     """Database-backed user session for secure session management.
 
@@ -620,6 +625,10 @@ class Session(Base):
             return row
 
         # Leftover plaintext row from before tokens were hashed.
+        # Skip when the cookie is already 64 hex: that is a stolen digest,
+        # not a pre-hash cookie (token_urlsafe uses base64).
+        if _looks_like_session_digest(token):
+            return None
         result = await session.execute(
             select(cls).where(cls.token == token, cls.expires_at > utc_now())
         )

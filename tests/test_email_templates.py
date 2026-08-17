@@ -329,7 +329,7 @@ async def api_client():
     # Create session token with CSRF
     async with invoice_machine.database.async_session_maker() as session:
         user_session = await create_session(session, user_id=1)
-        session_token = user_session.token
+        session_token = user_session.cookie_token
         csrf_token = user_session.csrf_token
 
     # Create client with session cookie

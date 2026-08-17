@@ -23,6 +23,7 @@ from invoice_machine.service.payments import recalculate_invoice_payments
 from invoice_machine.utils import normalize_invoice_number_override, utc_now
 
 _MARKED_PAID_NOTE = "Marked paid"
+_MARKED_PAID_METHOD = "system_mark_paid"
 
 
 async def _sync_invoice_money(session: AsyncSession, invoice: Invoice) -> None:
@@ -39,7 +40,7 @@ async def _drop_marked_paid_placeholder(session: AsyncSession, invoice: Invoice)
     await session.execute(
         delete(Payment).where(
             Payment.invoice_id == invoice.id,
-            Payment.notes == _MARKED_PAID_NOTE,
+            Payment.method == _MARKED_PAID_METHOD,
         )
     )
     await session.flush()
@@ -299,7 +300,8 @@ class InvoiceService:
             except IntegrityError as exc:
                 await session.rollback()
                 last_error = exc
-                if converted_from_invoice_id is not None:
+                constraint = str(getattr(exc, "orig", exc))
+                if converted_from_invoice_id is not None and "converted_from" in constraint:
                     raise ValueError("Quote was already converted") from exc
                 if override:
                     raise ValueError(f"Invoice number '{override_number}' already exists") from exc
@@ -401,7 +403,7 @@ class InvoiceService:
                             amount=remaining,
                             currency_code=invoice.currency_code,
                             payment_date=utc_now().date(),
-                            method="other",
+                            method=_MARKED_PAID_METHOD,
                             notes=_MARKED_PAID_NOTE,
                         )
                     )
@@ -749,7 +751,7 @@ class InvoiceService:
                                 amount=remaining,
                                 currency_code=invoice.currency_code,
                                 payment_date=now.date(),
-                                method="other",
+                                method=_MARKED_PAID_METHOD,
                                 notes=_MARKED_PAID_NOTE,
                             )
                         )

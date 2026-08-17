@@ -240,6 +240,7 @@ class TestPartialPayments:
         assert len(payments) == 1
         assert payments[0].amount == Decimal("250.00")
         assert payments[0].notes == "Marked paid"
+        assert payments[0].method == "system_mark_paid"
 
         reverted = await InvoiceService.update_invoice(db_session, invoice.id, status="sent")
         assert reverted.status == "sent"
