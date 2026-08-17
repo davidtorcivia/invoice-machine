@@ -14,13 +14,19 @@ from invoice_machine.services import (
 from invoice_machine.utils import utc_now
 
 
-def _fixed_utc_now(year, month, day):
+def _fixed_utc_now(year, month, day, hour=12):
     """Build a patch target for utc_now() that returns a fixed UTC datetime."""
 
     def _now():
-        return datetime(year, month, day, 12, 0, tzinfo=UTC)
+        return datetime(year, month, day, hour, 0, tzinfo=UTC)
 
     return _now
+
+
+def _freeze_recurring_clock(monkeypatch, year, month, day, hour=12):
+    frozen = _fixed_utc_now(year, month, day, hour)
+    monkeypatch.setattr("invoice_machine.service.recurring.utc_now", frozen)
+    monkeypatch.setattr("invoice_machine.service.reminders.utc_now", frozen)
 
 
 class TestTaxCascade:
@@ -157,9 +163,7 @@ class TestRecurringInvoices:
 
         # Day 31 hasn't passed yet in July (31 days), so the first invoice is this
         # month — the current period is not skipped.
-        monkeypatch.setattr(
-            "invoice_machine.service.recurring.utc_now", _fixed_utc_now(2025, 7, 10)
-        )
+        _freeze_recurring_clock(monkeypatch, 2025, 7, 10)
 
         schedule = await RecurringService.create_schedule(
             db_session,
@@ -243,9 +247,7 @@ class TestRecurringInvoices:
     ):
         """Changing schedule cadence recalculates the stored next invoice date."""
 
-        monkeypatch.setattr(
-            "invoice_machine.service.recurring.utc_now", _fixed_utc_now(2025, 1, 10)
-        )
+        _freeze_recurring_clock(monkeypatch, 2025, 1, 10)
 
         schedule = await RecurringService.create_schedule(
             db_session,
@@ -605,9 +607,7 @@ class TestRecurringScheduleFields:
         are always present. Keying the recalculation off mere presence silently
         skipped or duplicated a billing period on every unrelated edit.
         """
-        monkeypatch.setattr(
-            "invoice_machine.service.recurring.utc_now", _fixed_utc_now(2025, 3, 10)
-        )
+        _freeze_recurring_clock(monkeypatch, 2025, 3, 10)
         schedule = await RecurringService.create_schedule(
             db_session,
             client_id=test_client.id,

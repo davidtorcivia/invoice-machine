@@ -120,3 +120,47 @@ async def test_recurring_catches_up_missed_periods(db_session, test_client, monk
     # Running again generates nothing new (idempotent once caught up).
     again = await RecurringService.process_due_schedules(db_session)
     assert [r for r in again if r.get("success")] == []
+
+
+@pytest.mark.asyncio
+async def test_trigger_consumes_business_due_date_so_sweep_cannot_double_bill(
+    db_session, business_profile, test_client, monkeypatch
+):
+    """Generate-now on the local due morning must advance the schedule.
+
+    2026-08-17 23:00 UTC is 2026-08-18 08:00 in Asia/Tokyo. If trigger still
+    used UTC today, it would date the invoice 2026-08-17 and leave next_invoice_date
+    at 2026-08-18, so the next sweep would bill again.
+    """
+    frozen = datetime(2026, 8, 17, 23, 0, tzinfo=UTC)
+
+    def _now():
+        return frozen
+
+    monkeypatch.setattr("invoice_machine.service.recurring.utc_now", _now)
+    monkeypatch.setattr("invoice_machine.service.reminders.utc_now", _now)
+
+    business_profile.business_timezone = "Asia/Tokyo"
+    await db_session.commit()
+
+    schedule = await RecurringService.create_schedule(
+        db_session,
+        client_id=test_client.id,
+        name="Tokyo retainer",
+        frequency="monthly",
+        schedule_day=18,
+        next_invoice_date=date(2026, 8, 18),
+        line_items=[{"description": "Retainer", "quantity": 1, "unit_price": "100"}],
+    )
+
+    result = await RecurringService.trigger_schedule(db_session, schedule.id)
+    assert result["success"] is True
+
+    invoice = await InvoiceService.get_invoice(db_session, result["invoice_id"])
+    assert invoice.issue_date == date(2026, 8, 18)
+
+    await db_session.refresh(schedule)
+    assert schedule.next_invoice_date == date(2026, 9, 18)
+
+    again = await RecurringService.process_due_schedules(db_session)
+    assert [r for r in again if r.get("success")] == []
