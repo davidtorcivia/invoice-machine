@@ -4,10 +4,16 @@ import re
 from datetime import date, datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 
-from sqlalchemy import and_, delete, func, select
+from sqlalchemy import and_, delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from invoice_machine.database import BusinessProfile, Client, Invoice, InvoiceItem
+from invoice_machine.database import (
+    BusinessProfile,
+    Client,
+    Invoice,
+    InvoiceItem,
+    RecurringSchedule,
+)
 
 # Matches auto-generated numbers like "20260115-1" or "Q-20260115-3".
 _AUTO_INVOICE_NUMBER_RE = re.compile(r"^(Q-)?\d{8}-\d+$")
@@ -322,13 +328,10 @@ def delete_invoice_pdf_files(pdf_paths: list[str]) -> int:
     import os
 
     from invoice_machine.config import get_settings
+    from invoice_machine.utils import confined_file
 
     logger = logging.getLogger(__name__)
     pdf_dir = get_settings().pdf_dir
-    try:
-        pdf_dir_resolved = pdf_dir.resolve()
-    except OSError:
-        return 0
 
     removed = 0
     for stored_path in pdf_paths:
@@ -336,12 +339,10 @@ def delete_invoice_pdf_files(pdf_paths: list[str]) -> int:
             continue
         # Stored as "pdfs/<name>.pdf"; only ever touch that one directory.
         name = os.path.basename(stored_path)
-        if not name or name in (".", ".."):
+        candidate = confined_file(pdf_dir, name)
+        if candidate is None:
             continue
-        candidate = pdf_dir / name
         try:
-            if candidate.resolve().parent != pdf_dir_resolved:
-                continue
             if candidate.is_file():
                 candidate.unlink()
                 removed += 1
@@ -381,6 +382,11 @@ async def purge_trashed_records(
         (await session.execute(select(func.count(Invoice.id)).where(invoice_filter))).scalar() or 0
     )
     invoice_ids = select(Invoice.id).where(invoice_filter)
+    await session.execute(
+        update(RecurringSchedule)
+        .where(RecurringSchedule.last_invoice_id.in_(invoice_ids))
+        .values(last_invoice_id=None)
+    )
     await session.execute(delete(InvoiceItem).where(InvoiceItem.invoice_id.in_(invoice_ids)))
     await session.execute(delete(Invoice).where(invoice_filter))
 

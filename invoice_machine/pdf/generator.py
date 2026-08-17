@@ -14,7 +14,7 @@ from weasyprint import HTML
 
 from invoice_machine.config import get_settings
 from invoice_machine.database import BusinessProfile, Invoice, InvoiceItem
-from invoice_machine.utils import sanitize_filename_component, utc_now
+from invoice_machine.utils import confined_file, sanitize_filename_component, utc_now
 
 settings = get_settings()
 
@@ -136,25 +136,8 @@ def _read_logo_bytes(business: BusinessProfile) -> bytes | None:
     if not business.logo_path:
         return None
 
-    # Validate logo path to prevent path traversal
-    logo_path = business.logo_path
-
-    # Reject any path separators or parent directory references
-    if "/" in logo_path or "\\" in logo_path or ".." in logo_path:
-        return None
-
-    logo_file = settings.logo_dir / logo_path
-
-    # Verify resolved path is within logo_dir
-    try:
-        resolved = logo_file.resolve()
-        logo_dir_resolved = settings.logo_dir.resolve()
-        if not str(resolved).startswith(str(logo_dir_resolved)):
-            return None
-    except (OSError, ValueError):
-        return None
-
-    if not logo_file.exists():
+    logo_file = confined_file(settings.logo_dir, business.logo_path)
+    if logo_file is None or not logo_file.is_file():
         return None
 
     return logo_file.read_bytes()

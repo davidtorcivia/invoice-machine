@@ -42,7 +42,7 @@ async def test_client():
 
     async with invoice_machine.database.async_session_maker() as session:
         user_session = await create_session(session, user.id)
-        session_token = user_session.token
+        session_token = user_session.cookie_token
         csrf_token = user_session.csrf_token
 
     client = AsyncClient(transport=ASGITransport(app=app), base_url="http://test")

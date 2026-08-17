@@ -8,6 +8,7 @@ synthesized sessions directly and never covered these flows.
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy import select
 
 from invoice_machine.api.auth import CSRF_COOKIE_NAME, SESSION_COOKIE_NAME
 from invoice_machine.database import Base
@@ -79,6 +80,64 @@ async def test_setup_rejects_weak_password(unauth_client):
 
 
 @pytest.mark.asyncio
+async def test_login_stores_a_hashed_session_token(unauth_client):
+    from invoice_machine.database import Session as DbSession
+    from invoice_machine.database import async_session_maker
+
+    await _setup(unauth_client)
+    cookie = unauth_client.cookies.get(SESSION_COOKIE_NAME)
+    assert cookie
+
+    async with async_session_maker() as session:
+        rows = (await session.execute(select(DbSession))).scalars().all()
+        assert len(rows) == 1
+        stored = rows[0].token
+        assert stored != cookie
+        assert len(stored) == 64
+        assert all(c in "0123456789abcdef" for c in stored)
+
+    status = await unauth_client.get("/api/auth/status")
+    assert status.json()["authenticated"] is True
+
+
+@pytest.mark.asyncio
+async def test_stored_digest_is_not_accepted_as_a_cookie(unauth_client):
+    from invoice_machine.database import Session as DbSession
+    from invoice_machine.database import async_session_maker
+
+    await _setup(unauth_client)
+    async with async_session_maker() as session:
+        digest = (await session.execute(select(DbSession))).scalar_one().token
+
+    unauth_client.cookies.clear()
+    unauth_client.cookies.set(SESSION_COOKIE_NAME, digest)
+    status = await unauth_client.get("/api/auth/status")
+    assert status.json()["authenticated"] is False
+
+
+@pytest.mark.asyncio
+async def test_plaintext_session_token_is_upgraded(unauth_client):
+    from invoice_machine.database import Session as DbSession
+    from invoice_machine.database import async_session_maker
+
+    await _setup(unauth_client)
+    cookie = unauth_client.cookies.get(SESSION_COOKIE_NAME)
+
+    async with async_session_maker() as session:
+        row = (await session.execute(select(DbSession))).scalar_one()
+        row.token = cookie
+        await session.commit()
+
+    status = await unauth_client.get("/api/auth/status")
+    assert status.json()["authenticated"] is True
+
+    async with async_session_maker() as session:
+        stored = (await session.execute(select(DbSession))).scalar_one().token
+        assert stored != cookie
+        assert len(stored) == 64
+
+
+@pytest.mark.asyncio
 async def test_login_succeeds_with_correct_credentials(unauth_client):
     await _setup(unauth_client)
     unauth_client.cookies.clear()
@@ -136,6 +195,91 @@ async def test_unsafe_method_requires_csrf_token(unauth_client):
         "/api/clients", json={"name": "Acme"}, headers={"X-CSRF-Token": csrf}
     )
     assert ok.status_code in (200, 201)
+
+
+@pytest.mark.asyncio
+async def test_change_password_updates_hash_and_keeps_this_session(unauth_client):
+    await _setup(unauth_client)
+    csrf = unauth_client.cookies.get(CSRF_COOKIE_NAME)
+
+    response = await unauth_client.post(
+        "/api/auth/password",
+        json={"current_password": GOOD_PASSWORD, "new_password": "Newpass123"},
+        headers={"X-CSRF-Token": csrf},
+    )
+    assert response.status_code == 200
+
+    # Current session still works.
+    status = await unauth_client.get("/api/auth/status")
+    assert status.json()["authenticated"] is True
+
+    unauth_client.cookies.clear()
+    old = await unauth_client.post(
+        "/api/auth/login", json={"username": "admin", "password": GOOD_PASSWORD}
+    )
+    assert old.status_code == 401
+
+    new = await unauth_client.post(
+        "/api/auth/login", json={"username": "admin", "password": "Newpass123"}
+    )
+    assert new.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_change_password_rejects_wrong_current(unauth_client):
+    await _setup(unauth_client)
+    csrf = unauth_client.cookies.get(CSRF_COOKIE_NAME)
+
+    response = await unauth_client.post(
+        "/api/auth/password",
+        json={"current_password": "Wrong1234", "new_password": "Newpass123"},
+        headers={"X-CSRF-Token": csrf},
+    )
+    assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_change_password_requires_csrf(unauth_client):
+    await _setup(unauth_client)
+    response = await unauth_client.post(
+        "/api/auth/password",
+        json={"current_password": GOOD_PASSWORD, "new_password": "Newpass123"},
+    )
+    assert response.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_login_upgrades_legacy_sha256_hash(unauth_client):
+    from invoice_machine.api.auth import hash_password, verify_password
+    from invoice_machine.database import User, async_session_maker
+
+    await _setup(unauth_client)
+    unauth_client.cookies.clear()
+
+    # Plant a leftover SHA-256 hash the way pre-PBKDF2 accounts were stored.
+    import hashlib
+    import secrets
+
+    salt = secrets.token_hex(16)
+    legacy = f"{salt}${hashlib.sha256((salt + GOOD_PASSWORD).encode()).hexdigest()}"
+
+    async with async_session_maker() as session:
+        user = await User.get_by_username(session, "admin")
+        user.password_hash = legacy
+        await session.commit()
+
+    response = await unauth_client.post(
+        "/api/auth/login", json={"username": "admin", "password": GOOD_PASSWORD}
+    )
+    assert response.status_code == 200
+
+    async with async_session_maker() as session:
+        user = await User.get_by_username(session, "admin")
+        assert user.password_hash.count("$") == 2
+        assert verify_password(GOOD_PASSWORD, user.password_hash)
+        assert user.password_hash != legacy
+        # And the upgraded form is the current PBKDF2 hasher.
+        assert hash_password("x").count("$") == 2
 
 
 @pytest.mark.asyncio

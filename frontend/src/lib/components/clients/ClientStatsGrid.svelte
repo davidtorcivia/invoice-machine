@@ -14,10 +14,12 @@
   let totalBilled = $derived(scoped
     .filter((invoice) => ['sent', 'paid', 'overdue'].includes(invoice.status))
     .reduce((sum, invoice) => sum + parseFloat(invoice.total || 0), 0));
-  let totalPaid = $derived(scoped.filter((invoice) => invoice.status === 'paid').reduce((sum, invoice) => sum + parseFloat(invoice.total || 0), 0));
+  let totalPaid = $derived(scoped
+    .filter((invoice) => ['sent', 'paid', 'overdue'].includes(invoice.status))
+    .reduce((sum, invoice) => sum + parseFloat(invoice.amount_paid || 0), 0));
   let totalOutstanding = $derived(scoped
     .filter((invoice) => invoice.status === 'sent' || invoice.status === 'overdue')
-    .reduce((sum, invoice) => sum + parseFloat(invoice.total || 0), 0));
+    .reduce((sum, invoice) => sum + parseFloat(invoice.amount_due || 0), 0));
 </script>
 
 <div class="stats-row">

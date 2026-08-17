@@ -17,6 +17,7 @@ from invoice_machine.service.common import (
     normalize_line_items,
     validate_recurring_schedule,
 )
+from invoice_machine.service.reminders import business_now
 from invoice_machine.utils import utc_now
 
 logger = logging.getLogger(__name__)
@@ -24,6 +25,10 @@ logger = logging.getLogger(__name__)
 # Cap invoices generated for a single schedule in one catch-up run, so a long
 # outage (or a misconfigured far-past next_invoice_date) can't flood the system.
 _MAX_CATCHUP_PER_SCHEDULE = 366
+
+
+async def _business_today(session: AsyncSession) -> date:
+    return business_now(await BusinessProfile.get(session)).date()
 
 
 def _dump_payment_methods(value: list[str] | str | None) -> str | None:
@@ -76,7 +81,11 @@ class RecurringService:
 
         if next_invoice_date is None:
             next_invoice_date = RecurringService.initial_next_date(
-                utc_now().date(), frequency, schedule_day, schedule_month, quarter_month
+                await _business_today(session),
+                frequency,
+                schedule_day,
+                schedule_month,
+                quarter_month,
             )
 
         # Validate items now so a bad description/quantity/price is rejected at
@@ -229,7 +238,7 @@ class RecurringService:
         )
         if cadence_changed and "next_invoice_date" not in kwargs:
             kwargs["next_invoice_date"] = RecurringService.initial_next_date(
-                utc_now().date(),
+                await _business_today(session),
                 new_frequency,
                 new_schedule_day,
                 new_schedule_month,
@@ -373,6 +382,7 @@ class RecurringService:
             tax_name=schedule.tax_name,
             show_payment_instructions=bool(schedule.show_payment_instructions),
             selected_payment_methods=schedule.selected_payment_methods,
+            commit=False,
         )
 
     @staticmethod
@@ -412,11 +422,14 @@ class RecurringService:
         next_invoice_date is advanced and committed after each invoice, so a
         crash mid-run cannot regenerate already-billed periods.
         """
-        today = utc_now().date()
+        today = await _business_today(session)
         result = await session.execute(
-            select(RecurringSchedule).where(
+            select(RecurringSchedule)
+            .join(Client, RecurringSchedule.client_id == Client.id)
+            .where(
                 RecurringSchedule.is_active == 1,
                 RecurringSchedule.next_invoice_date <= today,
+                Client.deleted_at.is_(None),
             )
         )
         due_schedules = list(result.scalars().all())
@@ -445,8 +458,8 @@ class RecurringService:
                         schedule.quarter_month,
                     )
                     schedule.updated_at = utc_now()
-                    # Persist the advance alongside the (already-committed) invoice
-                    # so this period is never regenerated on a later run.
+                    # Invoice and schedule advance commit together so a crash
+                    # cannot regenerate this period.
                     await session.commit()
                     generated += 1
 
@@ -503,7 +516,7 @@ class RecurringService:
         if not schedule:
             return {"success": False, "error": "Schedule not found"}
 
-        today = utc_now().date()
+        today = await _business_today(session)
         try:
             invoice = await RecurringService._create_invoice_from_schedule(session, schedule, today)
 

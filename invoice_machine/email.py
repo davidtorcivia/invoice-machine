@@ -1,9 +1,7 @@
 """Email service for sending invoices via SMTP."""
 
-import ipaddress
 import re
 import smtplib
-import socket
 import ssl
 from email import encoders
 from email.mime.base import MIMEBase
@@ -15,10 +13,10 @@ from pathlib import Path
 from starlette.concurrency import run_in_threadpool
 
 from invoice_machine.config import get_settings
-from invoice_machine.crypto import decrypt_credential
+from invoice_machine.crypto import UnencryptedCredentialError, decrypt_credential
 from invoice_machine.database import BusinessProfile, Invoice
 from invoice_machine.services import format_currency
-from invoice_machine.utils import sanitize_filename_component
+from invoice_machine.utils import confined_file, refuse_disallowed_host, sanitize_filename_component
 
 settings = get_settings()
 
@@ -28,38 +26,7 @@ EMAIL_REGEX = re.compile(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$")
 
 
 def _validate_smtp_target(host: str, port: int) -> None:
-    """Guard against SSRF: refuse SMTP hosts that resolve to loopback,
-    link-local (incl. the cloud metadata IP 169.254.169.254), multicast,
-    reserved, or unspecified addresses.
-
-    Private LAN ranges (RFC1918) are intentionally allowed so self-hosters can
-    relay through a mail server on their own network. DNS resolution happens on
-    the caller's worker thread (not the event loop).
-    """
-    if not host:
-        raise ValueError("SMTP host is not configured.")
-    try:
-        infos = socket.getaddrinfo(host, port, proto=socket.IPPROTO_TCP)
-    except socket.gaierror as exc:
-        raise ValueError(f"SMTP host '{host}' could not be resolved") from exc
-
-    for info in infos:
-        addr = info[4][0]
-        try:
-            ip = ipaddress.ip_address(addr)
-        except ValueError:
-            continue
-        if (
-            ip.is_loopback
-            or ip.is_link_local
-            or ip.is_multicast
-            or ip.is_reserved
-            or ip.is_unspecified
-        ):
-            raise ValueError(
-                "SMTP host resolves to a disallowed address "
-                "(loopback/link-local/metadata). Use a routable mail server."
-            )
+    refuse_disallowed_host(host, port, kind="SMTP host")
 
 
 def _sanitize_email(email: str) -> str:
@@ -238,14 +205,17 @@ class EmailService:
         self.profile = profile
 
     def _get_smtp_password(self) -> str | None:
-        """Get decrypted SMTP password."""
+        """Decrypt the stored SMTP password, or None if none is set."""
         if not self.profile.smtp_password:
             return None
         try:
             return decrypt_credential(self.profile.smtp_password)
-        except ValueError:
-            # If decryption fails, try using as-is (for legacy unencrypted values)
-            return self.profile.smtp_password
+        except UnencryptedCredentialError:
+            raise
+        except ValueError as exc:
+            raise ValueError(
+                "Stored SMTP password could not be decrypted. Re-save it in settings."
+            ) from exc
 
     def _validate_config(self) -> None:
         """Validate SMTP configuration is complete."""
@@ -328,10 +298,11 @@ class EmailService:
                     server.login(self.profile.smtp_username, smtp_password)
                 server.send_message(msg)
         else:
-            # STARTTLS connection (port 587 or other)
+            # STARTTLS (port 587 or other). Pass a verifying context: the
+            # smtplib default is CERT_NONE, which accepts any certificate.
             with smtplib.SMTP(self.profile.smtp_host, port) as server:
                 if use_tls:
-                    server.starttls()
+                    server.starttls(context=ssl.create_default_context())
                 if self.profile.smtp_username and smtp_password:
                     server.login(self.profile.smtp_username, smtp_password)
                 server.send_message(msg)
@@ -386,11 +357,11 @@ class EmailService:
                 "error": "Invoice PDF not generated. Generate PDF first.",
             }
 
-        pdf_path = settings.data_dir / invoice.pdf_path
-        if not pdf_path.exists():
+        pdf_path = confined_file(settings.pdf_dir, Path(invoice.pdf_path).name)
+        if pdf_path is None or not pdf_path.is_file():
             return {
                 "success": False,
-                "error": f"Invoice PDF not found at {invoice.pdf_path}",
+                "error": "Invoice PDF not found.",
             }
 
         # Send email in thread pool
@@ -446,7 +417,7 @@ class EmailService:
                 else:
                     with smtplib.SMTP(self.profile.smtp_host, port) as server:
                         if use_tls:
-                            server.starttls()
+                            server.starttls(context=ssl.create_default_context())
                         if self.profile.smtp_username and smtp_password:
                             server.login(self.profile.smtp_username, smtp_password)
 

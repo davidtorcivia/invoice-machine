@@ -1,6 +1,7 @@
 export const DEFAULT_SETTINGS_SECTIONS = {
   logo: true,
   business: true,
+  account: false,
   address: false,
   invoiceDefaults: false,
   taxSettings: false,

@@ -29,7 +29,7 @@ own reverse proxy. That shapes the model:
 
 | Area | Measure |
 |------|---------|
-| Passwords | PBKDF2-HMAC-SHA256, 600,000 iterations, per-user salt |
+| Passwords | PBKDF2-HMAC-SHA256, 600,000 iterations, per-user salt. Change password revokes every other session. |
 | Sessions | Database-backed, 30-day expiry, revocable, `HttpOnly` cookies |
 | CSRF | Double-submit cookie, required on every unsafe method |
 | Stored credentials | SMTP, Stripe, and S3 secrets encrypted with Fernet; plaintext refused in production |
@@ -38,7 +38,7 @@ own reverse proxy. That shapes the model:
 | Brute force | Rate limits on every endpoint; a sliding-window throttle on bearer and MCP auth |
 | File paths | PDF, logo, and backup access is confined to its directory and re-validated after resolution |
 | Uploads | Image type determined by magic bytes, never the supplied filename; SVG rejected |
-| Outbound requests | SMTP hosts resolving to loopback, link-local, or metadata addresses are refused |
+| Outbound requests | SMTP hosts and S3 endpoints resolving to loopback, link-local, or metadata addresses are refused |
 | PDF rendering | WeasyPrint is restricted to inline `data:` URIs, so injected CSS cannot read local files or reach internal services |
 | Headers | CSP, `X-Frame-Options: DENY`, `nosniff`, `Referrer-Policy`, `Permissions-Policy` |
 
@@ -56,9 +56,9 @@ scoped to Checkout Sessions over a full secret key.
 
 These are accepted for the threat model above, and worth knowing:
 
-- `X-Forwarded-For` is trusted when `CF-Connecting-IP` is absent, so rate-limit
-  keys can be spoofed if the app is exposed without a proxy that overwrites it.
-- Backups contain the database only. Uploaded logos are not included.
-- The SMTP SSRF guard resolves DNS before connecting, so a rebinding attack
-  between the two is theoretically possible.
+- `X-Forwarded-For` and `CF-Connecting-IP` are trusted when present, so
+  rate-limit keys can be spoofed if the app is exposed without a proxy that
+  overwrites them.
+- The outbound-host guard resolves DNS before connecting, so a rebinding
+  attack between the two is theoretically possible.
 - There is no audit log of administrative actions.

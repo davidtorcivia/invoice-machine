@@ -15,7 +15,7 @@ import boto3
 from botocore.config import Config
 
 from invoice_machine.config import get_settings
-from invoice_machine.utils import utc_now
+from invoice_machine.utils import refuse_disallowed_url, utc_now
 
 logger = logging.getLogger(__name__)
 
@@ -164,20 +164,25 @@ class BackupService:
 
         return result
 
-    def _upload_to_s3(self, local_path: Path, filename: str):
-        """Upload a backup to S3-compatible storage."""
+    def _s3_client(self):
+        """Build a boto3 client after refusing loopback/metadata endpoints."""
         if not self.s3_config:
             raise ValueError("S3 configuration not provided")
-
-        s3_client = boto3.client(
+        endpoint = self.s3_config.get("endpoint_url")
+        if endpoint:
+            refuse_disallowed_url(endpoint, kind="S3 endpoint")
+        return boto3.client(
             "s3",
-            endpoint_url=self.s3_config.get("endpoint_url"),
+            endpoint_url=endpoint,
             aws_access_key_id=self.s3_config.get("access_key_id"),
             aws_secret_access_key=self.s3_config.get("secret_access_key"),
             region_name=self.s3_config.get("region", "auto"),
             config=Config(signature_version="s3v4"),
         )
 
+    def _upload_to_s3(self, local_path: Path, filename: str):
+        """Upload a backup to S3-compatible storage."""
+        s3_client = self._s3_client()
         bucket = self.s3_config.get("bucket")
         prefix = self.s3_config.get("prefix", "invoice-machine-backups")
         s3_client.upload_file(str(local_path), bucket, f"{prefix}/{filename}")
@@ -262,14 +267,7 @@ class BackupService:
         if not self.s3_config:
             return 0
 
-        s3_client = boto3.client(
-            "s3",
-            endpoint_url=self.s3_config.get("endpoint_url"),
-            aws_access_key_id=self.s3_config.get("access_key_id"),
-            aws_secret_access_key=self.s3_config.get("secret_access_key"),
-            region_name=self.s3_config.get("region", "auto"),
-            config=Config(signature_version="s3v4"),
-        )
+        s3_client = self._s3_client()
 
         bucket = self.s3_config.get("bucket")
         prefix = self.s3_config.get("prefix", "invoice-machine-backups")
@@ -443,14 +441,7 @@ class BackupService:
             raise ValueError("S3 is not configured")
 
         local_path = self._validate_backup_filename(filename)
-        s3_client = boto3.client(
-            "s3",
-            endpoint_url=self.s3_config.get("endpoint_url"),
-            aws_access_key_id=self.s3_config.get("access_key_id"),
-            aws_secret_access_key=self.s3_config.get("secret_access_key"),
-            region_name=self.s3_config.get("region", "auto"),
-            config=Config(signature_version="s3v4"),
-        )
+        s3_client = self._s3_client()
 
         bucket = self.s3_config.get("bucket")
         prefix = self.s3_config.get("prefix", "invoice-machine-backups")
@@ -463,14 +454,7 @@ class BackupService:
             return []
 
         try:
-            s3_client = boto3.client(
-                "s3",
-                endpoint_url=self.s3_config.get("endpoint_url"),
-                aws_access_key_id=self.s3_config.get("access_key_id"),
-                aws_secret_access_key=self.s3_config.get("secret_access_key"),
-                region_name=self.s3_config.get("region", "auto"),
-                config=Config(signature_version="s3v4"),
-            )
+            s3_client = self._s3_client()
 
             bucket = self.s3_config.get("bucket")
             prefix = self.s3_config.get("prefix", "invoice-machine-backups")

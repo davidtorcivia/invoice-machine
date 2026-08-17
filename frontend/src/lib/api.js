@@ -98,10 +98,40 @@ function createCrudApi(basePath, buildListParams) {
   };
 }
 
+/**
+ * FastAPI returns ``detail`` as a string for HTTPException and as an array of
+ * ``{loc, msg, type}`` objects for validation errors. Stringifying the array
+ * produced "[object Object]" in toasts.
+ *
+ * @param {{ detail?: unknown, message?: string } | null} data
+ * @param {Response} response
+ */
+function formatApiError(data, response) {
+  const detail = data?.detail;
+  if (typeof detail === 'string' && detail) return detail;
+  if (Array.isArray(detail) && detail.length) {
+    const first = detail[0];
+    if (typeof first === 'string' && first) return first;
+    if (first && typeof first === 'object' && typeof first.msg === 'string') {
+      return first.msg;
+    }
+  }
+  if (typeof data?.message === 'string' && data.message) return data.message;
+  return response.statusText || `Request failed: ${response.status}`;
+}
+
+let csrfTokenFromStatus = null;
+
+/** @param {string | null | undefined} token */
+export function setCsrfToken(token) {
+  csrfTokenFromStatus = token || null;
+}
+
 function getCsrfToken() {
-  if (typeof document === 'undefined') return null;
+  if (typeof document === 'undefined') return csrfTokenFromStatus;
   const match = document.cookie.match(/(?:^|; )csrf_token=([^;]+)/);
-  return match ? decodeURIComponent(match[1]) : null;
+  if (match) return decodeURIComponent(match[1]);
+  return csrfTokenFromStatus;
 }
 
 /**
@@ -170,9 +200,7 @@ export async function request(endpoint, options = {}) {
     if (response.status === 401) {
       handleUnauthorized(endpoint);
     }
-    throw new Error(
-      data?.detail || data?.message || response.statusText || `Request failed: ${response.status}`
-    );
+    throw new Error(formatApiError(data, response));
   }
 
   return data;
@@ -294,13 +322,13 @@ export const invoicesApi = {
 
   /** @param {number | string} id @param {{description?: string, quantity?: number, unit_type?: string, unit_price?: string | number, sort_order?: number}} item */
   addItem: (id, item) =>
-    post(withQuery(`/invoices/${id}/items`, {
+    post(`/invoices/${id}/items`, {
       description: item.description,
       quantity: item.quantity,
       unit_type: item.unit_type || 'qty',
       unit_price: item.unit_price,
       sort_order: item.sort_order || 0,
-    })),
+    }),
 
   /** @param {number | string} id @param {number | string} itemId @param {Record<string, unknown>} data */
   updateItem: (id, itemId, data) => put(`/invoices/${id}/items/${itemId}`, data),

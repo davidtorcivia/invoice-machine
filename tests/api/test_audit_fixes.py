@@ -34,7 +34,7 @@ async def test_add_item_endpoint_accepts_fractional_quantity(test_client):
 
     response = await test_client.post(
         f"/api/invoices/{invoice_id}/items",
-        params={
+        json={
             "description": "Consulting",
             "quantity": 1.5,
             "unit_type": "hours",

@@ -2,7 +2,7 @@
   import { preventDefault } from 'svelte/legacy';
 
   import { goto } from '$app/navigation';
-  import { auth, toast } from '$lib/stores';
+  import { auth } from '$lib/stores';
 
   let username = $state('');
   let password = $state('');

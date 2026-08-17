@@ -345,7 +345,7 @@ class TestEmailService:
         service = EmailService(mock_profile)
 
         with patch("invoice_machine.email.settings") as mock_settings:
-            mock_settings.data_dir = Path("/nonexistent")
+            mock_settings.pdf_dir = Path("/nonexistent/pdfs")
 
             result = await service.send_invoice(mock_invoice)
 
@@ -365,7 +365,7 @@ class TestEmailService:
             pdf_file.write_bytes(b"%PDF-1.4 fake content")
 
             with patch("invoice_machine.email.settings") as mock_settings:
-                mock_settings.data_dir = data_dir
+                mock_settings.pdf_dir = pdf_dir
 
                 with patch.object(service, "_send_email_sync", return_value=True):
                     with patch(
@@ -391,7 +391,7 @@ class TestEmailService:
             pdf_file.write_bytes(b"%PDF-1.4 fake content")
 
             with patch("invoice_machine.email.settings") as mock_settings:
-                mock_settings.data_dir = data_dir
+                mock_settings.pdf_dir = pdf_dir
 
                 with patch.object(service, "_send_email_sync", return_value=True):
                     with patch(
@@ -418,7 +418,7 @@ class TestEmailService:
             pdf_file.write_bytes(b"%PDF-1.4 fake content")
 
             with patch("invoice_machine.email.settings") as mock_settings:
-                mock_settings.data_dir = data_dir
+                mock_settings.pdf_dir = pdf_dir
 
                 with patch(
                     "invoice_machine.email.run_in_threadpool",
@@ -499,15 +499,53 @@ class TestEmailService:
         assert result is None
 
     def test_get_smtp_password_decryption_failure(self, mock_profile):
-        """Fall back to raw value on decryption failure."""
-        mock_profile.smtp_password = "plain_password"
+        """A ciphertext that cannot be decrypted is not used as the password."""
+        mock_profile.smtp_password = "enc:not-a-real-token"
         service = EmailService(mock_profile)
 
         with patch(
             "invoice_machine.email.decrypt_credential", side_effect=ValueError("Decrypt failed")
         ):
-            result = service._get_smtp_password()
-            assert result == "plain_password"
+            with pytest.raises(ValueError, match="could not be decrypted"):
+                service._get_smtp_password()
+
+    def test_starttls_verifies_certificates(self, mock_profile):
+        """STARTTLS must use a default SSL context (CERT_REQUIRED), not CERT_NONE."""
+        import ssl
+
+        service = EmailService(mock_profile)
+        server = MagicMock()
+        smtp_cm = MagicMock()
+        smtp_cm.__enter__.return_value = server
+        smtp_cm.__exit__.return_value = False
+
+        with (
+            patch("invoice_machine.email._validate_smtp_target"),
+            patch("smtplib.SMTP", return_value=smtp_cm) as smtp_cls,
+        ):
+            service._send_email_sync("to@example.com", "Subject", "Body")
+
+        smtp_cls.assert_called_once()
+        server.starttls.assert_called_once()
+        context = server.starttls.call_args.kwargs.get("context")
+        assert context is not None
+        assert context.verify_mode == ssl.CERT_REQUIRED
+
+    @pytest.mark.asyncio
+    async def test_send_invoice_rejects_path_escape(self, mock_profile, mock_invoice):
+        """A stored pdf_path must not be able to walk out of the PDF directory."""
+        mock_invoice.pdf_path = "pdfs/../../etc/passwd"
+        service = EmailService(mock_profile)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            pdf_dir = Path(tmpdir) / "pdfs"
+            pdf_dir.mkdir()
+            with patch("invoice_machine.email.settings") as mock_settings:
+                mock_settings.pdf_dir = pdf_dir
+                result = await service.send_invoice(mock_invoice)
+
+        assert result["success"] is False
+        assert "PDF not found" in result["error"]
 
 
 class TestFromHeaderConstruction:
@@ -540,7 +578,7 @@ class TestFromHeaderConstruction:
             def __exit__(self, *exc):
                 return False
 
-            def starttls(self):
+            def starttls(self, context=None):
                 pass
 
             def login(self, *args):

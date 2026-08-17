@@ -159,7 +159,9 @@ export const helpSections = [
     title: 'Settings Overview',
     icon: 'settings',
     content: `<h3>Saving Changes</h3>
-<p>When you edit any setting, a <strong>Save Changes</strong> bar appears at the bottom of the screen showing which sections have unsaved changes. Click <strong>Save Changes</strong> to save everything at once, or <strong>Discard</strong> to revert. Logo uploads and API key actions apply immediately and don't need saving.</p>
+<p>When you edit any setting, a <strong>Save Changes</strong> bar appears at the bottom of the screen showing which sections have unsaved changes. Click <strong>Save Changes</strong> to save everything at once, or <strong>Discard</strong> to revert. Logo uploads, password changes, and API key actions apply immediately and don't need saving.</p>
+<h3>Account</h3>
+<p>Change your sign-in password. Other sessions are signed out; the current one stays.</p>
 <h3>Business Profile</h3>
 <p>Configure your company name, address, phone, email, and tax ID (EIN). This information appears on all invoices.</p>
 <h3>Logo</h3>

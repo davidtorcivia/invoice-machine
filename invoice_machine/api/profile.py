@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from invoice_machine.config import get_settings
 from invoice_machine.database import BusinessProfile, get_session
 from invoice_machine.rate_limit import limiter
-from invoice_machine.utils import utc_now
+from invoice_machine.utils import confined_file, utc_now
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/profile", tags=["profile"])
@@ -161,10 +161,10 @@ def _delete_logo_file(logo_filename: str | None) -> None:
     safe_name = sanitize_filename(logo_filename)
     if not safe_name:
         return
-    logo_file = settings.logo_dir / safe_name
+    logo_file = confined_file(settings.logo_dir, safe_name)
+    if logo_file is None:
+        return
     try:
-        if logo_file.resolve().parent != settings.logo_dir.resolve():
-            return
         logo_file.unlink(missing_ok=True)
     except OSError as exc:
         logger.warning("Could not delete logo file %s: %s", safe_name, exc)
@@ -309,10 +309,8 @@ async def upload_logo(
     # Ensure logo directory exists
     settings.logo_dir.mkdir(parents=True, exist_ok=True)
 
-    path = settings.logo_dir / unique_filename
-
-    # Ensure path is within logo directory (defense in depth)
-    if not str(path.resolve()).startswith(str(settings.logo_dir.resolve())):
+    path = confined_file(settings.logo_dir, unique_filename)
+    if path is None:
         raise HTTPException(status_code=400, detail="Invalid file path")
 
     # Save file
@@ -362,14 +360,8 @@ async def get_logo(request: Request, filename: str):
     # Ensure logo directory exists
     settings.logo_dir.mkdir(parents=True, exist_ok=True)
 
-    path = settings.logo_dir / safe_filename
-
-    # Ensure resolved path is within logo directory
-    resolved_path = path.resolve()
-    if not str(resolved_path).startswith(str(settings.logo_dir.resolve())):
-        raise HTTPException(status_code=404, detail="Logo not found")
-
-    if not resolved_path.exists():
+    resolved_path = confined_file(settings.logo_dir, safe_filename)
+    if resolved_path is None or not resolved_path.is_file():
         raise HTTPException(status_code=404, detail="Logo not found")
 
     return FileResponse(resolved_path)

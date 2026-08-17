@@ -13,6 +13,7 @@ class LineItemCreate(BaseModel):
     quantity: Decimal = Field(Decimal("1"), gt=0, le=10000)
     unit_type: str = Field("qty", pattern="^(qty|hours)$")
     unit_price: str
+    sort_order: int = Field(0, ge=0)
 
     @field_validator("unit_price", mode="before")
     @classmethod

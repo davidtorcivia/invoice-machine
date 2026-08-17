@@ -69,7 +69,10 @@ async def recalculate_invoice_payments(session: AsyncSession, invoice: Invoice) 
         elif not fully_paid and invoice.status == "paid":
             # Reverted (payment deleted or invoice total raised): fall back to
             # overdue when past due, otherwise sent.
-            today = utc_now().date()
+            from invoice_machine.database import BusinessProfile
+            from invoice_machine.service.reminders import business_now
+
+            today = business_now(await BusinessProfile.get(session)).date()
             invoice.status = "overdue" if invoice.due_date and invoice.due_date < today else "sent"
             invoice.paid_at = None
 
@@ -191,15 +194,18 @@ class PaymentService:
         except IntegrityError:
             # Two concurrent calls raced past the lookup above and both tried to
             # insert the same key; the unique index let exactly one through.
-            # Return the winner rather than failing the caller, which is the
-            # whole point of supplying a key.
-            if idempotency_key is None:
-                raise
+            # Return the winner rather than failing the caller. The same
+            # applies to (provider, external_id) from a retried Stripe webhook.
             await session.rollback()
-            existing = await PaymentService._find_by_idempotency_key(session, idempotency_key)
-            if existing is None:
-                raise
-            return existing
+            if idempotency_key is not None:
+                existing = await PaymentService._find_by_idempotency_key(session, idempotency_key)
+                if existing is not None:
+                    return existing
+            if provider and external_id:
+                existing = await PaymentService.find_by_external_id(session, provider, external_id)
+                if existing is not None:
+                    return existing
+            raise
 
         await recalculate_invoice_payments(session, invoice)
         await session.commit()
@@ -232,7 +238,19 @@ class PaymentService:
             return None
 
         if amount is not None:
-            payment.amount = _coerce_amount(amount)
+            new_amount = _coerce_amount(amount)
+            invoice = await session.get(Invoice, payment.invoice_id)
+            if invoice is None or invoice.deleted_at is not None:
+                raise ValueError("Cannot update a payment on a missing or deleted invoice")
+            if invoice.status in _UNPAYABLE_STATUSES:
+                raise ValueError(f"Cannot update a payment on a {invoice.status} invoice")
+            outstanding_without_this = invoice.amount_due + quantize_money(payment.amount)
+            if new_amount > outstanding_without_this:
+                raise ValueError(
+                    f"Payment of {new_amount} exceeds the outstanding balance "
+                    f"of {outstanding_without_this}"
+                )
+            payment.amount = new_amount
         if payment_date is not None:
             payment.payment_date = payment_date
         if method is not None:

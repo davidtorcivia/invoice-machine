@@ -1,9 +1,9 @@
 /**
  * Svelte stores for Invoice Machine
  */
-import { writable, get } from 'svelte/store';
+import { writable } from 'svelte/store';
 import { browser } from '$app/environment';
-import { request } from '$lib/api';
+import { request, setCsrfToken } from '$lib/api';
 
 /**
  * @typedef {{ id: number, message: string, type: 'success' | 'error' | 'info' }} ToastMessage
@@ -16,6 +16,7 @@ const DEFAULT_AUTH_STATE = {
   authenticated: false,
   needsSetup: false,
   username: null,
+  checkFailed: false,
 };
 
 function buildAuthState(data = {}) {
@@ -24,6 +25,7 @@ function buildAuthState(data = {}) {
     authenticated: !!data.authenticated,
     needsSetup: !!data.needs_setup,
     username: data.username ?? null,
+    checkFailed: false,
   };
 }
 
@@ -38,11 +40,12 @@ function createAuthStore() {
     check: async () => {
       try {
         const data = await request('/auth/status');
+        if (data?.csrf_token) setCsrfToken(data.csrf_token);
         set(buildAuthState(data));
         return data;
       } catch (e) {
-        set(DEFAULT_AUTH_STATE);
-        return { authenticated: false, needs_setup: false };
+        set({ ...DEFAULT_AUTH_STATE, checkFailed: true });
+        return { authenticated: false, needs_setup: false, check_failed: true };
       }
     },
     login: async (username, password) => {
@@ -64,6 +67,12 @@ function createAuthStore() {
     logout: async () => {
       await request('/auth/logout', { method: 'POST' });
       set(DEFAULT_AUTH_STATE);
+    },
+    changePassword: async (currentPassword, newPassword) => {
+      return request('/auth/password', {
+        method: 'POST',
+        body: { current_password: currentPassword, new_password: newPassword },
+      });
     },
   };
 }
@@ -167,169 +176,6 @@ function createToastStore() {
 }
 
 export const toast = createToastStore();
-
-// ===== Loading State =====
-
-const createLoadingStore = () => {
-  const { subscribe, set } = writable(false);
-
-  return {
-    subscribe,
-    set,
-    with: async (fn) => {
-      set(true);
-      try {
-        return await fn();
-      } finally {
-        set(false);
-      }
-    },
-  };
-};
-
-// ===== Data Store =====
-
-/**
- * Create a data store with lazy loading and request cancellation support.
- *
- * Features:
- * - Lazy loading: data is only fetched when first subscribed or explicitly refreshed
- * - Request cancellation: rapid refresh calls cancel previous in-flight requests
- * - Error handling: errors are captured and exposed via error store
- *
- * @param {Function} fetchFn - Async function to fetch data. Receives AbortSignal as first arg.
- * @param {*} initialValue - Initial value before first fetch
- * @param {{ lazy?: boolean }} [options={}] - Configuration options
- */
-function createDataStore(fetchFn, initialValue = null, options = {}) {
-  const { lazy = true } = options;
-
-  const { subscribe: rawSubscribe, set, update } = writable(initialValue);
-  const loading = createLoadingStore();
-  const error = writable(null);
-
-  let hasFetched = false;
-  let currentController = null;
-  let subscriberCount = 0;
-
-  // Wrap subscribe to trigger lazy loading on first subscriber
-  const subscribe = (run, invalidate) => {
-    subscriberCount++;
-
-    // Trigger lazy load on first subscriber (if lazy mode and hasn't fetched)
-    if (lazy && !hasFetched && subscriberCount === 1) {
-      refresh().catch(() => {
-        // Errors are already captured in error store
-      });
-    }
-
-    const unsubscribe = rawSubscribe(run, invalidate);
-
-    return () => {
-      subscriberCount--;
-      unsubscribe();
-    };
-  };
-
-  const refresh = async (...args) => {
-    // Cancel any in-flight request
-    if (currentController) {
-      currentController.abort();
-    }
-
-    // Create new abort controller for this request
-    const controller = new AbortController();
-    currentController = controller;
-    const signal = controller.signal;
-
-    error.set(null);
-    try {
-      const data = await loading.with(async () => {
-        // Pass signal to fetchFn if it accepts it
-        const result = await fetchFn(signal, ...args);
-        return result;
-      });
-
-      // Only update if not aborted
-      if (!signal.aborted) {
-        set(data);
-        hasFetched = true;
-      }
-      return data;
-    } catch (e) {
-      // Don't treat abort as an error
-      if (e.name === 'AbortError') {
-        return get({ subscribe: rawSubscribe });
-      }
-      error.set(e.message);
-      toast.error(e.message);
-      throw e;
-    } finally {
-      // Only clear the slot if this call still owns it. Clearing unconditionally
-      // let a superseded request wipe out the *newer* request's controller, so a
-      // third refresh could no longer cancel the second and results could land
-      // out of order.
-      if (currentController === controller) {
-        currentController = null;
-      }
-    }
-  };
-
-  // Force refresh even if already fetched
-  const forceRefresh = (...args) => {
-    hasFetched = false;
-    return refresh(...args);
-  };
-
-  // Reset store to initial state
-  const reset = () => {
-    hasFetched = false;
-    set(initialValue);
-    error.set(null);
-  };
-
-  return {
-    subscribe,
-    set,
-    update,
-    loading: { subscribe: loading.subscribe },
-    error: { subscribe: error.subscribe },
-    refresh,
-    forceRefresh,
-    reset,
-    // Expose for testing
-    get hasFetched() {
-      return hasFetched;
-    },
-  };
-}
-
-// ===== Business Profile Store =====
-// Profile is often needed early, so we don't use lazy loading for it
-
-export const profile = createDataStore(
-  (signal) => request('/profile', { signal }),
-  null,
-  { lazy: false } // Profile is needed for many pages
-);
-
-// ===== Client Store =====
-// Clients are lazily loaded when first accessed
-
-export const clients = createDataStore(
-  (signal) => request('/clients', { signal }),
-  [],
-  { lazy: true }
-);
-
-// ===== Invoice Store =====
-// Invoices are lazily loaded when first accessed
-
-export const invoices = createDataStore(
-  (signal) => request('/invoices', { signal }),
-  [],
-  { lazy: true }
-);
 
 // ===== Formatters =====
 

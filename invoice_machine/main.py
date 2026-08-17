@@ -41,12 +41,16 @@ logging.basicConfig(
 settings = get_settings()
 STATIC_DIR = static_dir()
 STATIC_DIR_RESOLVED = STATIC_DIR.resolve()
+_is_production = settings.environment.lower() == "production"
 
 app = FastAPI(
     title="Invoice Machine",
     description="AI-first invoicing application",
-    version="0.1.0",
+    version="0.2.0",
     lifespan=lifespan,
+    docs_url=None if _is_production else "/docs",
+    redoc_url=None if _is_production else "/redoc",
+    openapi_url=None if _is_production else "/openapi.json",
 )
 app.state.restore_lock = asyncio.Lock()
 app.state.restore_in_progress = False

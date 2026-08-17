@@ -1,6 +1,4 @@
 <script lang="ts">
-  import { run } from 'svelte/legacy';
-
   import '@fontsource-variable/inter';
   import '../app.css';
   import { onMount } from 'svelte';
@@ -27,6 +25,9 @@
     '/clients': 'Clients',
     '/clients/new': 'New Client',
     '/settings': 'Settings',
+    '/settings/email-templates': 'Email Templates',
+    '/reports': 'Reports',
+    '/recurring': 'Recurring',
     '/trash': 'Trash',
     '/help': 'Help',
   };
@@ -49,14 +50,14 @@
   let isAuthenticated = $derived($auth.authenticated);
   let needsSetup = $derived($auth.needsSetup);
   let loading = $derived($auth.loading);
+  let checkFailed = $derived($auth.checkFailed);
 
   onMount(async () => {
     await auth.check();
   });
 
-  // Reactive navigation based on auth state
-  run(() => {
-    if (!loading) {
+  $effect(() => {
+    if (!loading && !checkFailed) {
       const path = $page.url.pathname;
 
       if (needsSetup && path !== '/setup') {
@@ -77,6 +78,13 @@
 {#if loading}
   <div class="loading-screen">
     <div class="spinner"></div>
+  </div>
+{:else if checkFailed}
+  <div class="loading-screen">
+    <div class="unreachable">
+      <p>Could not reach Invoice Machine.</p>
+      <button type="button" class="btn btn-secondary" onclick={() => auth.check()}>Try again</button>
+    </div>
   </div>
 {:else if isPublicRoute}
   {@render children?.()}
@@ -108,6 +116,14 @@
     margin-left: var(--sidebar-width);
     min-height: 100vh;
     background: var(--color-bg);
+  }
+
+  .unreachable {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1rem;
+    color: var(--color-text-muted, #6b7280);
   }
 
   @media (max-width: 768px) {

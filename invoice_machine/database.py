@@ -1,5 +1,6 @@
 """Database models and connection management."""
 
+import hashlib
 from datetime import date, datetime
 from decimal import Decimal
 from typing import Optional
@@ -46,6 +47,10 @@ class User(Base):
     username: Mapped[str] = mapped_column(String(100), unique=True, nullable=False)
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
+    # Always 1. Unique so two concurrent /setup POSTs cannot both succeed.
+    singleton: Mapped[int] = mapped_column(
+        Integer, default=1, server_default="1", unique=True, nullable=False
+    )
 
     @classmethod
     async def get_by_username(cls, session: "AsyncSession", username: str) -> Optional["User"]:
@@ -93,9 +98,11 @@ class BusinessProfile(Base):
     payment_methods: Mapped[str | None] = mapped_column(Text, nullable=True)
     theme_preference: Mapped[str] = mapped_column(String(20), default="system")
     # MCP API key for remote access
-    mcp_api_key: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # Stored as hash:<salt>:<sha256> (~102 chars). 64 was the plaintext-key
+    # width and would truncate the hash on any engine that enforces VARCHAR.
+    mcp_api_key: Mapped[str | None] = mapped_column(String(128), nullable=True)
     # Bot API key for conventional REST API automation
-    bot_api_key: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    bot_api_key: Mapped[str | None] = mapped_column(String(128), nullable=True)
     # App base URL for links and MCP configuration
     app_base_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     # Backup settings
@@ -113,7 +120,8 @@ class BusinessProfile(Base):
     smtp_host: Mapped[str | None] = mapped_column(String(255), nullable=True)
     smtp_port: Mapped[int] = mapped_column(Integer, default=587)
     smtp_username: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    smtp_password: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # Fernet ciphertext of a long password plus the enc: prefix exceeds 255.
+    smtp_password: Mapped[str | None] = mapped_column(String(500), nullable=True)
     smtp_from_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
     smtp_from_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     smtp_use_tls: Mapped[int] = mapped_column(Integer, default=1)
@@ -393,6 +401,11 @@ class Invoice(Base):
         Index("idx_invoices_status_deleted", "status", "deleted_at"),
         Index("idx_invoices_client_status", "client_id", "status"),
         Index("idx_invoices_date_status", "issue_date", "status"),
+        Index(
+            "uq_invoices_converted_from",
+            "converted_from_invoice_id",
+            unique=True,
+        ),
         Index("idx_invoices_client_deleted", "client_id", "deleted_at"),
         # Reminder sweep and A/R aging both scan open invoices by due date.
         Index("idx_invoices_due_status_deleted", "due_date", "status", "deleted_at"),
@@ -528,6 +541,16 @@ class Payment(Base):
     )
 
 
+def _digest_session_token(token: str) -> str:
+    """SHA-256 hex of a session cookie. Fits the existing VARCHAR(64) column."""
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def _looks_like_session_digest(token: str) -> bool:
+    """True for a stored digest. token_urlsafe cookies use base64 and almost never match."""
+    return len(token) == 64 and all(c in "0123456789abcdef" for c in token)
+
+
 class Session(Base):
     """Database-backed user session for secure session management.
 
@@ -570,11 +593,11 @@ class Session(Base):
         """Create a new session."""
         import secrets
 
-        token = secrets.token_urlsafe(48)  # 64 chars base64
+        plain = secrets.token_urlsafe(48)
         csrf_token = secrets.token_urlsafe(48)
 
         db_session = cls(
-            token=token,
+            token=_digest_session_token(plain),
             user_id=user_id,
             expires_at=expires_at,
             csrf_token=csrf_token,
@@ -584,24 +607,45 @@ class Session(Base):
         session.add(db_session)
         await session.commit()
         await session.refresh(db_session)
+        # Cookie still carries the plaintext; only the digest is stored.
+        db_session.cookie_token = plain
         return db_session
 
     @classmethod
     async def get_by_token(cls, session: "AsyncSession", token: str) -> Optional["Session"]:
-        """Get session by token if valid and not expired."""
+        """Get session by cookie token if valid and not expired."""
         from sqlalchemy import select
 
+        digest = _digest_session_token(token)
+        result = await session.execute(
+            select(cls).where(cls.token == digest, cls.expires_at > utc_now())
+        )
+        row = result.scalar_one_or_none()
+        if row is not None:
+            return row
+
+        # Leftover plaintext row from before tokens were hashed.
+        # Skip when the cookie is already 64 hex: that is a stolen digest,
+        # not a pre-hash cookie (token_urlsafe uses base64).
+        if _looks_like_session_digest(token):
+            return None
         result = await session.execute(
             select(cls).where(cls.token == token, cls.expires_at > utc_now())
         )
-        return result.scalar_one_or_none()
+        row = result.scalar_one_or_none()
+        if row is None:
+            return None
+        row.token = digest
+        await session.commit()
+        return row
 
     @classmethod
     async def delete_by_token(cls, session: "AsyncSession", token: str) -> bool:
-        """Delete a session by token."""
+        """Delete a session by cookie token (digest or leftover plaintext)."""
         from sqlalchemy import delete
 
-        result = await session.execute(delete(cls).where(cls.token == token))
+        digest = _digest_session_token(token)
+        result = await session.execute(delete(cls).where(cls.token.in_((digest, token))))
         await session.commit()
         return result.rowcount > 0
 
@@ -620,6 +664,23 @@ class Session(Base):
         from sqlalchemy import delete
 
         result = await session.execute(delete(cls).where(cls.user_id == user_id))
+        await session.commit()
+        return result.rowcount
+
+    @classmethod
+    async def delete_other_sessions(
+        cls, session: "AsyncSession", user_id: int, keep_token: str
+    ) -> int:
+        """Delete every session for a user except the one that just authenticated."""
+        from sqlalchemy import delete
+
+        digest = _digest_session_token(keep_token)
+        result = await session.execute(
+            delete(cls).where(
+                cls.user_id == user_id,
+                cls.token.notin_((digest, keep_token)),
+            )
+        )
         await session.commit()
         return result.rowcount
 

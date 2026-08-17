@@ -27,6 +27,10 @@
       error = 'Password must be at least 8 characters';
       return;
     }
+    if (!/[a-z]/.test(password) || !/[A-Z]/.test(password) || !/[0-9]/.test(password)) {
+      error = 'Password must contain an uppercase letter, a lowercase letter, and a digit';
+      return;
+    }
 
     if (password !== confirmPassword) {
       error = 'Passwords do not match';

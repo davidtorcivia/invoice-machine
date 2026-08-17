@@ -259,7 +259,10 @@ POST /api/invoices/bulk
 
 ### Add item
 ```
-POST /api/invoices/{id}/items?description=Consulting&quantity=10&unit_price=150.00&unit_type=hours
+POST /api/invoices/{id}/items
+```
+```json
+{"description": "Consulting", "quantity": 10, "unit_price": 150.00, "unit_type": "hours"}
 ```
 
 ### Update item

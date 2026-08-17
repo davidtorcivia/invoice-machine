@@ -6,11 +6,13 @@ from pathlib import Path
 import pytest
 
 from invoice_machine.api.profile import validate_image_content
+from invoice_machine.crypto import hash_api_key
 from invoice_machine.email import _sanitize_email, _sanitize_header
 from invoice_machine.services import (
     BackupService,
     InvoiceService,
 )
+from invoice_machine.utils import confined_file, refuse_disallowed_host, refuse_disallowed_url
 
 
 class TestPathTraversalProtection:
@@ -60,6 +62,55 @@ class TestPathTraversalProtection:
 
         with pytest.raises(ValueError, match="path separators not allowed"):
             service.delete_backup("../../../etc/passwd")
+
+
+class TestConfinedFile:
+    """Tests for directory confinement of stored/user filenames."""
+
+    def test_accepts_a_plain_name_inside_the_directory(self, tmp_path):
+        target = tmp_path / "logo.png"
+        target.write_bytes(b"x")
+        resolved = confined_file(tmp_path, "logo.png")
+        assert resolved == target.resolve()
+
+    def test_rejects_parent_and_separator_names(self, tmp_path):
+        assert confined_file(tmp_path, "..") is None
+        assert confined_file(tmp_path, "../etc/passwd") is None
+        assert confined_file(tmp_path, "sub/file.png") is None
+        assert confined_file(tmp_path, "a\\b") is None
+        assert confined_file(tmp_path, "") is None
+
+    def test_rejects_a_symlink_that_escapes_the_directory(self, tmp_path):
+        logos = tmp_path / "logos"
+        outside = tmp_path / "outside"
+        logos.mkdir()
+        outside.mkdir()
+        target = outside / "secret.png"
+        target.write_bytes(b"x")
+        (logos / "link.png").symlink_to(target)
+        assert confined_file(logos, "link.png") is None
+
+
+class TestOutboundHostGuard:
+    def test_refuses_loopback_and_metadata(self):
+        for bad in ("127.0.0.1", "169.254.169.254", "0.0.0.0"):
+            with pytest.raises(ValueError, match="disallowed"):
+                refuse_disallowed_host(bad, 443)
+
+    def test_refuses_loopback_s3_url(self):
+        with pytest.raises(ValueError, match="disallowed"):
+            refuse_disallowed_url("http://127.0.0.1:9000", kind="S3 endpoint")
+
+    def test_refuses_non_http_scheme(self):
+        with pytest.raises(ValueError, match="http or https"):
+            refuse_disallowed_url("ftp://files.example.com")
+
+
+class TestApiKeyHashWidth:
+    def test_stored_hash_fits_the_column(self):
+        hashed = hash_api_key("a" * 64)
+        assert hashed.startswith("hash:")
+        assert len(hashed) <= 128
 
 
 class TestEmailHeaderInjection:

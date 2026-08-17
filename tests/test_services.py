@@ -564,3 +564,36 @@ class TestPurgeDeletesGeneratedFiles:
         assert removed == 0
         assert outsider.exists()
         assert Invoice is not None
+
+    @pytest.mark.asyncio
+    async def test_purge_clears_recurring_last_invoice_id(self, db_session, test_client):
+        """A schedule pointing at a trashed invoice must not block the purge."""
+        from invoice_machine.database import Invoice, RecurringSchedule
+
+        invoice = Invoice(
+            invoice_number="REC-1",
+            issue_date=date(2026, 1, 1),
+            client_id=test_client.id,
+            deleted_at=utc_now(),
+        )
+        db_session.add(invoice)
+        await db_session.commit()
+        await db_session.refresh(invoice)
+
+        schedule = RecurringSchedule(
+            client_id=test_client.id,
+            name="Retainer",
+            frequency="monthly",
+            schedule_day=1,
+            next_invoice_date=date(2026, 2, 1),
+            last_invoice_id=invoice.id,
+        )
+        db_session.add(schedule)
+        await db_session.commit()
+
+        result = await purge_trashed_records(db_session)
+        await db_session.commit()
+        assert result["invoices_deleted"] == 1
+
+        await db_session.refresh(schedule)
+        assert schedule.last_invoice_id is None

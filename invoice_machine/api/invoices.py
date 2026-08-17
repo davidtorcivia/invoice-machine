@@ -14,6 +14,7 @@ from invoice_machine.rate_limit import limiter
 from invoice_machine.services import InvoiceService
 from invoice_machine.utils import (
     INVOICE_NUMBER_REGEX,
+    confined_file,
     sanitize_filename_component,
 )
 
@@ -447,13 +448,7 @@ async def restore_invoice(
 async def add_invoice_item(
     request: Request,
     invoice_id: int,
-    description: str = Query(..., description="Item description"),
-    # Decimal (not int) so fractional quantities like 1.5 / 0.25 hours can be
-    # added to an existing invoice, matching invoice-create and item-update.
-    quantity: Decimal = Query(Decimal("1"), gt=0, le=10000, description="Quantity"),
-    unit_type: str = Query("qty", pattern="^(qty|hours)$", description="Unit type"),
-    unit_price: Decimal = Query(..., ge=0, description="Unit price"),
-    sort_order: int = Query(0, ge=0, description="Sort order"),
+    item: LineItemCreate,
     session: AsyncSession = Depends(get_session),
 ) -> dict:
     """Add line item to invoice."""
@@ -461,11 +456,11 @@ async def add_invoice_item(
         item = await InvoiceService.add_item(
             session,
             invoice_id,
-            description,
-            quantity,
-            unit_price,
-            sort_order,
-            unit_type,
+            item.description,
+            item.quantity,
+            item.unit_price,
+            item.sort_order,
+            item.unit_type,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -564,27 +559,19 @@ async def get_invoice_pdf(
     # Renders only when missing or stale; a fresh PDF is served straight off disk.
     await store_invoice_pdf(session, invoice)
 
-    # pdf_path is stored as "pdfs/{invoice-id}.pdf" and regenerated server-side,
-    # but treat it as untrusted anyway: reduce to the basename, reject anything
-    # but [A-Za-z0-9._-], and re-derive the path inside data_dir/pdfs so a
-    # tampered value can never escape the PDF directory.
-    if not invoice.pdf_path or ".." in invoice.pdf_path:
+    # pdf_path is stored as "pdfs/{name}.pdf" and regenerated server-side,
+    # but treat it as untrusted: only the basename, confined to pdf_dir.
+    if not invoice.pdf_path:
         raise HTTPException(status_code=400, detail="Invalid PDF path")
 
     import os
 
     safe_filename = os.path.basename(invoice.pdf_path)
-
     if not safe_filename or not all(c.isalnum() or c in "._-" for c in safe_filename):
         raise HTTPException(status_code=400, detail="Invalid PDF path")
 
-    pdf_path = (settings.data_dir / "pdfs" / safe_filename).resolve()
-    data_dir_resolved = settings.data_dir.resolve()
-
-    if not str(pdf_path).startswith(str(data_dir_resolved) + os.sep):
-        raise HTTPException(status_code=404, detail="PDF not found")
-
-    if not pdf_path.exists() or not pdf_path.is_file():
+    pdf_path = confined_file(settings.pdf_dir, safe_filename)
+    if pdf_path is None or not pdf_path.is_file():
         raise HTTPException(status_code=404, detail="PDF file not found")
 
     client_part = ""
