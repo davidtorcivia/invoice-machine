@@ -241,6 +241,11 @@ class TestPartialPayments:
         assert payments[0].amount == Decimal("250.00")
         assert payments[0].notes == "Marked paid"
 
+        reverted = await InvoiceService.update_invoice(db_session, invoice.id, status="sent")
+        assert reverted.status == "sent"
+        assert reverted.amount_paid == Decimal("0.00")
+        assert await PaymentService.list_payments(db_session, invoice.id) == []
+
     @pytest.mark.asyncio
     async def test_overdue_sweep_skips_a_fully_prepaid_invoice(
         self, db_session, business_profile, test_client

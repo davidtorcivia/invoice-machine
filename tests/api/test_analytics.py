@@ -40,11 +40,11 @@ class TestAnalyticsEndpoints:
                 "items": [{"description": "Draft invoice", "quantity": 1, "unit_price": 50}],
             },
         )
-        paid_quote = await test_client.post(
+        await test_client.post(
             "/api/invoices",
             json={
                 "document_type": "quote",
-                "items": [{"description": "Paid quote", "quantity": 1, "unit_price": 900}],
+                "items": [{"description": "Quote", "quantity": 1, "unit_price": 900}],
             },
         )
 
@@ -59,10 +59,6 @@ class TestAnalyticsEndpoints:
         await test_client.put(
             f"/api/invoices/{draft_invoice.json()['id']}",
             json={"status": "draft"},
-        )
-        await test_client.put(
-            f"/api/invoices/{paid_quote.json()['id']}",
-            json={"status": "paid"},
         )
 
         response = await test_client.get("/api/analytics/dashboard")
@@ -142,12 +138,12 @@ class TestAnalyticsEndpoints:
                 "items": [{"description": "Sent invoice", "quantity": 1, "unit_price": 200}],
             },
         )
-        paid_quote = await test_client.post(
+        await test_client.post(
             "/api/invoices",
             json={
                 "document_type": "quote",
                 "issue_date": issue_date,
-                "items": [{"description": "Paid quote", "quantity": 1, "unit_price": 900}],
+                "items": [{"description": "Quote", "quantity": 1, "unit_price": 900}],
             },
         )
         sent_quote = await test_client.post(
@@ -166,10 +162,6 @@ class TestAnalyticsEndpoints:
         await test_client.put(
             f"/api/invoices/{sent_invoice.json()['id']}",
             json={"status": "sent"},
-        )
-        await test_client.put(
-            f"/api/invoices/{paid_quote.json()['id']}",
-            json={"status": "paid"},
         )
         await test_client.put(
             f"/api/invoices/{sent_quote.json()['id']}",
@@ -425,7 +417,7 @@ class TestAnalyticsEndpoints:
                 "items": [{"description": "Invoice work", "quantity": 1, "unit_price": 500}],
             },
         )
-        quote_response = await test_client.post(
+        await test_client.post(
             "/api/invoices",
             json={
                 "client_id": client_id,
@@ -436,10 +428,6 @@ class TestAnalyticsEndpoints:
 
         await test_client.put(
             f"/api/invoices/{invoice_response.json()['id']}",
-            json={"status": "paid"},
-        )
-        await test_client.put(
-            f"/api/invoices/{quote_response.json()['id']}",
             json={"status": "paid"},
         )
 
@@ -485,7 +473,7 @@ class TestAnalyticsEndpoints:
                 json={"status": "paid"},
             )
 
-        quote_response = await test_client.post(
+        await test_client.post(
             "/api/invoices",
             json={
                 "client_id": clients[0]["id"],
@@ -493,11 +481,6 @@ class TestAnalyticsEndpoints:
                 "items": [{"description": "Ignored quote", "quantity": 1, "unit_price": 5000}],
             },
         )
-        await test_client.put(
-            f"/api/invoices/{quote_response.json()['id']}",
-            json={"status": "paid"},
-        )
-
         response = await test_client.get("/api/analytics/clients?limit=2")
         assert response.status_code == 200
 

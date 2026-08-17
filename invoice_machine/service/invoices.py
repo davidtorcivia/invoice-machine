@@ -22,17 +22,28 @@ from invoice_machine.service.common import (
 from invoice_machine.service.payments import recalculate_invoice_payments
 from invoice_machine.utils import normalize_invoice_number_override, utc_now
 
+_MARKED_PAID_NOTE = "Marked paid"
+
 
 async def _sync_invoice_money(session: AsyncSession, invoice: Invoice) -> None:
-    """Recompute totals, then paid/sent status when a payment ledger exists.
-
-    Line-item edits used to leave a fully-paid invoice marked paid after the
-    new total exceeded ``amount_paid``. Manual mark-paid with no recorded
-    payments is left alone so that workflow still works.
-    """
+    """Recompute totals; resync paid/sent only when a payment ledger exists."""
     await recalculate_invoice_totals(session, invoice)
     if invoice.amount_paid and invoice.amount_paid > 0:
         await recalculate_invoice_payments(session, invoice)
+
+
+async def _drop_marked_paid_placeholder(session: AsyncSession, invoice: Invoice) -> None:
+    """Remove the synthetic row written by mark-paid so a revert actually un-pays."""
+    from sqlalchemy import delete
+
+    await session.execute(
+        delete(Payment).where(
+            Payment.invoice_id == invoice.id,
+            Payment.notes == _MARKED_PAID_NOTE,
+        )
+    )
+    await session.flush()
+    await recalculate_invoice_payments(session, invoice)
 
 
 # How many times to retry invoice-number allocation under a concurrent-create race.
@@ -379,9 +390,11 @@ class InvoiceService:
             valid_statuses = ["draft", "sent", "paid", "overdue", "cancelled"]
             if status not in valid_statuses:
                 raise ValueError(f"Invalid status. Must be one of: {valid_statuses}")
+            if status == "paid" and getattr(invoice, "document_type", "invoice") == "quote":
+                raise ValueError("Cannot mark a quote as paid. Convert it to an invoice first.")
             if status == "paid" and invoice.status != "paid":
                 remaining = invoice.amount_due
-                if remaining > 0 and getattr(invoice, "document_type", "invoice") != "quote":
+                if remaining > 0:
                     session.add(
                         Payment(
                             invoice_id=invoice.id,
@@ -389,19 +402,18 @@ class InvoiceService:
                             currency_code=invoice.currency_code,
                             payment_date=utc_now().date(),
                             method="other",
-                            notes="Marked paid",
+                            notes=_MARKED_PAID_NOTE,
                         )
                     )
                     await session.flush()
                     await recalculate_invoice_payments(session, invoice)
-                # Recalc never promotes a draft, so a "mark paid" on a draft
-                # still needs the explicit status write after the ledger is filled.
                 invoice.status = "paid"
                 if invoice.paid_at is None:
                     invoice.paid_at = utc_now()
             else:
                 if status != "paid" and invoice.status == "paid":
                     invoice.paid_at = None
+                    await _drop_marked_paid_placeholder(session, invoice)
                 invoice.status = status
 
         if notes is not None:
@@ -694,6 +706,14 @@ class InvoiceService:
                 continue
 
             invoice = invoices[invoice_id]
+            if action == "mark_paid" and getattr(invoice, "document_type", "invoice") == "quote":
+                errors.append(
+                    {
+                        "id": invoice_id,
+                        "reason": "Cannot mark a quote as paid. Convert it to an invoice first.",
+                    }
+                )
+                continue
             if invoice.status not in valid_transitions[action]:
                 errors.append(
                     {
@@ -718,7 +738,7 @@ class InvoiceService:
                 for invoice_id in valid_ids:
                     invoice = invoices[invoice_id]
                     remaining = invoice.amount_due
-                    if remaining > 0 and getattr(invoice, "document_type", "invoice") != "quote":
+                    if remaining > 0:
                         session.add(
                             Payment(
                                 invoice_id=invoice.id,
@@ -726,7 +746,7 @@ class InvoiceService:
                                 currency_code=invoice.currency_code,
                                 payment_date=now.date(),
                                 method="other",
-                                notes="Marked paid",
+                                notes=_MARKED_PAID_NOTE,
                             )
                         )
                 await session.flush()

@@ -26,6 +26,13 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
+    conn = op.get_bind()
+    rows = conn.execute(sa.text("SELECT id FROM users ORDER BY id")).fetchall()
+    if len(rows) > 1:
+        for extra in rows[1:]:
+            conn.execute(sa.text("DELETE FROM sessions WHERE user_id = :id"), {"id": extra[0]})
+            conn.execute(sa.text("DELETE FROM users WHERE id = :id"), {"id": extra[0]})
+
     with op.batch_alter_table("users") as batch_op:
         batch_op.add_column(
             sa.Column("singleton", sa.Integer(), nullable=False, server_default="1")
