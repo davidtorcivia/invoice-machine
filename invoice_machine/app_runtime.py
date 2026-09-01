@@ -52,10 +52,7 @@ async def _run_hourly_task(app: FastAPI, name: str, job) -> None:
     while True:
         await asyncio.sleep(_seconds_until_next_hour())
         await _wait_out_restore(app)
-        try:
-            await run_job(app.state.jobs, name, job)
-        except Exception as exc:
-            logger.error("%s failed: %s", name, exc, exc_info=True)
+        await run_job(app.state.jobs, name, job)
 
 
 async def _run_daily_task(app: FastAPI, hour_utc: int, name: str, job) -> None:
@@ -64,10 +61,7 @@ async def _run_daily_task(app: FastAPI, hour_utc: int, name: str, job) -> None:
     while True:
         await asyncio.sleep(_seconds_until_hour(hour_utc))
         await _wait_out_restore(app)
-        try:
-            await run_job(app.state.jobs, name, job)
-        except Exception as exc:
-            logger.error("%s failed: %s", name, exc, exc_info=True)
+        await run_job(app.state.jobs, name, job)
 
 
 async def _session_cleanup_job() -> None:
@@ -245,10 +239,7 @@ async def lifespan(app: FastAPI):
             ("Recurring invoices", _recurring_invoice_job),
             ("Payment reminders", _payment_reminder_job),
         ):
-            try:
-                await run_job(app.state.jobs, name, job)
-            except Exception as exc:
-                logger.warning("%s at startup failed (non-fatal): %s", name, exc, exc_info=True)
+            await run_job(app.state.jobs, name, job)
 
         logger.info("Starting background tasks...")
         tasks = [

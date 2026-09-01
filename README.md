@@ -371,7 +371,8 @@ the scheduler (`active`) or is standing by. `GET /api/system/status`
 its run and failure counts, last start, last success, last error, and duration.
 
 Set `SENTRY_DSN` to report unhandled exceptions to Sentry. Events are tagged
-with the request id and never include personal data.
+with the request id; request bodies, local variables, and personal data are
+never sent. An unhandled error returns a 500 whose body carries the request id.
 
 ## Deployment
 

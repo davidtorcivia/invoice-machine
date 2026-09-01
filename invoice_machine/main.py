@@ -33,7 +33,7 @@ from invoice_machine.api import (
 from invoice_machine.app_middleware import configure_http_middleware, static_dir
 from invoice_machine.app_runtime import lifespan
 from invoice_machine.config import get_settings
-from invoice_machine.observability import RequestIdFilter, request_id_var
+from invoice_machine.observability import RequestIdFilter
 from invoice_machine.skill_manifest import render_skill_manifest
 from invoice_machine.utils import utc_now
 
@@ -49,16 +49,14 @@ settings = get_settings()
 if settings.sentry_dsn:
     import sentry_sdk
 
+    # Bodies and locals can carry SMTP, S3, and Stripe secrets on settings saves.
     sentry_sdk.init(
         dsn=settings.sentry_dsn,
         environment=settings.environment,
         release=f"invoice-machine@{__version__}",
         send_default_pii=False,
-        # Correlates a Sentry event with the access log line for the same request.
-        before_send=lambda event, hint: {
-            **event,
-            "tags": {**event.get("tags", {}), "request_id": request_id_var.get()},
-        },
+        max_request_body_size="never",
+        include_local_variables=False,
     )
 STATIC_DIR = static_dir()
 STATIC_DIR_RESOLVED = STATIC_DIR.resolve()

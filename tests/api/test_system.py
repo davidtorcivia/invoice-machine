@@ -47,7 +47,7 @@ def test_log_records_carry_the_current_id():
 
 
 @pytest.mark.asyncio
-async def test_run_job_records_success_and_failure():
+async def test_run_job_records_success_and_failure(caplog):
     jobs: dict = {}
     seen: list[str] = []
 
@@ -57,15 +57,14 @@ async def test_run_job_records_success_and_failure():
     async def boom():
         raise RuntimeError("smtp down")
 
-    await run_job(jobs, "Reminders", ok)
+    assert await run_job(jobs, "Reminders", ok) is True
     assert jobs["Reminders"]["runs"] == 1
     assert jobs["Reminders"]["last_ok_at"]
     assert jobs["Reminders"]["last_error"] is None
     assert seen[0].startswith("job-")
     assert request_id_var.get() == "-"
 
-    with pytest.raises(RuntimeError):
-        await run_job(jobs, "Reminders", boom)
+    assert await run_job(jobs, "Reminders", boom) is False
     assert jobs["Reminders"] == {
         **jobs["Reminders"],
         "runs": 2,
@@ -73,6 +72,36 @@ async def test_run_job_records_success_and_failure():
         "last_error": "RuntimeError: smtp down",
     }
     assert jobs["Reminders"]["last_duration_ms"] >= 0
+    failure_line = next(r for r in caplog.records if "smtp down" in r.getMessage())
+    assert failure_line.name == "invoice_machine.jobs"
+
+
+@pytest.mark.asyncio
+async def test_unhandled_errors_answer_500_with_the_id(caplog):
+    from invoice_machine.observability import RequestIdMiddleware
+
+    async def exploding_app(scope, receive, send):
+        raise RuntimeError("kaboom")
+
+    sent = []
+
+    async def send(message):
+        sent.append(message)
+
+    async def receive():
+        return {"type": "http.request", "body": b""}
+
+    scope = {"type": "http", "method": "GET", "path": "/x", "headers": [], "query_string": b""}
+    with pytest.raises(RuntimeError):
+        await RequestIdMiddleware(exploding_app)(scope, receive, send)
+
+    start = sent[0]
+    assert start["status"] == 500
+    request_id = dict(start["headers"])[b"x-request-id"].decode()
+    assert len(request_id) == 16
+    assert request_id.encode() in sent[1]["body"]
+    assert request_id_var.get() == "-"
+    assert any("unhandled error" in r.getMessage() for r in caplog.records)
 
 
 @pytest.mark.asyncio
