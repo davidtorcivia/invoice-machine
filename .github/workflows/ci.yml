@@ -21,6 +21,8 @@ permissions:
 jobs:
   backend:
     runs-on: ubuntu-latest
+    # A hung step must fail fast; one runaway job once billed 45 minutes.
+    timeout-minutes: 12
     strategy:
       fail-fast: false
       matrix:
@@ -73,7 +75,8 @@ jobs:
         run: pyright invoice_machine/
 
       - name: Run tests
-        run: pytest -q --cov --cov-report=term-missing --cov-report=xml --cov-fail-under=79
+        # faulthandler_timeout dumps every thread's stack if one test exceeds it.
+        run: pytest -q -o faulthandler_timeout=120 --cov --cov-report=term-missing --cov-report=xml --cov-fail-under=79
 
       - name: Upload coverage
         if: matrix.python-version == '3.14'
@@ -85,6 +88,8 @@ jobs:
 
   frontend:
     runs-on: ubuntu-latest
+    # A hung step must fail fast; one runaway job once billed 45 minutes.
+    timeout-minutes: 12
     defaults:
       run:
         working-directory: frontend
@@ -112,6 +117,8 @@ jobs:
     # The image is how this is deployed. A broken Dockerfile, or a migration
     # that fails against a cold database, should fail here rather than at deploy.
     runs-on: ubuntu-latest
+    # A hung step must fail fast; one runaway job once billed 45 minutes.
+    timeout-minutes: 12
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -198,6 +205,8 @@ jobs:
 
   audit:
     runs-on: ubuntu-latest
+    # A hung step must fail fast; one runaway job once billed 45 minutes.
+    timeout-minutes: 12
     # Blocking: with uv.lock the result is a property of the commit. A red audit
     # means the lock needs `uv lock --upgrade`, which is a fix, not noise.
     steps:
