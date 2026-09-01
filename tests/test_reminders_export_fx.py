@@ -143,6 +143,29 @@ class TestReminderSending:
         assert invoice.reminders_sent_list == []
 
     @pytest.mark.asyncio
+    async def test_one_failing_reminder_does_not_abort_the_sweep(
+        self, db_session, business_profile, test_client
+    ):
+        first = await self._reminder_setup(db_session, business_profile, test_client)
+        second = await self._reminder_setup(db_session, business_profile, test_client)
+        first_id = first.id
+        updated_before = second.updated_at
+
+        async def fail_first(session, invoice_id, **kwargs):
+            if invoice_id == first_id:
+                raise RuntimeError("renderer exploded")
+            return {"success": True, "recipient": "client@example.com"}
+
+        with patch("invoice_machine.service.email.send_invoice_email", new=fail_first):
+            results = await send_due_reminders(db_session)
+
+        assert [r["success"] for r in results] == [False, True]
+        await db_session.refresh(second)
+        assert second.reminders_sent_list == [-3, 1, 7]
+        # The reminder bookkeeping must not mark the invoice stale for PDF purposes.
+        assert second.updated_at.replace(tzinfo=None) == updated_before.replace(tzinfo=None)
+
+    @pytest.mark.asyncio
     async def test_fully_paid_invoice_is_not_chased(
         self, db_session, business_profile, test_client
     ):

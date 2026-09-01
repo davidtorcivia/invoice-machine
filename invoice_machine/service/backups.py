@@ -404,9 +404,17 @@ class BackupService:
 
             if db_path.exists():
                 pre_restore_filename = f"pre_restore_{utc_now().strftime('%Y%m%d_%H%M%S')}.db"
-                # A raw copy is correct here: the restore endpoint closes the DB
-                # engine first, so WAL is checkpointed into the main file.
-                shutil.copy2(db_path, self.backup_dir / pre_restore_filename)
+                # The online backup API rather than a raw copy: the restore
+                # endpoint proceeds after its drain timeout, so a connection
+                # (or a scheduler job) may still hold uncheckpointed WAL.
+                pre_restore_path = self.backup_dir / pre_restore_filename
+                try:
+                    _snapshot_database(db_path, pre_restore_path)
+                except sqlite3.DatabaseError:
+                    # A corrupt live file is a reason to restore; keep it as-is.
+                    logger.warning("Live database is not readable; keeping a raw copy")
+                    pre_restore_path.unlink(missing_ok=True)
+                    shutil.copy2(db_path, pre_restore_path)
 
             os.replace(tmp_path, db_path)
 

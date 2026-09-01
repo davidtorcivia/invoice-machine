@@ -1,5 +1,6 @@
 """Alembic migration environment configuration."""
 
+import logging
 from logging.config import fileConfig
 
 from alembic import context
@@ -10,9 +11,11 @@ from invoice_machine.database import Base
 
 config = context.config
 
-# Interpret the config file for Python logging
-if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+# Only take over logging when nothing has configured it yet (the alembic CLI).
+# In-process upgrades run after main.py's basicConfig; fileConfig would reset
+# the root logger to WARN and silence every application logger.
+if config.config_file_name is not None and not logging.getLogger().handlers:
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 # Add model's MetaData for autogenerate support
 target_metadata = Base.metadata

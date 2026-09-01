@@ -73,17 +73,17 @@ export function applyClientToDraft(client) {
 export function buildClientPayload(draft, useNullTaxDefaults = false) {
   const payload = {
     name: draft.name || undefined,
-    business_name: draft.business_name || undefined,
-    email: draft.email || undefined,
-    phone: draft.phone || undefined,
-    address_line1: draft.address_line1 || undefined,
-    address_line2: draft.address_line2 || undefined,
-    city: draft.city || undefined,
-    state: draft.state || undefined,
-    postal_code: draft.postal_code || undefined,
-    country: draft.country || undefined,
+    business_name: draft.business_name || null,
+    email: draft.email || null,
+    phone: draft.phone || null,
+    address_line1: draft.address_line1 || null,
+    address_line2: draft.address_line2 || null,
+    city: draft.city || null,
+    state: draft.state || null,
+    postal_code: draft.postal_code || null,
+    country: draft.country || null,
     payment_terms_days: Number(draft.payment_terms_days) || undefined,
-    notes: draft.notes || undefined,
+    notes: draft.notes || null,
     preferred_currency: draft.preferred_currency || (useNullTaxDefaults ? null : undefined)
   };
 

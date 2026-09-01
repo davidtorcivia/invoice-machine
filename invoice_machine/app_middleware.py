@@ -240,9 +240,11 @@ def configure_http_middleware(app: FastAPI) -> None:
         if request.method == "OPTIONS":
             return await call_next(request)
 
-        # Key management is web-session-only: a bot key must not be able to mint
-        # or revoke keys, so bearer auth is skipped and cookie auth applies.
-        if not path.startswith("/api/auth/") and not path.startswith("/api/api-keys"):
+        # Key management and backups are web-session-only: a bot key must not
+        # mint or revoke keys, and a restore (or a download-edit-restore cycle)
+        # would resurrect revoked keys and forge sessions. Bearer auth is skipped
+        # there and cookie auth applies.
+        if not path.startswith(("/api/auth/", "/api/api-keys", "/api/backups")):
             bearer_token = _extract_bearer_token(request)
             if bearer_token:
                 client_ip = get_client_ip(request)

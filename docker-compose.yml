@@ -2,6 +2,8 @@ services:
   invoice-machine:
     build: .
     container_name: invoice-machine
+    # Stable hostname: the development-mode encryption key derives from it.
+    hostname: invoice-machine
     ports:
       - "${PORT:-8080}:8080"
     volumes:

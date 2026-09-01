@@ -11,7 +11,7 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from invoice_machine.database import BusinessProfile, get_session
+from invoice_machine.database import BusinessProfile, Invoice, get_session
 from invoice_machine.rate_limit import limiter
 from invoice_machine.services import PaymentService
 
@@ -74,6 +74,16 @@ async def stripe_webhook(
     existing = await PaymentService.find_by_external_id(session, "stripe", details["external_id"])
     if existing is not None:
         return {"received": True, "handled": True, "duplicate": True}
+
+    invoice = await session.get(Invoice, details["invoice_id"])
+    if invoice is not None and (invoice.currency_code or "").upper() != details["currency_code"]:
+        logger.error(
+            "Stripe session for invoice %s paid in %s, invoice is in %s; not recorded",
+            invoice.id,
+            details["currency_code"],
+            invoice.currency_code,
+        )
+        return {"received": True, "handled": False, "reason": "currency mismatch"}
 
     try:
         payment = await PaymentService.record_payment(

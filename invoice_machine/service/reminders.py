@@ -12,7 +12,7 @@ import json
 import logging
 from datetime import date
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from invoice_machine.database import BusinessProfile, Invoice
@@ -181,8 +181,12 @@ async def send_due_reminders(session: AsyncSession, today: date | None = None) -
     )
 
     results: list[dict] = []
-    for invoice in candidates:
-        if invoice.amount_due <= 0:
+    # Re-fetch by id each iteration: a rollback in the except expires every
+    # loaded instance, and reading an expired attribute here would raise
+    # MissingGreenlet and abort the rest of the sweep.
+    for invoice_id in [invoice.id for invoice in candidates]:
+        invoice = await session.get(Invoice, invoice_id)
+        if invoice is None or invoice.amount_due <= 0:
             continue
         if not (invoice.client_email or "").strip():
             continue
@@ -204,6 +208,7 @@ async def send_due_reminders(session: AsyncSession, today: date | None = None) -
             result = await send_invoice_email(session, invoice_id, subject=subject, body=body)
         except Exception as exc:
             await session.rollback()
+            profile = await BusinessProfile.get(session)
             logger.error("Reminder for invoice %s failed: %s", invoice_number, exc, exc_info=True)
             results.append(
                 {
@@ -219,10 +224,20 @@ async def send_due_reminders(session: AsyncSession, today: date | None = None) -
         if result.get("success"):
             # Record the offsets only on a confirmed send, so a transient SMTP
             # failure retries tomorrow instead of being silently swallowed.
+            # Core UPDATE with updated_at pinned: the column's onupdate would
+            # otherwise mark the invoice stale and force a PDF re-render.
             sent = sorted({*invoice.reminders_sent_list, offset, *superseded})
-            invoice.reminders_sent = json.dumps(sent)
-            invoice.last_reminder_sent_at = utc_now()
+            await session.execute(
+                update(Invoice)
+                .where(Invoice.id == invoice_id)
+                .values(
+                    reminders_sent=json.dumps(sent),
+                    last_reminder_sent_at=utc_now(),
+                    updated_at=invoice.updated_at,
+                )
+            )
             await session.commit()
+            session.expire(invoice)
 
         results.append(
             {

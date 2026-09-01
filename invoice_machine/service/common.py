@@ -90,6 +90,7 @@ def normalize_line_items(items: list[dict] | None) -> list[dict]:
             raise ValueError("Unit price must be a finite number")
         if unit_price < 0:
             raise ValueError("Unit price cannot be negative")
+        unit_price = quantize_money(unit_price)
         unit_type = item_data.get("unit_type", "qty")
         if unit_type not in VALID_UNIT_TYPES:
             raise ValueError(f"Invalid unit type. Must be one of: {sorted(VALID_UNIT_TYPES)}")

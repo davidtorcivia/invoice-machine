@@ -432,14 +432,16 @@ class RecurringService:
                 Client.deleted_at.is_(None),
             )
         )
-        due_schedules = list(result.scalars().all())
+        due_ids = [schedule.id for schedule in result.scalars().all()]
 
         results = []
-        for schedule in due_schedules:
-            # Capture identity before the try: a rollback in the except expires
-            # every ORM object, so reading schedule.id/.name afterwards would raise
-            # MissingGreenlet (a lazy reload) and abort the whole run.
-            schedule_id = schedule.id
+        # Re-fetch by id each iteration: a rollback in the except expires every
+        # loaded instance, and reading an expired attribute would raise
+        # MissingGreenlet (a lazy reload) and abort the rest of the run.
+        for schedule_id in due_ids:
+            schedule = await session.get(RecurringSchedule, schedule_id)
+            if schedule is None:
+                continue
             schedule_name = schedule.name
             generated = 0
             try:
@@ -448,6 +450,9 @@ class RecurringService:
                     invoice = await RecurringService._create_invoice_from_schedule(
                         session, schedule, period_date
                     )
+                    # create_invoice may roll back on a numbering retry, which
+                    # expires this instance; re-fetch before reading its fields.
+                    schedule = await session.get(RecurringSchedule, schedule_id)
 
                     schedule.last_invoice_id = invoice.id
                     schedule.next_invoice_date = RecurringService.calculate_next_date(

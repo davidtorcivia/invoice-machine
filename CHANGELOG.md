@@ -11,6 +11,47 @@ Notable changes to Invoice Machine. Format based on
 - Multiple MCP and bot API keys, each labeled and rotated or revoked on its own,
   under Settings > MCP Integration and Settings > Bot API Key. Existing keys keep
   working and appear as "Migrated MCP key" and "Migrated bot key".
+- Bot API keys no longer reach `/api/backups`. A restore would resurrect revoked
+  keys, and a download-edit-restore cycle could forge a web session, so backups
+  are web-session-only like key management. The bot skill manifest no longer
+  lists them.
+- `PDF_DIR` and `LOGO_DIR` are gone; both derive from `DATA_DIR`.
+- Line item unit prices are quantized to two decimals on save, so the printed
+  unit price times quantity equals the line total.
+- `paid_at` is the latest payment date, not the moment the payment was recorded,
+  so "paid this month" reflects when the money arrived.
+- Reusing a payment `idempotency_key` against a different invoice is an error
+  instead of silently returning the other invoice's payment.
+- Minimum versions: `python-multipart` 0.0.31, `weasyprint` 68, `cryptography`
+  48.0.1. CI tests on Python 3.11 and 3.14, the version the image ships.
+
+### Fixed
+
+- `GET /mcp/status` returned 500 since the MCP 2026-07-28 upgrade (#24).
+- Production emitted no application logs after startup: the in-process Alembic
+  upgrade reset the root logger.
+- One failing reminder or recurring schedule aborted the rest of the sweep with
+  `MissingGreenlet`; each item is now re-fetched after a rollback.
+- Two simultaneous payments could overpay an invoice past the overpayment guard.
+- Creating an invoice for a nonexistent client retried six times and reported
+  an invoice-number collision.
+- A paid, partially paid, or converted document could be flipped between quote
+  and invoice.
+- Sent quotes were marked overdue by the nightly job.
+- Each reminder bumped `updated_at`, forcing a PDF re-render on the next fetch.
+- The pre-restore safety copy was a raw file copy that could miss uncheckpointed
+  WAL data; it now uses the online backup API.
+- MCP `add_invoice_item` raised on a missing invoice instead of returning an
+  error.
+- A Stripe checkout paid in a different currency than the invoice is logged and
+  skipped instead of recorded against the invoice.
+- Editing payment terms on an existing invoice was silently ignored.
+- Clearing an optional client or profile field (email, phone, address, notes,
+  app base URL) did not save; the old value came back on reload.
+- Saving an invoice edit form opened before a Stripe payment arrived reverted
+  the invoice to unpaid.
+- Recording a payment shared the payment list's rate limit and could return 429
+  after the payment was committed.
 
 ## [0.3.0]
 

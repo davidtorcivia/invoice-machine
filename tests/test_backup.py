@@ -641,7 +641,6 @@ class TestLogoBackupAndRestore:
 
         settings = get_settings()
         monkeypatch.setattr(settings, "data_dir", data_dir)
-        monkeypatch.setattr(settings, "logo_dir", logo_dir)
         return BackupService(backup_dir=tmp_path / "backups"), data_dir, logo_dir
 
     def test_backup_includes_logos(self, tmp_path, monkeypatch):

@@ -518,3 +518,49 @@ class TestPaymentIdempotency:
             await PaymentService.record_payment(
                 db_session, invoice.id, amount="1000.00", idempotency_key="different"
             )
+
+
+class TestAuditRegressionsSeptember2026:
+    """Guards for the September 2026 audit findings."""
+
+    @pytest.mark.asyncio
+    async def test_paid_at_is_the_payment_date(self, db_session, business_profile, test_client):
+        invoice = await _invoice(db_session, test_client, total=Decimal("100.00"))
+        paid_on = (utc_now() - timedelta(days=40)).date()
+
+        await PaymentService.record_payment(
+            db_session, invoice.id, amount="100.00", payment_date=paid_on
+        )
+        await db_session.refresh(invoice)
+
+        assert invoice.status == "paid"
+        assert invoice.paid_at.date() == paid_on
+
+    @pytest.mark.asyncio
+    async def test_stale_amount_due_cannot_overpay(self, db_session, business_profile, test_client):
+        invoice = await _invoice(db_session, test_client, total=Decimal("100.00"))
+        await PaymentService.record_payment(db_session, invoice.id, amount="60.00")
+        # Simulate a second request that read amount_due before the first committed.
+        invoice.amount_paid = Decimal("0.00")
+        await db_session.commit()
+        invoice_id = invoice.id
+
+        with pytest.raises(ValueError, match="exceeds"):
+            await PaymentService.record_payment(db_session, invoice_id, amount="60.00")
+
+        assert len(await PaymentService.list_payments(db_session, invoice_id)) == 1
+
+    @pytest.mark.asyncio
+    async def test_idempotency_key_is_scoped_to_the_invoice(
+        self, db_session, business_profile, test_client
+    ):
+        first = await _invoice(db_session, test_client)
+        second = await _invoice(db_session, test_client)
+        await PaymentService.record_payment(
+            db_session, first.id, amount="10.00", idempotency_key="shared-key-1"
+        )
+
+        with pytest.raises(ValueError, match="another invoice"):
+            await PaymentService.record_payment(
+                db_session, second.id, amount="10.00", idempotency_key="shared-key-1"
+            )

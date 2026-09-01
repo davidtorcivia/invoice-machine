@@ -1,6 +1,7 @@
 """Tests for invoice numbering, custom numbers, quote conversion, and recurring catch-up."""
 
 from datetime import UTC, date, datetime
+from decimal import Decimal
 
 import pytest
 
@@ -164,3 +165,87 @@ async def test_trigger_consumes_business_due_date_so_sweep_cannot_double_bill(
 
     again = await RecurringService.process_due_schedules(db_session)
     assert [r for r in again if r.get("success")] == []
+
+
+@pytest.mark.asyncio
+async def test_unknown_client_is_rejected_without_retrying(db_session, test_client):
+    with pytest.raises(ValueError, match="Client 99999 not found"):
+        await InvoiceService.create_invoice(db_session, client_id=99999, items=_items())
+
+
+@pytest.mark.asyncio
+async def test_unit_price_is_quantized_so_lines_add_up(db_session, test_client):
+    inv = await InvoiceService.create_invoice(
+        db_session,
+        client_id=test_client.id,
+        items=[{"description": "x", "quantity": 3, "unit_price": "12.345"}],
+    )
+    item = inv.items[0]
+    assert item.unit_price == Decimal("12.35")
+    assert item.total == Decimal("37.05")
+
+
+@pytest.mark.asyncio
+async def test_paid_invoice_cannot_become_a_quote(db_session, test_client):
+    inv = await InvoiceService.create_invoice(db_session, client_id=test_client.id, items=_items())
+    await InvoiceService.update_invoice(db_session, inv.id, status="paid")
+
+    with pytest.raises(ValueError, match="document type"):
+        await InvoiceService.update_invoice(db_session, inv.id, document_type="quote")
+
+
+@pytest.mark.asyncio
+async def test_sent_quotes_are_never_overdue(db_session, test_client):
+    quote = await InvoiceService.create_invoice(
+        db_session, client_id=test_client.id, items=_items(), document_type="quote"
+    )
+    await InvoiceService.update_invoice(db_session, quote.id, status="sent")
+    quote.due_date = date(2000, 1, 1)
+    await db_session.commit()
+
+    await InvoiceService.update_overdue_invoices(db_session)
+    await db_session.refresh(quote)
+    assert quote.status == "sent"
+
+
+@pytest.mark.asyncio
+async def test_one_failing_schedule_does_not_abort_the_rest(db_session, test_client, monkeypatch):
+    frozen = _fixed_now(2026, 4, 15)
+    monkeypatch.setattr("invoice_machine.service.recurring.utc_now", frozen)
+    monkeypatch.setattr("invoice_machine.service.reminders.utc_now", frozen)
+    items = [{"description": "Retainer", "quantity": 1, "unit_price": "100"}]
+    broken = await RecurringService.create_schedule(
+        db_session,
+        client_id=test_client.id,
+        name="Broken",
+        frequency="monthly",
+        schedule_day=1,
+        next_invoice_date=date(2026, 4, 1),
+        line_items=items,
+    )
+    healthy = await RecurringService.create_schedule(
+        db_session,
+        client_id=test_client.id,
+        name="Healthy",
+        frequency="monthly",
+        schedule_day=1,
+        next_invoice_date=date(2026, 4, 1),
+        line_items=items,
+    )
+    original = RecurringService._create_invoice_from_schedule
+    broken_id = broken.id
+
+    async def explode_on_broken(session, schedule, period_date):
+        if schedule.id == broken_id:
+            raise RuntimeError("boom")
+        return await original(session, schedule, period_date)
+
+    monkeypatch.setattr(RecurringService, "_create_invoice_from_schedule", explode_on_broken)
+
+    results = await RecurringService.process_due_schedules(db_session)
+
+    by_name = {r["schedule_name"]: r for r in results}
+    assert by_name["Broken"]["success"] is False
+    assert by_name["Healthy"]["success"] is True
+    await db_session.refresh(healthy)
+    assert healthy.next_invoice_date == date(2026, 5, 1)
