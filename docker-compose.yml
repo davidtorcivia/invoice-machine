@@ -20,6 +20,8 @@ services:
       - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:3000,http://localhost:8080}
       - SECURE_COOKIES=${SECURE_COOKIES:-false}
       - TRUST_PROXY_HEADERS=${TRUST_PROXY_HEADERS:-false}
+      # Error reporting; inert when empty.
+      - SENTRY_DSN=${SENTRY_DSN:-}
       # Invoice defaults
       - DEFAULT_PAYMENT_TERMS_DAYS=${DEFAULT_PAYMENT_TERMS_DAYS:-30}
       - DEFAULT_CURRENCY_CODE=${DEFAULT_CURRENCY_CODE:-USD}
