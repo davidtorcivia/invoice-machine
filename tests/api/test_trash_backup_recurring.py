@@ -286,3 +286,40 @@ class TestRecurringEndpoints:
 
         get_response = await test_client.get(f"/api/recurring/{schedule_id}")
         assert get_response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_restore_reports_a_failed_schema_upgrade(test_client, monkeypatch):
+    """A restored file whose schema cannot be upgraded must not read as success."""
+    from invoice_machine.api import backup as backup_api
+
+    class FakeService:
+        def restore_backup(self, filename):
+            return {
+                "restored_from": filename,
+                "pre_restore_backup": None,
+                "timestamp": "2026-09-01T00:00:00",
+                "message": "ok",
+            }
+
+    async def fake_service(session):
+        return FakeService()
+
+    async def noop():
+        return None
+
+    async def broken_schema(*, apply_migrations):
+        raise RuntimeError("database predates Alembic")
+
+    monkeypatch.setattr(backup_api, "get_backup_service", fake_service)
+    monkeypatch.setattr(backup_api, "close_db", noop)
+    monkeypatch.setattr(backup_api, "init_db", noop)
+    monkeypatch.setattr(backup_api, "ensure_database_schema", broken_schema)
+
+    response = await test_client.post("/api/backups/restore/x.db")
+
+    assert response.status_code == 500
+    assert "predates Alembic" in response.json()["detail"]
+    from invoice_machine.main import app
+
+    assert app.state.restore_in_progress is False

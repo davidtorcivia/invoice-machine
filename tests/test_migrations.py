@@ -3,7 +3,6 @@
 import sqlite3
 import sys
 from pathlib import Path
-from unittest.mock import MagicMock
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
@@ -155,52 +154,6 @@ class TestIdempotentMigrations:
 
         assert "idx_invoices_status_deleted" in indexes
         conn.close()
-
-
-class TestMigrationFlowIntegration:
-    """Integration tests for the complete migration flow."""
-
-    def test_run_alembic_migrations_with_existing_db(self, tmp_path, monkeypatch):
-        db_path = tmp_path / "data" / "invoice_machine.db"
-        db_path.parent.mkdir(parents=True, exist_ok=True)
-
-        conn = sqlite3.connect(str(db_path))
-        cursor = conn.cursor()
-        cursor.execute("CREATE TABLE users (id INTEGER PRIMARY KEY, username VARCHAR(100))")
-        cursor.execute("CREATE TABLE alembic_version (version_num VARCHAR(32))")
-        cursor.execute("CREATE TABLE clients (id INTEGER PRIMARY KEY, name VARCHAR(255))")
-        cursor.execute("INSERT INTO clients (id, name) VALUES (1, 'Test Client')")
-        conn.commit()
-        conn.close()
-
-        mock_settings = MagicMock()
-        mock_settings.data_dir = tmp_path / "data"
-
-        conn = sqlite3.connect(str(db_path))
-        cursor = conn.cursor()
-
-        cursor.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name='alembic_version'"
-        )
-        has_alembic_table = cursor.fetchone() is not None
-
-        has_valid_version = False
-        if has_alembic_table:
-            cursor.execute("SELECT version_num FROM alembic_version LIMIT 1")
-            has_valid_version = cursor.fetchone() is not None
-
-        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='users'")
-        has_users = cursor.fetchone() is not None
-
-        conn.close()
-
-        assert has_alembic_table is True
-        assert has_valid_version is False
-        assert has_users is True
-
-        # This condition should trigger fallback migration
-        should_run_fallback = has_users and not has_valid_version
-        assert should_run_fallback is True
 
 
 class TestColumnExistence:

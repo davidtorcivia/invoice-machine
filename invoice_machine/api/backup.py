@@ -350,13 +350,19 @@ async def restore_backup(
                 # only adds missing *tables* — every missing column would surface
                 # as "no such column" on the next query.
                 await ensure_database_schema(apply_migrations=True)
-            except Exception:
+            except Exception as exc:
                 logger.error("Post-restore schema upgrade failed", exc_info=True)
                 # Still get connections back so the app can report the problem.
                 try:
                     await init_db()
                 except Exception:
                     logger.error("Post-restore init_db failed", exc_info=True)
+                # Raised from finally on purpose: the file is in place but the
+                # schema is unusable, and a 200 would hide that from the admin.
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Database file restored but its schema could not be upgraded: {exc}",
+                )
             finally:
                 restore_state.restore_in_progress = False
 
