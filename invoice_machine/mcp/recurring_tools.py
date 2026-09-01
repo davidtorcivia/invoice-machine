@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import date
 from decimal import Decimal
-from typing import Annotated
+from typing import Annotated, cast
 
 from mcp.server.mcpserver import Context, Elicit, Resolve
 from mcp.server.mcpserver.exceptions import ToolError
@@ -30,7 +30,10 @@ async def list_recurring_schedules(
             client_id=client_id,
             active_only=not include_paused,
         )
-        return [serialize_recurring_schedule(schedule, json_ready=True) for schedule in schedules]
+        return cast(
+            list[RecurringScheduleOut],
+            [serialize_recurring_schedule(schedule, json_ready=True) for schedule in schedules],
+        )
 
 
 @mcp.tool(annotations=READ_ONLY)
@@ -40,7 +43,7 @@ async def get_recurring_schedule(schedule_id: int) -> RecurringScheduleOut | Non
         schedule = await RecurringService.get_schedule(session, schedule_id)
         if not schedule:
             return None
-        return serialize_recurring_schedule(schedule, json_ready=True)
+        return cast(RecurringScheduleOut, serialize_recurring_schedule(schedule, json_ready=True))
 
 
 @mcp.tool(annotations=ADDITIVE)
@@ -115,7 +118,7 @@ async def create_recurring_schedule(
             tax_name=tax_name,
         )
 
-        return serialize_recurring_schedule(schedule, json_ready=True)
+        return cast(RecurringScheduleOut, serialize_recurring_schedule(schedule, json_ready=True))
 
 
 @mcp.tool(annotations=UPDATE)
@@ -201,7 +204,7 @@ async def update_recurring_schedule(
         if not schedule:
             return None
 
-        return serialize_recurring_schedule(schedule, json_ready=True)
+        return cast(RecurringScheduleOut, serialize_recurring_schedule(schedule, json_ready=True))
 
 
 @mcp.tool(annotations=DESTRUCTIVE)

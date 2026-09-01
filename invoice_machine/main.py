@@ -80,7 +80,11 @@ app.include_router(webhooks.router)
 # Streamable HTTP is the primary MCP transport. It must be an exact "/mcp"
 # route on the main app (not a route inside the mount below) because hitting a
 # mount root triggers a 307 redirect that not all MCP clients follow.
-app.add_route("/mcp", mcp.mcp_streamable_http_handler, methods=["POST", "GET", "DELETE"])
+# Route() rather than add_route(): the handler is an ASGI app, which Route
+# accepts but add_route's request-response signature does not.
+app.router.routes.append(
+    Route("/mcp", mcp.mcp_streamable_http_handler, methods=["POST", "GET", "DELETE"])
+)
 
 mcp_asgi_app = Starlette(
     routes=[

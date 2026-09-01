@@ -1,7 +1,10 @@
 """Search-related service operations."""
 
 import logging
+from collections.abc import Sequence
+from typing import Any
 
+from sqlalchemy import Row
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from invoice_machine.database import Client, Invoice, InvoiceItem
@@ -359,7 +362,9 @@ class SearchService:
         return results
 
     @staticmethod
-    async def _fts_rows(session: AsyncSession, sql: str, fts_query: str, limit: int) -> list:
+    async def _fts_rows(
+        session: AsyncSession, sql: str, fts_query: str, limit: int
+    ) -> Sequence[Row[Any]]:
         from sqlalchemy import text
 
         result = await session.execute(text(sql), {"query": fts_query, "limit": limit})

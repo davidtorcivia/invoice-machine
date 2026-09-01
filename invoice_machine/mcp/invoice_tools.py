@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import date
 from decimal import Decimal
+from typing import cast
 
 from mcp.server.mcpserver.exceptions import ToolError
 
@@ -50,16 +51,19 @@ async def list_invoices(
             limit=limit,
         )
 
-        return [
-            serialize_invoice(
-                invoice,
-                include_items=False,
-                include_formatted_total=True,
-                json_ready=True,
-                selected_payment_methods_as_list=True,
-            )
-            for invoice in invoices
-        ]
+        return cast(
+            list[InvoiceOut],
+            [
+                serialize_invoice(
+                    invoice,
+                    include_items=False,
+                    include_formatted_total=True,
+                    json_ready=True,
+                    selected_payment_methods_as_list=True,
+                )
+                for invoice in invoices
+            ],
+        )
 
 
 @mcp.tool(annotations=READ_ONLY)
@@ -69,12 +73,15 @@ async def get_invoice(invoice_id: int) -> InvoiceOut | None:
         invoice = await InvoiceService.get_invoice(session, invoice_id)
         if not invoice:
             return None
-        return serialize_invoice(
-            invoice,
-            include_items=True,
-            include_formatted_total=True,
-            json_ready=True,
-            selected_payment_methods_as_list=True,
+        return cast(
+            InvoiceOut,
+            serialize_invoice(
+                invoice,
+                include_items=True,
+                include_formatted_total=True,
+                json_ready=True,
+                selected_payment_methods_as_list=True,
+            ),
         )
 
 
@@ -136,12 +143,15 @@ async def create_invoice(
             tax_rate=tax_rate_decimal,
             tax_name=tax_name,
         )
-        return serialize_invoice(
-            invoice,
-            include_items=True,
-            include_formatted_total=True,
-            json_ready=True,
-            selected_payment_methods_as_list=True,
+        return cast(
+            InvoiceOut,
+            serialize_invoice(
+                invoice,
+                include_items=True,
+                include_formatted_total=True,
+                json_ready=True,
+                selected_payment_methods_as_list=True,
+            ),
         )
 
 
@@ -211,12 +221,15 @@ async def update_invoice(
 
         if not invoice:
             return None
-        return serialize_invoice(
-            invoice,
-            include_items=False,
-            include_formatted_total=True,
-            json_ready=True,
-            selected_payment_methods_as_list=True,
+        return cast(
+            InvoiceOut,
+            serialize_invoice(
+                invoice,
+                include_items=False,
+                include_formatted_total=True,
+                json_ready=True,
+                selected_payment_methods_as_list=True,
+            ),
         )
 
 
@@ -302,7 +315,7 @@ async def add_invoice_item(
         )
         if item is None:
             raise ToolError(f"Invoice {invoice_id} not found")
-        return serialize_invoice_item(item)
+        return cast(InvoiceItemOut, serialize_invoice_item(item))
 
 
 @mcp.tool(annotations=UPDATE)
@@ -331,7 +344,7 @@ async def update_invoice_item(
         if not item:
             return None
 
-        return serialize_invoice_item(item)
+        return cast(InvoiceItemOut, serialize_invoice_item(item))
 
 
 @mcp.tool(annotations=DESTRUCTIVE)

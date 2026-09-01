@@ -13,6 +13,10 @@ Two rules govern everything in this file, both about not corrupting data:
    depending on its flags, so `extra="allow"` keeps unmodelled keys flowing
    through instead of silently dropping them.
 
+Tools return the presenter's raw dict `cast` to the model here, never a model
+instance: the SDK builds the unstructured text block from the raw return value,
+so constructing a model would add nulls for unset fields to what clients read.
+
 All MCP tools serialize with `json_ready=True`, so dates arrive as ISO strings
 and are typed `str` here rather than `date`/`datetime`.
 """

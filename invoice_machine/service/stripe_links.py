@@ -324,6 +324,8 @@ def extract_payment_from_event(event: dict) -> dict | None:
 
     metadata = session.get("metadata") or {}
     raw_invoice_id = metadata.get("invoice_id") or session.get("client_reference_id")
+    if raw_invoice_id is None:
+        return None
     try:
         invoice_id = int(raw_invoice_id)
     except (TypeError, ValueError):

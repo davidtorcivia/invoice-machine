@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import asyncio
+import io
 import logging
 from contextlib import asynccontextmanager
 from datetime import timedelta
+from typing import IO
 
 from fastapi import FastAPI
 
@@ -184,7 +186,7 @@ async def _rebuild_search_indexes() -> None:
             )
 
 
-def _acquire_scheduler_lock():
+def _acquire_scheduler_lock() -> IO[str] | None:
     """Acquire a single-instance lock so only one process runs the scheduler.
 
     Returns the open file handle (which must be kept alive to hold the lock) or
@@ -194,7 +196,9 @@ def _acquire_scheduler_lock():
     try:
         import fcntl
     except ImportError:
-        return object()  # No advisory locking available; run unconditionally.
+        # No advisory locking available; run unconditionally. StringIO is a
+        # closeable stand-in so the shutdown path stays uniform.
+        return io.StringIO()
 
     lock_path = settings.data_dir / "scheduler.lock"
     handle = open(lock_path, "w")

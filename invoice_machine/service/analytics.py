@@ -9,10 +9,12 @@ the two surfaces cannot drift.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import date, datetime
 from decimal import Decimal
+from typing import Any
 
-from sqlalchemy import Integer, and_, case, func, or_, select
+from sqlalchemy import Integer, Row, and_, case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from invoice_machine.database import BusinessProfile, Invoice
@@ -169,7 +171,7 @@ def _amount_due_expr():
     return func.max(Invoice.total - func.coalesce(Invoice.amount_paid, 0), 0)
 
 
-async def _period_currency_rows(session: AsyncSession, period_filter) -> list:
+async def _period_currency_rows(session: AsyncSession, period_filter) -> Sequence[Row[Any]]:
     return (
         await session.execute(
             select(
@@ -192,7 +194,9 @@ async def _period_currency_rows(session: AsyncSession, period_filter) -> list:
     ).all()
 
 
-async def _outstanding_currency_rows(session: AsyncSession, global_filter, today: date) -> list:
+async def _outstanding_currency_rows(
+    session: AsyncSession, global_filter, today: date
+) -> Sequence[Row[Any]]:
     is_effectively_overdue = or_(
         Invoice.status == "overdue",
         and_(Invoice.status == "sent", Invoice.due_date < today),

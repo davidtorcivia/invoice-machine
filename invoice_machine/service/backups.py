@@ -180,6 +180,8 @@ class BackupService:
 
     def _upload_to_s3(self, local_path: Path, filename: str):
         """Upload a backup to S3-compatible storage."""
+        if not self.s3_config:
+            raise ValueError("S3 configuration not provided")
         s3_client = self._s3_client()
         bucket = self.s3_config.get("bucket")
         prefix = self.s3_config.get("prefix", "invoice-machine-backups")

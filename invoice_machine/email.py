@@ -155,8 +155,8 @@ class EmailService:
                 "Stored SMTP password could not be decrypted. Re-save it in settings."
             ) from exc
 
-    def _validate_config(self) -> None:
-        """Validate SMTP configuration is complete."""
+    def _validate_config(self) -> tuple[str, str]:
+        """Validate SMTP configuration and return the checked (host, from_email)."""
         if not self.profile.smtp_enabled:
             raise ValueError("SMTP is not enabled. Configure SMTP settings first.")
 
@@ -165,6 +165,8 @@ class EmailService:
 
         if not self.profile.smtp_from_email:
             raise ValueError("SMTP from email is not configured.")
+
+        return self.profile.smtp_host, self.profile.smtp_from_email
 
     def _send_email_sync(
         self,
@@ -175,14 +177,14 @@ class EmailService:
         attachment_filename: str | None = None,
     ) -> bool:
         """Send one message synchronously; call it off the event loop."""
-        self._validate_config()
+        host, profile_from_email = self._validate_config()
 
         to_email = _sanitize_email(to_email)
         subject = _sanitize_header(subject, "Subject")
 
         msg = MIMEMultipart()
         from_name = _sanitize_header(self.profile.smtp_from_name or "", "From name")
-        from_email = _sanitize_email(self.profile.smtp_from_email)
+        from_email = _sanitize_email(profile_from_email)
         # formataddr quotes/escapes the display name: an unescaped name containing
         # <> or a comma can forge extra addresses.
         msg["From"] = formataddr((from_name, from_email)) if from_name else from_email
@@ -207,20 +209,20 @@ class EmailService:
         port = self.profile.smtp_port or 587
 
         # SSRF guard before any outbound connection.
-        _validate_smtp_target(self.profile.smtp_host, port)
+        _validate_smtp_target(host, port)
 
         smtp_password = self._get_smtp_password()
 
         if use_tls and port == 465:
             context = ssl.create_default_context()
-            with smtplib.SMTP_SSL(self.profile.smtp_host, port, context=context) as server:
+            with smtplib.SMTP_SSL(host, port, context=context) as server:
                 if self.profile.smtp_username and smtp_password:
                     server.login(self.profile.smtp_username, smtp_password)
                 server.send_message(msg)
         else:
             # STARTTLS (port 587 or other). Pass a verifying context: the
             # smtplib default is CERT_NONE, which accepts any certificate.
-            with smtplib.SMTP(self.profile.smtp_host, port) as server:
+            with smtplib.SMTP(host, port) as server:
                 if use_tls:
                     server.starttls(context=ssl.create_default_context())
                 if self.profile.smtp_username and smtp_password:
@@ -296,7 +298,7 @@ class EmailService:
     async def test_connection(self) -> dict:
         """Test the SMTP connection without sending an email."""
         try:
-            self._validate_config()
+            host, _ = self._validate_config()
 
             smtp_password = self._get_smtp_password()
 
@@ -305,15 +307,15 @@ class EmailService:
                 port = self.profile.smtp_port or 587
 
                 # SSRF guard before any outbound connection.
-                _validate_smtp_target(self.profile.smtp_host, port)
+                _validate_smtp_target(host, port)
 
                 if use_tls and port == 465:
                     context = ssl.create_default_context()
-                    with smtplib.SMTP_SSL(self.profile.smtp_host, port, context=context) as server:
+                    with smtplib.SMTP_SSL(host, port, context=context) as server:
                         if self.profile.smtp_username and smtp_password:
                             server.login(self.profile.smtp_username, smtp_password)
                 else:
-                    with smtplib.SMTP(self.profile.smtp_host, port) as server:
+                    with smtplib.SMTP(host, port) as server:
                         if use_tls:
                             server.starttls(context=ssl.create_default_context())
                         if self.profile.smtp_username and smtp_password:

@@ -216,4 +216,6 @@ async def restore_client(
         raise HTTPException(status_code=404, detail="Client not found or not deleted")
 
     client = await ClientService.get_client(session, client_id)
+    if client is None:
+        raise HTTPException(status_code=404, detail="Client not found")
     return client

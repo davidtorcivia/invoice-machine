@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import date
+from typing import cast
 
 from mcp.server.mcpserver.exceptions import ToolError
 
@@ -23,16 +24,19 @@ async def list_payments(invoice_id: int) -> PaymentLedgerOut | None:
             return None
 
         payments = await PaymentService.list_payments(session, invoice_id)
-        return {
-            "invoice_id": invoice.id,
-            "invoice_number": invoice.invoice_number,
-            "currency_code": invoice.currency_code,
-            "total": str(invoice.total),
-            "amount_paid": str(invoice.amount_paid or 0),
-            "amount_due": str(invoice.amount_due),
-            "is_partially_paid": invoice.is_partially_paid,
-            "payments": [serialize_payment(p, json_ready=True) for p in payments],
-        }
+        return cast(
+            PaymentLedgerOut,
+            {
+                "invoice_id": invoice.id,
+                "invoice_number": invoice.invoice_number,
+                "currency_code": invoice.currency_code,
+                "total": str(invoice.total),
+                "amount_paid": str(invoice.amount_paid or 0),
+                "amount_due": str(invoice.amount_due),
+                "is_partially_paid": invoice.is_partially_paid,
+                "payments": [serialize_payment(p, json_ready=True) for p in payments],
+            },
+        )
 
 
 @mcp.tool(annotations=ADDITIVE_IDEMPOTENT)
@@ -79,6 +83,8 @@ async def record_payment(
             raise ToolError(f"Invoice {invoice_id} not found")
 
         invoice = await InvoiceService.get_invoice(session, invoice_id)
+        if invoice is None:
+            raise ToolError(f"Invoice {invoice_id} not found")
         return {
             "success": True,
             "payment": serialize_payment(payment, json_ready=True),

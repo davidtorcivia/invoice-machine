@@ -451,7 +451,10 @@ class RecurringService:
                 )
                 # create_invoice may roll back on a numbering retry, which
                 # expires this instance; re-fetch before reading its fields.
-                schedule = await session.get(RecurringSchedule, schedule_id)
+                refetched = await session.get(RecurringSchedule, schedule_id)
+                if refetched is None:
+                    raise RuntimeError(f"Recurring schedule {schedule_id} disappeared mid-run")
+                schedule = refetched
 
                 schedule.last_invoice_id = invoice.id
                 schedule.next_invoice_date = RecurringService.calculate_next_date(

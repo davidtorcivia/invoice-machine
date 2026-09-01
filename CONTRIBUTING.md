@@ -23,6 +23,7 @@ SQLite database is created under `data/` on first run.
 ```bash
 ruff check invoice_machine/ tests/
 ruff format --check invoice_machine/ tests/
+pyright invoice_machine/
 pytest -q
 cd frontend && npm run check && npm run build
 ```

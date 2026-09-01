@@ -209,7 +209,9 @@ def configure_http_middleware(app: FastAPI) -> None:
             )
 
     app.state.limiter = limiter
-    app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+    # slowapi's handler is typed for RateLimitExceeded; Starlette types every
+    # handler's second parameter as Exception, so the narrower one never fits.
+    app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)  # pyright: ignore[reportArgumentType]
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins_list,

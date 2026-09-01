@@ -97,11 +97,11 @@ def upgrade() -> None:
     conn = op.get_bind()
 
     # Check if there's data to index
-    invoices_count = conn.execute(sa.text("SELECT COUNT(*) FROM invoices")).scalar()
+    invoices_count = conn.execute(sa.text("SELECT COUNT(*) FROM invoices")).scalar() or 0
     if invoices_count > 0:
         op.execute("INSERT INTO invoices_fts(invoices_fts) VALUES('rebuild')")
 
-    clients_count = conn.execute(sa.text("SELECT COUNT(*) FROM clients")).scalar()
+    clients_count = conn.execute(sa.text("SELECT COUNT(*) FROM clients")).scalar() or 0
     if clients_count > 0:
         op.execute("INSERT INTO clients_fts(clients_fts) VALUES('rebuild')")
 

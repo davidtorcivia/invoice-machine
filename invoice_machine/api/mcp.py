@@ -1,12 +1,17 @@
 """MCP remote-access endpoints (Streamable HTTP + legacy SSE)."""
 
 from contextlib import asynccontextmanager
+from typing import TYPE_CHECKING
 
 from starlette.requests import Request
 from starlette.responses import Response as StarletteResponse
 
 from invoice_machine.api_keys import authenticate_api_key, count_api_keys
 from invoice_machine.rate_limit import bearer_auth_throttle, get_client_ip
+
+if TYPE_CHECKING:  # imported lazily at runtime to keep startup light
+    from mcp.server.lowlevel.server import Server
+    from mcp.server.sse import SseServerTransport
 
 
 async def verify_mcp_auth(request: Request) -> bool:
@@ -89,15 +94,15 @@ class MCPStreamableHTTPHandler:
         await _http_session_manager.handle_request(scope, receive, send)
 
 
-_sse_transport = None
-_mcp_server = None
+_sse_transport: "SseServerTransport | None" = None
+_mcp_server: "Server | None" = None
 
 
-def get_sse_transport():
+def get_sse_transport() -> "tuple[SseServerTransport, Server]":
     """Get or create the SSE transport."""
     global _sse_transport, _mcp_server
 
-    if _sse_transport is None:
+    if _sse_transport is None or _mcp_server is None:
         from mcp.server.sse import SseServerTransport
 
         from invoice_machine.mcp.server import mcp
