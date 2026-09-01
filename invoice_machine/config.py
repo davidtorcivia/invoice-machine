@@ -50,8 +50,6 @@ class Settings(BaseSettings):
 
     # Paths
     data_dir: Path = Path("./data")
-    pdf_dir: Path = Path("./data/pdfs")
-    logo_dir: Path = Path("./data/logos")
 
     # Invoice defaults
     default_payment_terms_days: int = 30
@@ -62,6 +60,14 @@ class Settings(BaseSettings):
     max_logo_size_mb: int = 5
     # Note: SVG is excluded due to XSS security risks (can contain embedded JavaScript)
     allowed_logo_extensions: list[str] = [".jpg", ".jpeg", ".png", ".gif", ".webp"]
+
+    @property
+    def pdf_dir(self) -> Path:
+        return self.data_dir / "pdfs"
+
+    @property
+    def logo_dir(self) -> Path:
+        return self.data_dir / "logos"
 
     def ensure_runtime_dirs(self) -> None:
         """Create the data/pdf/logo directories if they don't exist."""

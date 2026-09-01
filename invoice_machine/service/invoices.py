@@ -14,6 +14,7 @@ from invoice_machine.service.common import (
     is_auto_invoice_number,
     line_item_total,
     normalize_line_items,
+    quantize_money,
     quantize_quantity,
     recalculate_invoice_totals,
     resolve_exchange_rate,
@@ -204,6 +205,8 @@ class InvoiceService:
             raise ValueError("Tax rate must be between 0 and 100")
 
         client = await session.get(Client, client_id) if client_id else None
+        if client_id and client is None:
+            raise ValueError(f"Client {client_id} not found")
 
         if tax_enabled is not None:
             use_tax_enabled = tax_enabled
@@ -305,6 +308,8 @@ class InvoiceService:
                     raise ValueError("Quote was already converted") from exc
                 if override:
                     raise ValueError(f"Invoice number '{override_number}' already exists") from exc
+                if "invoice_number" not in constraint:
+                    raise
                 # Re-resolve objects expired by the rollback before retrying.
                 business = await BusinessProfile.get_or_create(session)
                 client = await session.get(Client, client_id) if client_id else None
@@ -337,7 +342,6 @@ class InvoiceService:
         # (subtotal/tax_amount/total) and identity fields are intentionally
         # excluded so callers cannot desync totals from line items.
         allowed_kwargs = {
-            "currency_code",
             "payment_terms_days",
             "client_reference",
             "show_payment_instructions",
@@ -362,6 +366,16 @@ class InvoiceService:
             if key in ("tax_enabled", "tax_rate") and getattr(invoice, key) != value:
                 tax_fields_changed = True
             if key == "document_type" and value != invoice.document_type:
+                if (
+                    invoice.status == "paid"
+                    or (invoice.amount_paid or 0) > 0
+                    or invoice.converted_to_invoice_id
+                    or invoice.converted_from_invoice_id
+                ):
+                    raise ValueError(
+                        "Cannot change the document type of a paid, partially paid, "
+                        "or converted document"
+                    )
                 doc_type_changed = True
             setattr(invoice, key, value)
 
@@ -431,6 +445,9 @@ class InvoiceService:
             await snapshot_client_info(session, client, invoice)
 
         invoice.updated_at = utc_now()
+        # Read before the commit: a rollback expires the instance and reading
+        # invoice_number afterwards would raise MissingGreenlet.
+        number = invoice.invoice_number
         try:
             await session.commit()
         except IntegrityError as exc:
@@ -438,7 +455,7 @@ class InvoiceService:
             # auto-number regenerated into an existing slot) is caller error, not
             # a server fault.
             await session.rollback()
-            raise ValueError(f"Invoice number '{invoice.invoice_number}' already exists") from exc
+            raise ValueError(f"Invoice number '{number}' already exists") from exc
         await session.refresh(invoice)
         return invoice
 
@@ -552,7 +569,7 @@ class InvoiceService:
         """Add a line item to an invoice. Returns None if the invoice is missing."""
         quantity = _coerce_quantity(quantity)
 
-        unit_price = Decimal(str(unit_price))
+        unit_price = quantize_money(Decimal(str(unit_price)))
         if unit_price < 0:
             raise ValueError("Unit price cannot be negative")
 
@@ -616,7 +633,7 @@ class InvoiceService:
         if quantity is not None:
             item.quantity = quantity
         if unit_price is not None:
-            item.unit_price = Decimal(str(unit_price))
+            item.unit_price = quantize_money(Decimal(str(unit_price)))
         if sort_order is not None:
             item.sort_order = sort_order
         if unit_type is not None:
@@ -665,6 +682,7 @@ class InvoiceService:
             .where(
                 and_(
                     Invoice.status == "sent",
+                    Invoice.document_type == "invoice",
                     Invoice.due_date < today,
                     Invoice.deleted_at.is_(None),
                     func.coalesce(Invoice.amount_paid, 0) < Invoice.total,

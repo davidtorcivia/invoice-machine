@@ -407,3 +407,18 @@ class TestTaxSettingsEndpoints:
         assert data["default_tax_enabled"] is True
         assert data["default_tax_rate"] == "8.25"
         assert data["default_tax_name"] == "Sales Tax"
+
+
+@pytest.mark.asyncio
+async def test_mcp_status_reports_protocol_versions(test_client):
+    from mcp_types import DEFAULT_NEGOTIATED_VERSION, LATEST_PROTOCOL_VERSION
+
+    response = await test_client.get("/mcp/status")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["enabled"] is False
+    assert body["protocol_version"] == LATEST_PROTOCOL_VERSION
+    assert body["supported_protocol_versions"] == [
+        DEFAULT_NEGOTIATED_VERSION,
+        LATEST_PROTOCOL_VERSION,
+    ]

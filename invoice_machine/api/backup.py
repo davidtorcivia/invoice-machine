@@ -390,8 +390,8 @@ async def download_backup(
         backup_path = backup_service.get_backup_path(filename)
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail="Backup not found")
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid backup filename")
 
     return FileResponse(
         backup_path,

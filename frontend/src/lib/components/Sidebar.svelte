@@ -192,6 +192,7 @@
         type="text"
         class="search-input"
         placeholder="Search..."
+        aria-label="Search"
         bind:value={searchQuery}
         bind:this={searchInput}
         onkeydown={handleSearchKeydown}
@@ -199,7 +200,7 @@
         oninput={handleSearchInput}
       />
       {#if searchQuery}
-        <button class="search-clear" onclick={closeSearch}>
+        <button class="search-clear" aria-label="Clear search" onclick={closeSearch}>
           <Icon name="x" size="sm" />
         </button>
       {/if}

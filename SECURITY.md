@@ -33,7 +33,7 @@ own reverse proxy. That shapes the model:
 | Sessions | Database-backed, 30-day expiry, revocable, `HttpOnly` cookies |
 | CSRF | Double-submit cookie, required on every unsafe method |
 | Stored credentials | SMTP, Stripe, and S3 secrets encrypted with Fernet; plaintext refused in production |
-| API keys | Hashed at rest; plaintext keys refused in production |
+| API keys | Hashed at rest; plaintext keys refused in production. Bot keys cannot manage keys or backups |
 | Stripe webhooks | HMAC signature with a 5-minute replay window, verified before the body is parsed |
 | Brute force | Rate limits on every endpoint; a sliding-window throttle on bearer and MCP auth |
 | File paths | PDF, logo, and backup access is confined to its directory and re-validated after resolution |

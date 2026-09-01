@@ -360,15 +360,21 @@ async def add_invoice_item(
         Created line item
     """
     async with get_session() as session:
-        item = await InvoiceService.add_item(
-            session,
-            invoice_id,
-            description,
-            quantity,
-            Decimal(str(unit_price)),
-            unit_type=unit_type,
-        )
+        try:
+            item = await InvoiceService.add_item(
+                session,
+                invoice_id,
+                description,
+                quantity,
+                Decimal(str(unit_price)),
+                unit_type=unit_type,
+            )
+        except ValueError as exc:
+            await session.rollback()
+            return {"success": False, "error": str(exc)}
 
+        if item is None:
+            return {"success": False, "error": f"Invoice {invoice_id} not found"}
         return serialize_invoice_item(item)
 
 

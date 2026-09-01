@@ -163,11 +163,7 @@ class MCPStatusHandler:
     async def __call__(self, scope, receive, send):
         import json
 
-        from mcp_types import (
-            HANDSHAKE_PROTOCOL_VERSIONS,
-            LATEST_PROTOCOL_VERSION,
-            MODERN_PROTOCOL_VERSIONS,
-        )
+        from mcp_types import DEFAULT_NEGOTIATED_VERSION, LATEST_PROTOCOL_VERSION
 
         body = json.dumps(
             {
@@ -179,8 +175,8 @@ class MCPStatusHandler:
                 # self-describing request, older ones still get the handshake.
                 "protocol_version": LATEST_PROTOCOL_VERSION,
                 "supported_protocol_versions": [
-                    *HANDSHAKE_PROTOCOL_VERSIONS,
-                    *MODERN_PROTOCOL_VERSIONS,
+                    DEFAULT_NEGOTIATED_VERSION,
+                    LATEST_PROTOCOL_VERSION,
                 ],
             }
         )

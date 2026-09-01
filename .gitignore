@@ -94,3 +94,4 @@ node_modules/
 
 # Local docker compose overrides (environment-specific)
 docker-compose.override.yml
+.simplify/

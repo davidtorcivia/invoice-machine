@@ -11,7 +11,6 @@ the codebase's use of union type syntax (e.g., `Decimal | str`). These tests are
 marked with @pytest.mark.skipif for Python 3.9 compatibility.
 """
 
-import sys
 from datetime import date, timedelta
 from decimal import Decimal
 
@@ -25,12 +24,6 @@ from invoice_machine.email import (
     DEFAULT_SUBJECT_TEMPLATE,
     expand_template,
 )
-
-# Skip marker for tests requiring Python 3.10+ (due to codebase using union type syntax)
-requires_python_310 = pytest.mark.skipif(
-    sys.version_info < (3, 10), reason="Requires Python 3.10+ (codebase uses union type syntax)"
-)
-
 
 # ============================================================================
 # Template Expansion Tests
@@ -383,7 +376,6 @@ async def api_client_with_invoice(api_client):
         yield api_client, invoice.id
 
 
-@requires_python_310
 class TestEmailTemplatesEndpoints:
     """Tests for email templates API endpoints."""
 
@@ -608,7 +600,6 @@ class TestEmailTemplatesEndpoints:
 # ============================================================================
 
 
-@requires_python_310
 class TestEmailTemplateMCPTools:
     """Tests for email template MCP tools via direct function calls."""
 
@@ -764,7 +755,6 @@ class TestEmailTemplateSecurity:
         assert "O'Reilly & Sons" in result
         assert "<script>" in result  # Plain text email preserves this
 
-    @requires_python_310
     @pytest.mark.asyncio
     async def test_template_api_requires_auth(self):
         """All template API endpoints require authentication."""
@@ -787,7 +777,6 @@ class TestEmailTemplateSecurity:
         response = await client.post("/api/invoices/1/email-preview", json={})
         assert response.status_code == 401
 
-    @requires_python_310
     @pytest.mark.asyncio
     async def test_template_max_length_validation(self, api_client):
         """Template length is validated."""
@@ -799,7 +788,6 @@ class TestEmailTemplateSecurity:
         )
         assert response.status_code == 422
 
-    @requires_python_310
     @pytest.mark.asyncio
     async def test_body_template_max_length_validation(self, api_client):
         """Body template length is validated."""
@@ -811,7 +799,6 @@ class TestEmailTemplateSecurity:
         )
         assert response.status_code == 422
 
-    @requires_python_310
     @pytest.mark.asyncio
     async def test_preview_respects_max_length(self, api_client_with_invoice):
         """Preview endpoint validates template length."""

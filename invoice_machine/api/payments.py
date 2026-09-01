@@ -72,6 +72,10 @@ async def list_invoice_payments(
     session: AsyncSession = Depends(get_session),
 ) -> dict:
     """List payments recorded against an invoice."""
+    return await _payments_response(session, invoice_id)
+
+
+async def _payments_response(session: AsyncSession, invoice_id: int) -> dict:
     invoice = await InvoiceService.get_invoice(session, invoice_id)
     if not invoice:
         raise HTTPException(status_code=404, detail="Invoice not found")
@@ -135,7 +139,7 @@ async def record_payment(
     if payment is None:
         raise HTTPException(status_code=404, detail="Invoice not found")
 
-    return await list_invoice_payments(request, invoice_id, session)
+    return await _payments_response(session, invoice_id)
 
 
 @router.put("/api/payments/{payment_id}", response_model=InvoicePaymentsResponse)
@@ -158,7 +162,7 @@ async def update_payment(
     if payment is None:
         raise HTTPException(status_code=404, detail="Payment not found")
 
-    return await list_invoice_payments(request, payment.invoice_id, session)
+    return await _payments_response(session, payment.invoice_id)
 
 
 @router.delete("/api/payments/{payment_id}", status_code=204)

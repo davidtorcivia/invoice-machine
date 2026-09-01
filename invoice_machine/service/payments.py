@@ -8,10 +8,10 @@ never drift apart.
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import UTC, date, datetime, time
 from decimal import Decimal, InvalidOperation
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import Date, delete, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -49,14 +49,15 @@ async def recalculate_invoice_payments(session: AsyncSession, invoice: Invoice) 
     - was paid but no longer fully paid -> back to "sent"/"overdue", paid_at cleared
     - partially paid -> status untouched; the balance lives in amount_due
     """
-    total_paid = (
+    total_paid, latest_payment_date = (
         await session.execute(
-            select(func.coalesce(func.sum(Payment.amount), 0)).where(
-                Payment.invoice_id == invoice.id
-            )
+            select(
+                func.coalesce(func.sum(Payment.amount), 0),
+                func.max(Payment.payment_date, type_=Date),
+            ).where(Payment.invoice_id == invoice.id)
         )
-    ).scalar() or 0
-    invoice.amount_paid = quantize_money(total_paid)
+    ).one()
+    invoice.amount_paid = quantize_money(total_paid or 0)
 
     invoice_total = quantize_money(invoice.total or 0)
     fully_paid = invoice_total > 0 and invoice.amount_paid >= invoice_total
@@ -65,7 +66,13 @@ async def recalculate_invoice_payments(session: AsyncSession, invoice: Invoice) 
         if fully_paid and invoice.status != "paid":
             if invoice.status != "draft":
                 invoice.status = "paid"
-                invoice.paid_at = utc_now()
+                # Noon UTC on the payment date keeps the calendar day intact
+                # for month bucketing in any business timezone.
+                invoice.paid_at = (
+                    datetime.combine(latest_payment_date, time(12), tzinfo=UTC)
+                    if latest_payment_date
+                    else utc_now()
+                )
         elif not fully_paid and invoice.status == "paid":
             # Reverted (payment deleted or invoice total raised): fall back to
             # overdue when past due, otherwise sent.
@@ -145,6 +152,8 @@ class PaymentService:
                 raise ValueError("idempotency_key must not be blank")
             existing = await PaymentService._find_by_idempotency_key(session, idempotency_key)
             if existing is not None:
+                if existing.invoice_id != invoice_id:
+                    raise ValueError("idempotency_key was already used for another invoice")
                 return existing
 
         invoice = await session.get(Invoice, invoice_id)
@@ -208,6 +217,13 @@ class PaymentService:
             raise
 
         await recalculate_invoice_payments(session, invoice)
+        # Re-check against the freshly summed payments: two requests can pass
+        # the amount_due pre-check above before either has committed.
+        if not allow_overpayment and invoice.amount_paid > quantize_money(invoice.total or 0):
+            await session.rollback()
+            raise ValueError(
+                "Payment exceeds the outstanding balance; another payment was recorded"
+            )
         await session.commit()
         await session.refresh(payment)
         return payment

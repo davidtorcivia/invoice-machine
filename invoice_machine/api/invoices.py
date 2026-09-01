@@ -121,6 +121,7 @@ class InvoiceUpdate(BaseModel):
 
     issue_date: date | None = None
     due_date: date | None = None
+    payment_terms_days: int | None = Field(None, ge=0, le=365)
     status: str | None = Field(None, pattern="^(draft|sent|paid|overdue|cancelled)$")
     notes: str | None = Field(None, max_length=10000)
     document_type: str | None = Field(None, pattern="^(invoice|quote)$")

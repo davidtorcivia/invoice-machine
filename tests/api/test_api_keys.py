@@ -159,6 +159,16 @@ class TestApiKeyScopeSeparation:
             )
             assert response.status_code == 401
 
+    @pytest.mark.asyncio
+    async def test_bot_key_cannot_reach_backups(self, test_client):
+        """A restore would resurrect revoked keys, so backups are web-session-only."""
+        created = await create_key(test_client, "bot", "Escalating")
+
+        async with bearer_client(created["key"]) as client:
+            assert (await client.get("/api/backups")).status_code == 401
+            assert (await client.post("/api/backups/restore/x.db")).status_code == 401
+            assert (await client.get("/api/invoices")).status_code == 200
+
     MCP_HEADERS = {
         "Content-Type": "application/json",
         "Accept": "application/json, text/event-stream",

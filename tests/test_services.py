@@ -538,7 +538,7 @@ class TestPurgeDeletesGeneratedFiles:
         db_session.add_all([trashed, live])
         await db_session.commit()
 
-        monkeypatch.setattr(get_settings(), "pdf_dir", pdf_dir)
+        monkeypatch.setattr(get_settings(), "data_dir", tmp_path)
         result = await purge_trashed_records(db_session)
         await db_session.commit()
 
@@ -558,7 +558,7 @@ class TestPurgeDeletesGeneratedFiles:
         outsider = tmp_path / "important.db"
         outsider.write_bytes(b"data")
 
-        monkeypatch.setattr(get_settings(), "pdf_dir", pdf_dir)
+        monkeypatch.setattr(get_settings(), "data_dir", tmp_path)
         removed = delete_invoice_pdf_files(["../important.db", "pdfs/../../important.db"])
 
         assert removed == 0
