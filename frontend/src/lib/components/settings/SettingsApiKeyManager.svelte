@@ -17,24 +17,20 @@
     kind: string;
     keys: ApiKey[];
     placeholder: string;
-    revealedKey?: string;
+    // Owned by the parent: this component is unmounted whenever its section is
+    // collapsed, and the one-time plaintext cannot be fetched again.
+    drafts: Record<string, string>;
+    revealed: Record<number, string>;
     onchanged: () => Promise<void> | void;
   }
 
-  let { kind, keys, placeholder, revealedKey = $bindable(''), onchanged }: Props = $props();
+  let { kind, keys, placeholder, drafts, revealed, onchanged }: Props = $props();
 
-  let draft = $state('');
-  // Plaintext of a key just created or rotated, by key id. Never fetched again.
-  let revealed = $state<Record<number, string>>({});
   let busy = $state(false);
   let pending = $state<{ action: 'rotate' | 'revoke'; key: ApiKey } | null>(null);
 
-  $effect(() => {
-    revealedKey = keys.map((key) => revealed[key.id]).find(Boolean) ?? '';
-  });
-
   async function createKey() {
-    const label = draft.trim();
+    const label = drafts[kind].trim();
     if (!label) {
       toast.error('Give the key a name first');
       return;
@@ -43,7 +39,7 @@
     try {
       const created = await apiKeysApi.create(kind, label);
       revealed[created.id] = created.key;
-      draft = '';
+      drafts[kind] = '';
       await onchanged();
       toast.success('API key created');
     } catch {
@@ -148,7 +144,7 @@
     class="input"
     maxlength="100"
     placeholder={placeholder}
-    bind:value={draft}
+    bind:value={drafts[kind]}
     onkeydown={(event) => {
       if (event.key === 'Enter') {
         event.preventDefault();

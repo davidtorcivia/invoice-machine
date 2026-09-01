@@ -61,10 +61,8 @@
 
   let mcpEndpointUrl = $derived(apiAccess.appBaseUrl || (typeof window !== 'undefined' ? window.location.origin : ''));
 
-  // Each deferred-save form is tracked against its own post-load snapshot and
-  // re-baselined after its own save. The dirty expressions must reference the
-  // form variables directly — Svelte does not trace dependencies through
-  // helper-function bodies.
+  // Immediate actions (logo, API keys) are not snapshot-tracked; the dirty
+  // expressions must name form variables directly — Svelte cannot trace helpers.
   let savingAll = $state(false);
   let profileSnapshot = $state('');
   let smtpSnapshot = $state('');

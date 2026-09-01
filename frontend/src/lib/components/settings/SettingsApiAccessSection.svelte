@@ -30,11 +30,15 @@
   }: Props = $props();
 
   let keys = $state<ApiKey[]>([]);
-  let mcpRevealed = $state('');
-  let botRevealed = $state('');
+  let drafts = $state<Record<string, string>>({ mcp: '', bot: '' });
+  // Plaintext of a key just created or rotated, by key id. Never fetched again,
+  // so it is held here rather than in the collapsible section's children.
+  let revealed = $state<Record<number, string>>({});
 
   const mcpKeys = $derived(keys.filter((key) => key.kind === 'mcp'));
   const botKeys = $derived(keys.filter((key) => key.kind === 'bot'));
+  const mcpRevealed = $derived(mcpKeys.map((key) => revealed[key.id]).find(Boolean) ?? '');
+  const botRevealed = $derived(botKeys.map((key) => revealed[key.id]).find(Boolean) ?? '');
 
   onMount(load);
 
@@ -90,7 +94,8 @@
     kind="mcp"
     keys={mcpKeys}
     placeholder="Key name (e.g. Laptop)"
-    bind:revealedKey={mcpRevealed}
+    {drafts}
+    {revealed}
     onchanged={load}
   />
 
@@ -149,7 +154,8 @@
     kind="bot"
     keys={botKeys}
     placeholder="Key name (e.g. CI runner)"
-    bind:revealedKey={botRevealed}
+    {drafts}
+    {revealed}
     onchanged={load}
   />
 

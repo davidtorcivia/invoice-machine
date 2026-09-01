@@ -1,51 +1,17 @@
 <script lang="ts">
   import Icon from '$lib/components/Icons.svelte';
-  import ConfirmModal from '$lib/components/ConfirmModal.svelte';
   import { backupsApi } from '$lib/api';
   import { formatBackupBytes, formatBackupDate } from '$lib/settings/forms';
-  import { toast } from '$lib/stores';
 
   interface Props {
     backups?: any[];
     loading?: boolean;
-    onchanged: () => Promise<void> | void;
+    restoringBackup?: any;
+    onrestore: (backup: any) => void;
+    ondelete: (backup: any) => void;
   }
 
-  let { backups = [], loading = false, onchanged }: Props = $props();
-
-  let restoringBackup = $state<any>(null);
-  let restoreTarget = $state<any>(null);
-  let deleteTarget = $state<any>(null);
-  let deleting = $state(false);
-
-  async function restoreBackup() {
-    if (!restoreTarget) return;
-    restoringBackup = restoreTarget.filename;
-    try {
-      const result = await backupsApi.restore(restoreTarget.filename, restoreTarget.location === 's3');
-      toast.success(result.message);
-      restoreTarget = null;
-    } catch (error) {
-      toast.error(error.message || 'Failed to restore backup');
-    } finally {
-      restoringBackup = null;
-    }
-  }
-
-  async function confirmDelete() {
-    if (!deleteTarget) return;
-    deleting = true;
-    try {
-      await backupsApi.delete(deleteTarget.filename);
-      toast.success('Backup deleted');
-      await onchanged();
-    } catch (error) {
-      toast.error('Failed to delete backup');
-    } finally {
-      deleting = false;
-      deleteTarget = null;
-    }
-  }
+  let { backups = [], loading = false, restoringBackup = null, onrestore, ondelete }: Props = $props();
 </script>
 
 <div class="backup-list mt-4">
@@ -84,7 +50,7 @@
             <button
               type="button"
               class="btn btn-ghost btn-icon btn-sm"
-              onclick={() => (restoreTarget = backup)}
+              onclick={() => onrestore(backup)}
               title="Restore"
               disabled={restoringBackup === backup.filename}
             >
@@ -94,7 +60,7 @@
               <button
                 type="button"
                 class="btn btn-ghost btn-icon btn-sm"
-                onclick={() => (deleteTarget = backup)}
+                onclick={() => ondelete(backup)}
                 title="Delete"
               >
                 <Icon name="trash" size="sm" />
@@ -106,34 +72,6 @@
     </div>
   {/if}
 </div>
-
-<ConfirmModal
-  show={!!restoreTarget}
-  title="Restore Backup"
-  message={restoreTarget
-    ? `This will overwrite your current database with ${restoreTarget.filename}. A pre-restore backup will be created automatically. The application will need to be restarted after restore.`
-    : 'Restore this backup?'}
-  confirmText={restoringBackup ? 'Restoring...' : 'Restore Backup'}
-  cancelText="Cancel"
-  variant="warning"
-  icon="refresh"
-  loading={!!restoringBackup}
-  onConfirm={restoreBackup}
-  onCancel={() => (restoreTarget = null)}
-/>
-
-<ConfirmModal
-  show={!!deleteTarget}
-  title="Delete Backup"
-  message="Delete backup {deleteTarget?.filename}? This action cannot be undone."
-  confirmText="Delete"
-  cancelText="Cancel"
-  variant="danger"
-  icon="trash"
-  loading={deleting}
-  onConfirm={confirmDelete}
-  onCancel={() => (deleteTarget = null)}
-/>
 
 <style>
   .backup-list {

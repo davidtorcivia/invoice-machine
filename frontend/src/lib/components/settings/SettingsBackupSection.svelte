@@ -2,6 +2,7 @@
   import CollapsibleSection from '$lib/components/CollapsibleSection.svelte';
   import Icon from '$lib/components/Icons.svelte';
   import SettingsBackupList from './SettingsBackupList.svelte';
+  import ConfirmModal from '$lib/components/ConfirmModal.svelte';
   import { backupsApi } from '$lib/api';
   import { toast } from '$lib/stores';
 
@@ -38,6 +39,12 @@
   let backups = $state<any[]>([]);
   let loadingBackups = $state(false);
   let creatingBackup = $state(false);
+  // Restore and delete state lives above CollapsibleSection: collapsing the
+  // section unmounts its children mid-request otherwise.
+  let restoringBackup = $state<any>(null);
+  let restoreTarget = $state<any>(null);
+  let deleteTarget = $state<any>(null);
+  let deletingBackup = $state(false);
 
   // Fetching lives here rather than in the list child: CollapsibleSection only
   // renders its children while expanded, so the child may not exist yet.
@@ -49,6 +56,35 @@
       backups = [];
     } finally {
       loadingBackups = false;
+    }
+  }
+
+  async function restoreBackup() {
+    if (!restoreTarget) return;
+    restoringBackup = restoreTarget.filename;
+    try {
+      const result = await backupsApi.restore(restoreTarget.filename, restoreTarget.location === 's3');
+      toast.success(result.message);
+      restoreTarget = null;
+    } catch (error) {
+      toast.error(error.message || 'Failed to restore backup');
+    } finally {
+      restoringBackup = null;
+    }
+  }
+
+  async function deleteBackup() {
+    if (!deleteTarget) return;
+    deletingBackup = true;
+    try {
+      await backupsApi.delete(deleteTarget.filename);
+      toast.success('Backup deleted');
+      await reloadBackups();
+    } catch (error) {
+      toast.error('Failed to delete backup');
+    } finally {
+      deletingBackup = false;
+      deleteTarget = null;
     }
   }
 
@@ -192,8 +228,42 @@
     {/if}
   </div>
 
-  <SettingsBackupList {backups} loading={loadingBackups} onchanged={reloadBackups} />
+  <SettingsBackupList
+    {backups}
+    loading={loadingBackups}
+    {restoringBackup}
+    onrestore={(backup) => (restoreTarget = backup)}
+    ondelete={(backup) => (deleteTarget = backup)}
+  />
 </CollapsibleSection>
+
+<ConfirmModal
+  show={!!restoreTarget}
+  title="Restore Backup"
+  message={restoreTarget
+    ? `This will overwrite your current database with ${restoreTarget.filename}. A pre-restore backup will be created automatically. The application will need to be restarted after restore.`
+    : 'Restore this backup?'}
+  confirmText={restoringBackup ? 'Restoring...' : 'Restore Backup'}
+  cancelText="Cancel"
+  variant="warning"
+  icon="refresh"
+  loading={!!restoringBackup}
+  onConfirm={restoreBackup}
+  onCancel={() => (restoreTarget = null)}
+/>
+
+<ConfirmModal
+  show={!!deleteTarget}
+  title="Delete Backup"
+  message="Delete backup {deleteTarget?.filename}? This action cannot be undone."
+  confirmText="Delete"
+  cancelText="Cancel"
+  variant="danger"
+  icon="trash"
+  loading={deletingBackup}
+  onConfirm={deleteBackup}
+  onCancel={() => (deleteTarget = null)}
+/>
 
 <style>
   .section-header-actions {
