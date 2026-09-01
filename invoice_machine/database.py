@@ -1,9 +1,10 @@
 """Database models and connection management."""
 
 import hashlib
+from collections.abc import AsyncIterator
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Optional
+from typing import TYPE_CHECKING, Any, Optional, cast
 
 from sqlalchemy import (
     DECIMAL,
@@ -16,6 +17,7 @@ from sqlalchemy import (
     Text,
     event,
 )
+from sqlalchemy.engine import CursorResult
 from sqlalchemy.ext.asyncio import (
     AsyncSession,
     async_sessionmaker,
@@ -556,6 +558,11 @@ class Session(Base):
 
     user: Mapped["User"] = relationship("User", lazy="selectin")
 
+    if TYPE_CHECKING:
+        # Set by create() to carry the plaintext cookie value to the caller.
+        # Deliberately unmapped: only the digest is ever persisted.
+        cookie_token: str
+
     __table_args__ = (
         Index("idx_sessions_expires", "expires_at"),
         Index("idx_sessions_user", "user_id"),
@@ -625,7 +632,10 @@ class Session(Base):
         from sqlalchemy import delete
 
         digest = _digest_session_token(token)
-        result = await session.execute(delete(cls).where(cls.token.in_((digest, token))))
+        result = cast(
+            CursorResult[Any],
+            await session.execute(delete(cls).where(cls.token.in_((digest, token)))),
+        )
         await session.commit()
         return result.rowcount > 0
 
@@ -634,7 +644,9 @@ class Session(Base):
         """Delete all expired sessions. Returns count of deleted sessions."""
         from sqlalchemy import delete
 
-        result = await session.execute(delete(cls).where(cls.expires_at <= utc_now()))
+        result = cast(
+            CursorResult[Any], await session.execute(delete(cls).where(cls.expires_at <= utc_now()))
+        )
         await session.commit()
         return result.rowcount
 
@@ -643,7 +655,9 @@ class Session(Base):
         """Delete all sessions for a user (logout everywhere)."""
         from sqlalchemy import delete
 
-        result = await session.execute(delete(cls).where(cls.user_id == user_id))
+        result = cast(
+            CursorResult[Any], await session.execute(delete(cls).where(cls.user_id == user_id))
+        )
         await session.commit()
         return result.rowcount
 
@@ -655,11 +669,14 @@ class Session(Base):
         from sqlalchemy import delete
 
         digest = _digest_session_token(keep_token)
-        result = await session.execute(
-            delete(cls).where(
-                cls.user_id == user_id,
-                cls.token.notin_((digest, keep_token)),
-            )
+        result = cast(
+            CursorResult[Any],
+            await session.execute(
+                delete(cls).where(
+                    cls.user_id == user_id,
+                    cls.token.notin_((digest, keep_token)),
+                )
+            ),
         )
         await session.commit()
         return result.rowcount
@@ -800,7 +817,7 @@ async_session_maker = async_sessionmaker(
 )
 
 
-async def get_session() -> AsyncSession:
+async def get_session() -> AsyncIterator[AsyncSession]:
     """Get async database session."""
     async with async_session_maker() as session:
         yield session

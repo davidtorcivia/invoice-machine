@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import cast
+
 from invoice_machine.presenters import serialize_client
 from invoice_machine.services import ClientService
 
@@ -20,7 +22,9 @@ async def list_clients(
         clients = await ClientService.list_clients(
             session, search=search, include_deleted=include_deleted
         )
-        return [serialize_client(client, json_ready=True) for client in clients]
+        return cast(
+            list[ClientOut], [serialize_client(client, json_ready=True) for client in clients]
+        )
 
 
 @mcp.tool(annotations=READ_ONLY)
@@ -30,7 +34,7 @@ async def get_client(client_id: int) -> ClientOut | None:
         client = await ClientService.get_client(session, client_id)
         if not client:
             return None
-        return serialize_client(client, json_ready=True)
+        return cast(ClientOut, serialize_client(client, json_ready=True))
 
 
 @mcp.tool(annotations=ADDITIVE)
@@ -85,7 +89,7 @@ async def create_client(
 
         client = await ClientService.create_client(session, **kwargs)
 
-        return serialize_client(client, json_ready=True)
+        return cast(ClientOut, serialize_client(client, json_ready=True))
 
 
 @mcp.tool(annotations=UPDATE)
@@ -146,7 +150,7 @@ async def update_client(
 
         if not client:
             return None
-        return serialize_client(client, json_ready=True)
+        return cast(ClientOut, serialize_client(client, json_ready=True))
 
 
 @mcp.tool(annotations=DESTRUCTIVE)

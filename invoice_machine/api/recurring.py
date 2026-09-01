@@ -234,6 +234,8 @@ async def pause_schedule(
     if not success:
         raise HTTPException(status_code=404, detail="Schedule not found")
     schedule = await RecurringService.get_schedule(session, schedule_id)
+    if schedule is None:
+        raise HTTPException(status_code=404, detail="Schedule not found")
     return _schedule_to_dict(schedule)
 
 
@@ -249,6 +251,8 @@ async def resume_schedule(
     if not success:
         raise HTTPException(status_code=404, detail="Schedule not found")
     schedule = await RecurringService.get_schedule(session, schedule_id)
+    if schedule is None:
+        raise HTTPException(status_code=404, detail="Schedule not found")
     return _schedule_to_dict(schedule)
 
 

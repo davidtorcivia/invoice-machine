@@ -155,11 +155,13 @@ async def send_due_reminders(session: AsyncSession, today: date | None = None) -
     from invoice_machine.service.common import run_per_row
     from invoice_machine.service.email import send_invoice_email
 
-    profile = await BusinessProfile.get(session)
-    today = today or business_now(profile).date()
+    maybe_profile = await BusinessProfile.get(session)
+    today = today or business_now(maybe_profile).date()
 
-    if not profile or not profile.reminders_enabled:
+    if not maybe_profile or not maybe_profile.reminders_enabled:
         return []
+    # Non-optional binding: the nested send/failure handlers close over it.
+    profile = maybe_profile
     if not profile.smtp_enabled:
         logger.warning("Payment reminders are enabled but SMTP is not configured; skipping.")
         return []
@@ -187,7 +189,9 @@ async def send_due_reminders(session: AsyncSession, today: date | None = None) -
 
     async def send_one(invoice: Invoice) -> None:
         pending.clear()
-        if invoice.amount_due <= 0 or not (invoice.client_email or "").strip():
+        if invoice.due_date is None or invoice.amount_due <= 0:
+            return
+        if not (invoice.client_email or "").strip():
             return
 
         due_offsets = due_offsets_for(invoice, offsets, today)
@@ -239,7 +243,9 @@ async def send_due_reminders(session: AsyncSession, today: date | None = None) -
     async def record_failure(invoice_id: int, exc: Exception) -> None:
         nonlocal profile
         # The rollback expired the profile loaded above; the next reminder needs it.
-        profile = await BusinessProfile.get(session)
+        # The singleton row cannot vanish, so keep the old object if it comes back
+        # empty rather than failing the run from inside the error handler.
+        profile = await BusinessProfile.get(session) or profile
         logger.error(
             "Reminder for invoice %s failed: %s", pending.get("invoice_number"), exc, exc_info=True
         )

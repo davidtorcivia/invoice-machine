@@ -8,6 +8,7 @@ from typing import TypeVar
 
 from sqlalchemy import and_, delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.sql.elements import ColumnElement
 
 from invoice_machine.database import (
     BusinessProfile,
@@ -359,8 +360,8 @@ async def purge_trashed_records(
 
     Also removes the generated PDF for each purged invoice.
     """
-    invoice_conditions = [Invoice.deleted_at.is_not(None)]
-    client_conditions = [Client.deleted_at.is_not(None)]
+    invoice_conditions: list[ColumnElement[bool]] = [Invoice.deleted_at.is_not(None)]
+    client_conditions: list[ColumnElement[bool]] = [Client.deleted_at.is_not(None)]
     if deleted_before is not None:
         invoice_conditions.append(Invoice.deleted_at < deleted_before)
         client_conditions.append(Client.deleted_at < deleted_before)

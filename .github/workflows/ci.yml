@@ -60,6 +60,12 @@ jobs:
       - name: Check formatting
         run: ruff format --check invoice_machine/ tests/
 
+      - name: Type check
+        # One leg only: pythonVersion is pinned in pyproject, so the result does
+        # not vary with the runner's interpreter.
+        if: matrix.python-version == '3.14'
+        run: pyright invoice_machine/
+
       - name: Run tests
         run: pytest -q --cov --cov-report=term-missing --cov-report=xml --cov-fail-under=79
 

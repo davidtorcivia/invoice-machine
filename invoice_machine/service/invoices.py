@@ -2,8 +2,10 @@
 
 from datetime import date
 from decimal import Decimal
+from typing import Any, cast
 
 from sqlalchemy import and_, asc, desc, func, select, update
+from sqlalchemy.engine import CursorResult
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -245,8 +247,9 @@ async def _apply_dates_and_number(
     client: Client | None,
     business: BusinessProfile,
 ) -> None:
-    date_changed = issue_date is not None and issue_date != invoice.issue_date
-    if date_changed:
+    date_changed = False
+    if issue_date is not None and issue_date != invoice.issue_date:
+        date_changed = True
         invoice.issue_date = issue_date
         if not due_date:
             invoice.due_date = calculate_due_date(
@@ -789,7 +792,7 @@ class InvoiceService:
             .values(status="overdue", updated_at=utc_now())
         )
         await session.commit()
-        return result.rowcount
+        return cast(CursorResult[Any], result).rowcount
 
     @staticmethod
     async def bulk_action(

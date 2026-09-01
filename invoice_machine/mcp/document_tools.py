@@ -27,12 +27,15 @@ async def generate_pdf(invoice_id: int) -> dict:
 
         # Explicit "regenerate" tool: always re-render.
         await store_invoice_pdf(session, invoice, force=True)
+        generated_at = invoice.pdf_generated_at
+        if generated_at is None:  # force=True always stamps it
+            raise ToolError("PDF generation did not record a timestamp")
 
         return {
             "invoice_id": invoice.id,
             "invoice_number": invoice.invoice_number,
             "pdf_url": f"{settings.app_base_url}/api/invoices/{invoice.id}/pdf",
-            "generated_at": invoice.pdf_generated_at.isoformat(),
+            "generated_at": generated_at.isoformat(),
         }
 
 

@@ -449,7 +449,7 @@ async def add_invoice_item(
 ) -> dict:
     """Add line item to invoice."""
     try:
-        item = await InvoiceService.add_item(
+        created = await InvoiceService.add_item(
             session,
             invoice_id,
             item.description,
@@ -460,10 +460,10 @@ async def add_invoice_item(
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
-    if item is None:
+    if created is None:
         raise HTTPException(status_code=404, detail="Invoice not found")
     return {
-        **serialize_invoice_item(item),
+        **serialize_invoice_item(created),
     }
 
 
