@@ -238,7 +238,7 @@ async def test_periodic_runners_survive_a_failing_job(monkeypatch, runner):
 
     monkeypatch.setattr(app_runtime, "_seconds_until_next_hour", lambda: 0)
     monkeypatch.setattr(app_runtime, "_seconds_until_hour", lambda hour: 0)
-    app = SimpleNamespace(state=SimpleNamespace(restore_in_progress=False))
+    app = SimpleNamespace(state=SimpleNamespace(restore_in_progress=False, jobs={}))
     calls = []
 
     async def job():
@@ -253,6 +253,8 @@ async def test_periodic_runners_survive_a_failing_job(monkeypatch, runner):
     task.cancel()
 
     assert len(calls) >= 2
+    assert app.state.jobs["job"]["failures"] == 1
+    assert app.state.jobs["job"]["runs"] >= 2
 
 
 @pytest.mark.asyncio

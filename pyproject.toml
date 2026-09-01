@@ -21,6 +21,8 @@ dependencies = [
     # v2 implements MCP spec 2026-07-28 (stateless core). v1.x is maintenance-only.
     "mcp>=2.0.0,<3",
     "cryptography>=48.0.1",
+    # Inert without SENTRY_DSN; auto-instruments FastAPI when present.
+    "sentry-sdk>=2.0",
     # Runtime dependency for the Stripe REST calls in service/stripe_links.py.
     # It arrived transitively via mcp before; declared explicitly so the payment
     # integration cannot break on an unrelated dependency change.

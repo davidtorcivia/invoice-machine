@@ -18,7 +18,7 @@ class TestHealthEndpoint:
     async def test_health_check(self, test_client):
         response = await test_client.get("/health")
         assert response.status_code == 200
-        assert response.json() == {"status": "healthy"}
+        assert response.json() == {"status": "healthy", "scheduler": "standby"}
 
     @pytest.mark.asyncio
     async def test_cloudflare_csp_allows_insights_scripts(self, test_client):

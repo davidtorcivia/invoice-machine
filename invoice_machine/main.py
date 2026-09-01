@@ -26,21 +26,38 @@ from invoice_machine.api import (
     profile,
     recurring,
     search,
+    system,
     trash,
     webhooks,
 )
 from invoice_machine.app_middleware import configure_http_middleware, static_dir
 from invoice_machine.app_runtime import lifespan
 from invoice_machine.config import get_settings
+from invoice_machine.observability import RequestIdFilter
 from invoice_machine.skill_manifest import render_skill_manifest
+from invoice_machine.utils import utc_now
 
+_log_handler = logging.StreamHandler(sys.stdout)
+_log_handler.addFilter(RequestIdFilter())
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    handlers=[logging.StreamHandler(sys.stdout)],
+    format="%(asctime)s %(levelname)s %(name)s [%(request_id)s] %(message)s",
+    handlers=[_log_handler],
 )
 
 settings = get_settings()
+if settings.sentry_dsn:
+    import sentry_sdk
+
+    # Bodies and locals can carry SMTP, S3, and Stripe secrets on settings saves.
+    sentry_sdk.init(
+        dsn=settings.sentry_dsn,
+        environment=settings.environment,
+        release=f"invoice-machine@{__version__}",
+        send_default_pii=False,
+        max_request_body_size="never",
+        include_local_variables=False,
+    )
 STATIC_DIR = static_dir()
 STATIC_DIR_RESOLVED = STATIC_DIR.resolve()
 _is_production = settings.environment.lower() == "production"
@@ -57,6 +74,9 @@ app = FastAPI(
 app.state.restore_lock = asyncio.Lock()
 app.state.restore_in_progress = False
 app.state.active_requests = 0
+app.state.started_at = utc_now()
+app.state.scheduler_active = False
+app.state.jobs = {}
 
 configure_http_middleware(app)
 
@@ -76,6 +96,7 @@ app.include_router(payments.router)
 app.include_router(payment_settings.router)
 app.include_router(export.router)
 app.include_router(webhooks.router)
+app.include_router(system.router)
 
 # Streamable HTTP is the primary MCP transport. It must be an exact "/mcp"
 # route on the main app (not a route inside the mount below) because hitting a
@@ -104,8 +125,9 @@ async def health_check(request: Request):
     Skips the DB check while a backup restore is swapping the database file so
     the container isn't marked unhealthy (and restarted) mid-restore.
     """
+    scheduler = "active" if getattr(request.app.state, "scheduler_active", False) else "standby"
     if getattr(request.app.state, "restore_in_progress", False):
-        return {"status": "healthy"}
+        return {"status": "healthy", "scheduler": scheduler}
 
     from sqlalchemy import text
 
@@ -115,8 +137,8 @@ async def health_check(request: Request):
         async with async_session_maker() as session:
             await session.execute(text("SELECT 1"))
     except Exception:
-        return JSONResponse({"status": "unhealthy"}, status_code=503)
-    return {"status": "healthy"}
+        return JSONResponse({"status": "unhealthy", "scheduler": scheduler}, status_code=503)
+    return {"status": "healthy", "scheduler": scheduler}
 
 
 @app.get("/SKILL.md", include_in_schema=False)

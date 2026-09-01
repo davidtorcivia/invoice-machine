@@ -77,4 +77,5 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=20s --retries=3 \
 ENTRYPOINT ["docker-entrypoint.sh"]
 # Proxy-header flags are added by the entrypoint when TRUST_PROXY_HEADERS is
 # on. Single worker: SQLite + the background scheduler assume one process.
-CMD ["uvicorn", "invoice_machine.main:app", "--host", "0.0.0.0", "--port", "8080"]
+# --no-access-log: the app logs one line per request with the request id.
+CMD ["uvicorn", "invoice_machine.main:app", "--host", "0.0.0.0", "--port", "8080", "--no-access-log"]

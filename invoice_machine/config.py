@@ -44,6 +44,8 @@ class Settings(BaseSettings):
     environment: str = "development"  # development, staging, production
     # Trust CF-Connecting-IP / X-Forwarded-For. Off unless a proxy overwrites them.
     trust_proxy_headers: bool = False
+    # Errors are reported to Sentry only when set; PII is never sent.
+    sentry_dsn: str | None = None
 
     data_dir: Path = Path("./data")
 
