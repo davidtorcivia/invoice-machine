@@ -5,8 +5,8 @@ on:
   push:
     branches:
       - main
-  # Weekly run so the non-blocking dependency audit is seen on its own, not
-  # only as a suppressed red X on someone's unrelated pull request.
+  # Weekly run so a new advisory against the locked tree surfaces between
+  # pull requests.
   schedule:
     - cron: "0 6 * * 1"
 
@@ -198,10 +198,8 @@ jobs:
 
   audit:
     runs-on: ubuntu-latest
-    # Advisory, not a gate. New CVEs land independently of anyone's pull request,
-    # and a red X on unrelated work teaches people to ignore CI. Read the summary
-    # and act on it; do not let it block a merge.
-    continue-on-error: true
+    # Blocking: with uv.lock the result is a property of the commit. A red audit
+    # means the lock needs `uv lock --upgrade`, which is a fix, not noise.
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -216,7 +214,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip pip-audit uv==0.6.8
           uv export --frozen --no-emit-project -o requirements.txt
-          pip-audit -r requirements.txt
+          pip-audit --disable-pip -r requirements.txt
 
       - name: Set up Node
         uses: actions/setup-node@v7

@@ -38,6 +38,9 @@ Notable changes to Invoice Machine. Format based on
 
 ### Fixed
 
+- Locked dependencies upgraded (starlette 1.6, fastapi 0.141, mcp 2.1.1,
+  pydantic 2.13, pillow 12.3, urllib3 2.7); the previous lock carried 53 known
+  advisories. The CI dependency audit now blocks a merge instead of warning.
 - Builds are reproducible: the Docker image and CI install exactly `uv.lock`
   (`uv sync --frozen`) instead of resolving `pyproject.toml` floors afresh, and
   CI fails when the lockfile is stale. The dependency audit checks the locked
