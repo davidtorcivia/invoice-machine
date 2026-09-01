@@ -262,6 +262,6 @@ def verify_api_key(api_key: str, hashed: str) -> bool:
         return False
 
 
-def generate_api_key() -> str:
-    """Generate a new random API key."""
-    return secrets.token_hex(32)  # 64 character hex string
+def generate_api_key(kind: str) -> str:
+    """Generate a new random API key of the given kind ("mcp" or "bot")."""
+    return f"im_{kind}_{secrets.token_hex(32)}"

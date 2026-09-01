@@ -45,8 +45,6 @@ class BusinessProfileSchema(BaseModel):
     default_payment_instructions: str | None = None
     payment_methods: str | None = None  # JSON string: [{id, name, instructions}]
     theme_preference: str = "system"
-    mcp_api_key_configured: bool = False
-    bot_api_key_configured: bool = False
     app_base_url: str | None = None  # App base URL for links
     # Tax settings
     default_tax_enabled: bool = False
@@ -365,84 +363,3 @@ async def get_logo(request: Request, filename: str):
         raise HTTPException(status_code=404, detail="Logo not found")
 
     return FileResponse(resolved_path)
-
-
-@router.post("/mcp-key")
-@limiter.limit("5/hour")
-async def generate_mcp_key(
-    request: Request,
-    session: AsyncSession = Depends(get_session),
-):
-    """Generate a new MCP API key.
-
-    IMPORTANT: The plain-text key is only shown once. It is stored hashed
-    in the database and cannot be recovered. Save it immediately.
-    """
-    from invoice_machine.crypto import generate_api_key, hash_api_key
-
-    profile = await BusinessProfile.get_or_create(session)
-
-    # Generate a new random API key
-    plain_key = generate_api_key()
-
-    # Hash it before storing - the plain key is only shown once
-    profile.mcp_api_key = hash_api_key(plain_key)
-    profile.updated_at = utc_now()
-    await session.commit()
-
-    return {
-        "mcp_api_key": plain_key,
-        "warning": "This key is only shown once. Save it now - it cannot be recovered.",
-    }
-
-
-@router.delete("/mcp-key")
-@limiter.limit("5/hour")
-async def delete_mcp_key(
-    request: Request,
-    session: AsyncSession = Depends(get_session),
-):
-    """Delete MCP API key (disables remote MCP access)."""
-    profile = await BusinessProfile.get_or_create(session)
-    profile.mcp_api_key = None
-    profile.updated_at = utc_now()
-    await session.commit()
-
-    return {"success": True}
-
-
-@router.post("/bot-key")
-@limiter.limit("5/hour")
-async def generate_bot_key(
-    request: Request,
-    session: AsyncSession = Depends(get_session),
-):
-    """Generate a new bot API key for conventional REST API automation."""
-    from invoice_machine.crypto import generate_api_key, hash_api_key
-
-    profile = await BusinessProfile.get_or_create(session)
-
-    plain_key = generate_api_key()
-    profile.bot_api_key = hash_api_key(plain_key)
-    profile.updated_at = utc_now()
-    await session.commit()
-
-    return {
-        "bot_api_key": plain_key,
-        "warning": "This key is only shown once. Save it now - it cannot be recovered.",
-    }
-
-
-@router.delete("/bot-key")
-@limiter.limit("5/hour")
-async def delete_bot_key(
-    request: Request,
-    session: AsyncSession = Depends(get_session),
-):
-    """Delete bot API key (disables bearer token REST API access)."""
-    profile = await BusinessProfile.get_or_create(session)
-    profile.bot_api_key = None
-    profile.updated_at = utc_now()
-    await session.commit()
-
-    return {"success": True}

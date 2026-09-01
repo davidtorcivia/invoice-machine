@@ -52,7 +52,8 @@ def run_http_server(host: str = "0.0.0.0", port: int = 8081):
     from starlette.requests import Request
     from starlette.responses import Response as StarletteResponse
 
-    from invoice_machine.api.mcp import get_mcp_api_key_hash, verify_mcp_auth
+    from invoice_machine.api.mcp import verify_mcp_auth
+    from invoice_machine.api_keys import count_api_keys
 
     # Same configuration as the endpoint mounted in the main app: stateless
     # JSON-over-POST, with Host validation left to the reverse proxy.
@@ -90,17 +91,16 @@ def run_http_server(host: str = "0.0.0.0", port: int = 8081):
 
     logger.info("Starting MCP Streamable HTTP server on %s:%s", host, port)
 
-    async def read_api_key_hash():
-        # Create the schema first: on a fresh database the profile table does
+    async def read_key_count():
+        # Create the schema first: on a fresh database the api_keys table does
         # not exist yet, and querying it here would kill the process before
         # uvicorn ever binds.
         from .context import ensure_mcp_schema_initialized
 
         await ensure_mcp_schema_initialized()
-        return await get_mcp_api_key_hash()
+        return await count_api_keys("mcp")
 
-    api_key_hash = asyncio.run(read_api_key_hash())
-    if api_key_hash:
+    if asyncio.run(read_key_count()):
         logger.info("MCP API key authentication is ENABLED")
     else:
         logger.warning(

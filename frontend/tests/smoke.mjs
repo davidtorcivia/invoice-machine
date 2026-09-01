@@ -382,6 +382,38 @@ const persisted = await evaluate(
 );
 check('edited value round-tripped to the server', persisted === marker, String(persisted));
 
+// API keys are created, listed, and revoked entirely inside the settings
+// section, which loads them itself. A broken load or create renders an empty
+// section that still compiles.
+const keyFlow = await evaluate(`(async () => {
+  const header = [...document.querySelectorAll('button')]
+    .find((el) => /mcp integration/i.test(el.textContent));
+  if (!header) return 'no MCP Integration section header';
+  if (header.getAttribute('aria-expanded') !== 'true') {
+    header.click();
+    await new Promise((r) => setTimeout(r, 500));
+  }
+
+  const field = [...document.querySelectorAll('input')]
+    .find((el) => /key name/i.test(el.placeholder || ''));
+  if (!field) return 'no new-key input';
+  Object.getOwnPropertyDescriptor(Object.getPrototypeOf(field), 'value')
+    .set.call(field, 'Smoke key');
+  field.dispatchEvent(new Event('input', { bubbles: true }));
+
+  const create = [...document.querySelectorAll('button')].find((b) => /new key/i.test(b.textContent));
+  if (!create) return 'no create button';
+  create.click();
+  await new Promise((r) => setTimeout(r, 1200));
+
+  const shown = [...document.querySelectorAll('input')].some((el) => (el.value || '').startsWith('im_mcp_'));
+  const listed = document.body.innerText.includes('Smoke key');
+  return shown && listed ? 'created' : \`shown=\${shown} listed=\${listed}\`;
+})()`);
+await sleep(400);
+drainEvents();
+check('api key is created and listed', keyFlow === 'created', String(keyFlow));
+
 // Parent-to-child prop flow on the busiest form: the tax settings live in one
 // card and the running total that consumes them lives in another, so a broken
 // prop shows up as a total that never picks up the rate.

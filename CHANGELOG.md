@@ -6,6 +6,12 @@ Notable changes to Invoice Machine. Format based on
 
 ## [Unreleased]
 
+### Changed
+
+- Multiple MCP and bot API keys, each labeled and rotated or revoked on its own,
+  under Settings > MCP Integration and Settings > Bot API Key. Existing keys keep
+  working and appear as "Migrated MCP key" and "Migrated bot key".
+
 ## [0.3.0]
 
 ### Added

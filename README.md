@@ -310,11 +310,13 @@ Running locally with Docker, you can use stdio instead:
 
 ### Key scope
 
-The MCP key only authenticates `/mcp/*` connections. For ordinary REST calls, use the bot API key below.
+MCP keys only authenticate `/mcp/*` connections. For ordinary REST calls, use a bot API key instead.
+
+Create as many keys as you need under Settings > MCP Integration. Each one is labeled, shown once, and can be rotated or revoked on its own without touching the others.
 
 ## Bot API
 
-For scripts, automations, and agents making plain HTTP requests. Generate a key under Settings > Bot API Key (it is shown once) and send it as a bearer token:
+For scripts, automations, and agents making plain HTTP requests. Create a labeled key under Settings > Bot API Key (it is shown once, and is revocable on its own) and send it as a bearer token:
 
 ```bash
 curl -H "Authorization: Bearer YOUR_BOT_API_KEY" \

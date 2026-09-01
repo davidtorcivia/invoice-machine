@@ -78,12 +78,6 @@
   let deletingBackup = $state(false);
 
   let testingSmtp = $state(false);
-  let showDeleteMcpModal = $state(false);
-  let deletingMcpKey = $state(false);
-  let showDeleteBotModal = $state(false);
-  let deletingBotKey = $state(false);
-  let generatingMcpKey = $state(false);
-  let generatingBotKey = $state(false);
   let changingPassword = $state(false);
 
   let mcpEndpointUrl = $derived(apiAccess.appBaseUrl || (typeof window !== 'undefined' ? window.location.origin : ''));
@@ -463,97 +457,6 @@
     paymentMethods = paymentMethods.filter((method) => method.id !== id);
   }
 
-  async function generateMcpKey() {
-    generatingMcpKey = true;
-    try {
-      const result = await profileApi.generateMcpKey();
-      apiAccess = { ...apiAccess, mcpApiKey: result.mcp_api_key, mcpApiKeyConfigured: true };
-      toast.success('MCP API key generated');
-    } catch (error) {
-      toast.error('Failed to generate API key');
-    } finally {
-      generatingMcpKey = false;
-    }
-  }
-
-  async function generateBotKey() {
-    generatingBotKey = true;
-    try {
-      const result = await profileApi.generateBotKey();
-      apiAccess = { ...apiAccess, botApiKey: result.bot_api_key, botApiKeyConfigured: true };
-      toast.success('Bot API key generated');
-    } catch (error) {
-      toast.error('Failed to generate bot API key');
-    } finally {
-      generatingBotKey = false;
-    }
-  }
-
-  function openDeleteMcpModal() {
-    showDeleteMcpModal = true;
-  }
-
-  function openDeleteBotModal() {
-    showDeleteBotModal = true;
-  }
-
-  async function confirmDeleteMcpKey() {
-    deletingMcpKey = true;
-    try {
-      await profileApi.deleteMcpKey();
-      apiAccess = { ...apiAccess, mcpApiKey: '', mcpApiKeyConfigured: false };
-      toast.success('MCP API key deleted');
-      showDeleteMcpModal = false;
-    } catch (error) {
-      toast.error('Failed to delete API key');
-    } finally {
-      deletingMcpKey = false;
-    }
-  }
-
-  async function confirmDeleteBotKey() {
-    deletingBotKey = true;
-    try {
-      await profileApi.deleteBotKey();
-      apiAccess = { ...apiAccess, botApiKey: '', botApiKeyConfigured: false };
-      toast.success('Bot API key deleted');
-      showDeleteBotModal = false;
-    } catch (error) {
-      toast.error('Failed to delete bot API key');
-    } finally {
-      deletingBotKey = false;
-    }
-  }
-
-  async function copyToClipboard(value, successMsg) {
-    if (!navigator.clipboard?.writeText) {
-      toast.error('Clipboard is unavailable (requires HTTPS). Copy the key manually.');
-      return;
-    }
-    try {
-      await navigator.clipboard.writeText(value);
-      toast.success(successMsg);
-    } catch {
-      toast.error('Could not copy to clipboard. Copy the key manually.');
-    }
-  }
-
-  async function copyMcpKey() {
-    if (!apiAccess.mcpApiKey) {
-      toast.error('Regenerate key to copy it again');
-      return;
-    }
-    await copyToClipboard(apiAccess.mcpApiKey, 'API key copied to clipboard');
-  }
-
-  async function copyBotKey() {
-    if (!apiAccess.botApiKey) {
-      toast.error('Regenerate key to copy it again');
-      return;
-    }
-    await copyToClipboard(apiAccess.botApiKey, 'Bot API key copied to clipboard');
-  }
-
   async function loadBackupSettings() {
     try {
       backupForm = mapBackupSettingsToForm(await backupsApi.getSettings());
@@ -767,18 +670,6 @@
         bind:botOpen={openSections.botApi}
         bind:appBaseUrl={apiAccess.appBaseUrl}
         {mcpEndpointUrl}
-        mcpApiKeyConfigured={apiAccess.mcpApiKeyConfigured}
-        mcpApiKey={apiAccess.mcpApiKey}
-        {generatingMcpKey}
-        {copyMcpKey}
-        {openDeleteMcpModal}
-        {generateMcpKey}
-        botApiKeyConfigured={apiAccess.botApiKeyConfigured}
-        botApiKey={apiAccess.botApiKey}
-        {generatingBotKey}
-        {copyBotKey}
-        {openDeleteBotModal}
-        {generateBotKey}
       />
 
       <SettingsBackupSection
@@ -868,32 +759,6 @@
   bind:newMethodInstructions={paymentMethodDraft.instructions}
   {closePaymentMethodModal}
   {savePaymentMethod}
-/>
-
-<ConfirmModal
-  show={showDeleteMcpModal}
-  title="Disable Remote Access"
-  message="This will delete your MCP API key and disable remote Claude Desktop connections. You'll need to generate a new key to reconnect."
-  confirmText="Disable"
-  cancelText="Cancel"
-  variant="danger"
-  icon="trash"
-  loading={deletingMcpKey}
-  onConfirm={confirmDeleteMcpKey}
-  onCancel={() => showDeleteMcpModal = false}
-/>
-
-<ConfirmModal
-  show={showDeleteBotModal}
-  title="Disable Bot API Access"
-  message="This will delete your bot API key and disable bearer-token automation for /api endpoints."
-  confirmText="Disable"
-  cancelText="Cancel"
-  variant="danger"
-  icon="trash"
-  loading={deletingBotKey}
-  onConfirm={confirmDeleteBotKey}
-  onCancel={() => showDeleteBotModal = false}
 />
 
 <ConfirmModal

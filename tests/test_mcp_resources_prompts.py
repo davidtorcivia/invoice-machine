@@ -86,7 +86,7 @@ async def test_business_profile_resource_leaks_no_secrets(mcp_db):
         result = await client.read_resource("profile://business")
 
     payload = json.loads(_text(result))
-    assert "mcp_api_key_configured" in payload
+    assert payload["name"]
     for secret in ("mcp_api_key", "bot_api_key", "smtp_password", "stripe_secret_key"):
         assert secret not in payload, f"{secret} must not be exposed"
 

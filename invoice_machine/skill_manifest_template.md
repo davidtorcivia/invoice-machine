@@ -7,16 +7,15 @@ Automate invoicing, client management, recurring billing, analytics, and more ov
 Every request requires a Bot API Key in the `Authorization` header:
 
 ```
-Authorization: Bearer <BOT_API_KEY>
+Authorization: Bearer im_bot_...
 ```
 
-Generate one from the web UI at **Settings > Bot API Key**, or via:
+Keys are created in the web UI at **Settings > Bot API Key**. Each one is
+labeled and can be rotated or revoked on its own, and its plaintext is shown
+once at creation. Store it securely.
 
-```
-POST __BASE_URL__/api/profile/bot-key
-```
-
-The key is shown once. Store it securely.
+Key management lives at `/api/api-keys` and is web-session-only: a bearer token
+is rejected there, so a bot cannot mint or revoke keys.
 
 ## Base URL
 
@@ -82,15 +81,6 @@ Field: `file` (PNG, JPG, JPEG, GIF, or WEBP).
 ### Delete logo
 ```
 DELETE /api/profile/logo
-```
-
-### Generate / delete API keys
-```
-POST /api/profile/bot-key      → {"bot_api_key": "im_bot_..."}
-DELETE /api/profile/bot-key
-
-POST /api/profile/mcp-key      → {"mcp_api_key": "im_mcp_..."}
-DELETE /api/profile/mcp-key
 ```
 
 ---

@@ -66,10 +66,6 @@ export function createBackupForm() {
 
 export function createApiAccessState() {
   return {
-    mcpApiKey: '',
-    mcpApiKeyConfigured: false,
-    botApiKey: '',
-    botApiKeyConfigured: false,
     appBaseUrl: ''
   };
 }
@@ -135,10 +131,6 @@ export function mapBackupSettingsToForm(settings) {
 
 export function mapProfileToApiAccess(profile) {
   return {
-    mcpApiKey: '',
-    mcpApiKeyConfigured: !!profile.mcp_api_key_configured,
-    botApiKey: '',
-    botApiKeyConfigured: !!profile.bot_api_key_configured,
     appBaseUrl: profile.app_base_url || ''
   };
 }

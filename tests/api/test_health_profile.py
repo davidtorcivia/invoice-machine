@@ -4,6 +4,13 @@ from httpx import ASGITransport, AsyncClient
 from invoice_machine.main import app
 
 
+async def mint_key(test_client, kind: str, label: str = "Test key") -> str:
+    """Create an API key of the given kind and return the plaintext."""
+    response = await test_client.post("/api/api-keys", json={"kind": kind, "label": label})
+    assert response.status_code == 201, response.text
+    return response.json()["key"]
+
+
 class TestHealthEndpoint:
     """Tests for health check."""
 
@@ -53,8 +60,7 @@ class TestHealthEndpoint:
     @pytest.mark.asyncio
     async def test_mcp_sse_post_returns_405_instead_of_crashing(self, test_client):
         """Mounted MCP routes should not crash in top-level middleware."""
-        key_response = await test_client.post("/api/profile/mcp-key")
-        mcp_key = key_response.json()["mcp_api_key"]
+        mcp_key = await mint_key(test_client, "mcp")
 
         mcp_client = AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
         try:
@@ -85,7 +91,7 @@ class TestMcpStreamableHttp:
         """POST /mcp without a valid key is rejected before reaching the transport."""
         from invoice_machine.api.mcp import streamable_http_lifespan
 
-        await test_client.post("/api/profile/mcp-key")  # key configured, but not sent
+        await mint_key(test_client, "mcp")  # key configured, but not sent
 
         mcp_client = AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
         try:
@@ -101,8 +107,7 @@ class TestMcpStreamableHttp:
     @pytest.mark.asyncio
     async def test_returns_503_when_session_manager_not_running(self, test_client):
         """Outside the app lifespan the endpoint fails closed instead of crashing."""
-        key_response = await test_client.post("/api/profile/mcp-key")
-        mcp_key = key_response.json()["mcp_api_key"]
+        mcp_key = await mint_key(test_client, "mcp")
 
         mcp_client = AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
         try:
@@ -125,8 +130,7 @@ class TestMcpStreamableHttp:
         """
         from invoice_machine.api.mcp import streamable_http_lifespan
 
-        key_response = await test_client.post("/api/profile/mcp-key")
-        mcp_key = key_response.json()["mcp_api_key"]
+        mcp_key = await mint_key(test_client, "mcp")
         headers = {**self.HEADERS, "Authorization": f"Bearer {mcp_key}"}
 
         mcp_client = AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
@@ -217,8 +221,7 @@ class TestMcpModernProtocol:
 
     @staticmethod
     async def _key(test_client):
-        response = await test_client.post("/api/profile/mcp-key")
-        return response.json()["mcp_api_key"]
+        return await mint_key(test_client, "mcp")
 
     @pytest.mark.asyncio
     async def test_tools_list_without_handshake(self, test_client):
@@ -300,8 +303,6 @@ class TestProfileEndpoints:
         assert data["id"] == 1
         assert data["name"] == "Test Business"
         assert data["business_name"] == "Test LLC"
-        assert data["mcp_api_key_configured"] is False
-        assert data["bot_api_key_configured"] is False
 
     @pytest.mark.asyncio
     async def test_update_profile(self, test_client):
@@ -337,33 +338,6 @@ class TestProfileEndpoints:
 
         assert response.status_code == 503
 
-    @pytest.mark.asyncio
-    async def test_generate_bot_key(self, test_client):
-        """Generate bot API key and mark profile as configured."""
-        response = await test_client.post("/api/profile/bot-key")
-        assert response.status_code == 200
-        data = response.json()
-        assert "bot_api_key" in data
-        assert isinstance(data["bot_api_key"], str)
-        assert len(data["bot_api_key"]) >= 32
-
-        profile_response = await test_client.get("/api/profile")
-        profile_data = profile_response.json()
-        assert profile_data["bot_api_key_configured"] is True
-
-    @pytest.mark.asyncio
-    async def test_delete_bot_key(self, test_client):
-        """Delete bot API key and mark profile as unconfigured."""
-        await test_client.post("/api/profile/bot-key")
-
-        response = await test_client.delete("/api/profile/bot-key")
-        assert response.status_code == 200
-        assert response.json()["success"] is True
-
-        profile_response = await test_client.get("/api/profile")
-        profile_data = profile_response.json()
-        assert profile_data["bot_api_key_configured"] is False
-
 
 class TestBotApiKeyAuth:
     """Tests for bearer-token auth using dedicated bot API key."""
@@ -371,8 +345,7 @@ class TestBotApiKeyAuth:
     @pytest.mark.asyncio
     async def test_bot_key_allows_conventional_api_calls(self, test_client):
         """Bot key can authenticate GET and unsafe methods without CSRF."""
-        generate_response = await test_client.post("/api/profile/bot-key")
-        bot_key = generate_response.json()["bot_api_key"]
+        bot_key = await mint_key(test_client, "bot")
 
         bot_client = AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
         headers = {"Authorization": f"Bearer {bot_key}"}
