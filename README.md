@@ -413,7 +413,7 @@ One worker holds a lock and runs these; the times are UTC.
 
 ```bash
 # Backend
-pip install -e ".[dev]"
+uv sync --extra dev && source .venv/bin/activate   # or: pip install -e ".[dev]"
 uvicorn invoice_machine.main:app --reload --port 8080
 
 # Frontend

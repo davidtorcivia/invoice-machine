@@ -7,8 +7,8 @@ before you write the code.
 ## Getting set up
 
 ```bash
-# Backend
-pip install -e ".[dev]"
+# Backend (uv installs exactly uv.lock; pip install -e ".[dev]" also works)
+uv sync --extra dev && source .venv/bin/activate
 uvicorn invoice_machine.main:app --reload --port 8080
 
 # Frontend, in a second terminal
@@ -28,8 +28,10 @@ pytest -q
 cd frontend && npm run check && npm run build
 ```
 
-CI runs exactly these, plus a Docker build and a dependency audit. Coverage must
-stay at or above 70%.
+After changing dependencies in `pyproject.toml`, run `uv lock`; CI fails if
+the lockfile is stale. CI runs exactly these, plus a Docker build and a
+dependency audit. Coverage must
+stay at or above 79%.
 
 ## What good looks like here
 

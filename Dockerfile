@@ -12,7 +12,8 @@ RUN npm run build
 
 # ---------------------------------------------------------------------------
 # Stage 2: build Python dependencies into a venv (compilers live here only).
-# Dependencies come from pyproject.toml (single source of truth).
+# uv.lock pins every transitive version; --frozen refuses to resolve anew, so
+# two builds of the same commit produce the same dependency tree.
 # ---------------------------------------------------------------------------
 FROM python:3.14-slim-bookworm AS builder
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -28,9 +29,11 @@ RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
 WORKDIR /app
-COPY pyproject.toml README.md ./
+COPY pyproject.toml uv.lock README.md ./
 COPY invoice_machine/ ./invoice_machine/
-RUN pip install --no-cache-dir .
+# uv is pinned to the version that wrote uv.lock (lock format revision 1).
+RUN pip install --no-cache-dir uv==0.6.8 \
+    && UV_PROJECT_ENVIRONMENT=/opt/venv uv sync --frozen --no-editable
 
 # ---------------------------------------------------------------------------
 # Stage 3: slim runtime image (no compilers, no Node, no build cruft).

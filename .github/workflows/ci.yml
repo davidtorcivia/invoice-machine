@@ -34,13 +34,19 @@ jobs:
         uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python-version }}
-          cache: pip
-          cache-dependency-path: pyproject.toml
 
-      - name: Install dependencies
+      - name: Install locked dependencies
+        # --frozen installs exactly uv.lock; a stale lock fails the check below
+        # instead of silently resolving something CI never tested. uv is pinned
+        # to the version that wrote the lock.
         run: |
-          python -m pip install --upgrade pip
-          pip install -e ".[dev]"
+          python -m pip install --upgrade pip uv==0.6.8
+          uv sync --frozen --extra dev --python "$(which python)"
+          echo "$PWD/.venv/bin" >> "$GITHUB_PATH"
+
+      - name: Check the lockfile matches pyproject
+        if: matrix.python-version == '3.14'
+        run: uv lock --check
 
       - name: Verify MCP dependency
         # The SDK exposes no __version__, so check the v2 API and the spec
@@ -206,10 +212,11 @@ jobs:
           python-version: "3.13"
 
       - name: Audit Python dependencies
+        # Audits the locked tree the image ships, not a fresh resolution.
         run: |
-          python -m pip install --upgrade pip pip-audit
-          pip install -e "."
-          pip-audit
+          python -m pip install --upgrade pip pip-audit uv==0.6.8
+          uv export --frozen --no-emit-project -o requirements.txt
+          pip-audit -r requirements.txt
 
       - name: Set up Node
         uses: actions/setup-node@v7
