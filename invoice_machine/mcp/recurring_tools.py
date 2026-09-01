@@ -7,6 +7,7 @@ from decimal import Decimal
 from typing import Annotated
 
 from mcp.server.mcpserver import Context, Elicit, Resolve
+from mcp.server.mcpserver.exceptions import ToolError
 
 from invoice_machine.presenters import serialize_recurring_schedule
 from invoice_machine.services import RecurringService
@@ -254,4 +255,7 @@ async def trigger_recurring_schedule(
     ensure_confirmed(confirmation, "Triggering this schedule")
 
     async with get_session() as session:
-        return await RecurringService.trigger_schedule(session, schedule_id)
+        result = await RecurringService.trigger_schedule(session, schedule_id)
+    if result.get("error") == "Schedule not found":
+        raise ToolError(f"Schedule {schedule_id} not found")
+    return result

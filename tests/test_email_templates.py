@@ -6,6 +6,7 @@ from decimal import Decimal
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
+from mcp.server.mcpserver.exceptions import ToolError
 
 from invoice_machine.database import Base, BusinessProfile, Client, Invoice
 from invoice_machine.email import (
@@ -626,10 +627,8 @@ class TestEmailTemplateMCPTools:
     async def test_mcp_preview_invalid_invoice(self, db_session, business_profile):
         from invoice_machine.mcp.email_tools import preview_invoice_email
 
-        result = await preview_invoice_email(invoice_id=99999)
-
-        assert "error" in result
-        assert "not found" in result["error"].lower()
+        with pytest.raises(ToolError, match="not found"):
+            await preview_invoice_email(invoice_id=99999)
 
 
 class TestEmailTemplateSecurity:

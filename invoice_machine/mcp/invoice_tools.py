@@ -5,6 +5,8 @@ from __future__ import annotations
 from datetime import date
 from decimal import Decimal
 
+from mcp.server.mcpserver.exceptions import ToolError
+
 from invoice_machine.presenters import dump_json_list, serialize_invoice, serialize_invoice_item
 from invoice_machine.services import InvoiceService
 from invoice_machine.utils import utc_now
@@ -237,20 +239,15 @@ async def convert_quote_to_invoice(
         issue_date: Invoice date (ISO format, defaults to today UTC)
     """
     async with get_session() as session:
-        try:
-            invoice = await InvoiceService.convert_quote_to_invoice(
-                session,
-                quote_id,
-                issue_date=date.fromisoformat(issue_date) if issue_date else None,
-                payment_terms_days=payment_terms_days,
-                invoice_number_override=invoice_number_override,
-            )
-        except ValueError as exc:
-            await session.rollback()
-            return {"success": False, "error": str(exc)}
-
+        invoice = await InvoiceService.convert_quote_to_invoice(
+            session,
+            quote_id,
+            issue_date=date.fromisoformat(issue_date) if issue_date else None,
+            payment_terms_days=payment_terms_days,
+            invoice_number_override=invoice_number_override,
+        )
         if invoice is None:
-            return {"success": False, "error": f"Quote {quote_id} not found"}
+            raise ToolError(f"Quote {quote_id} not found")
 
         return {
             "success": True,
@@ -295,21 +292,16 @@ async def add_invoice_item(
         unit_type: "qty" for quantity or "hours" for time-based billing (default: qty)
     """
     async with get_session() as session:
-        try:
-            item = await InvoiceService.add_item(
-                session,
-                invoice_id,
-                description,
-                quantity,
-                Decimal(str(unit_price)),
-                unit_type=unit_type,
-            )
-        except ValueError as exc:
-            await session.rollback()
-            return {"success": False, "error": str(exc)}
-
+        item = await InvoiceService.add_item(
+            session,
+            invoice_id,
+            description,
+            quantity,
+            Decimal(str(unit_price)),
+            unit_type=unit_type,
+        )
         if item is None:
-            return {"success": False, "error": f"Invoice {invoice_id} not found"}
+            raise ToolError(f"Invoice {invoice_id} not found")
         return serialize_invoice_item(item)
 
 

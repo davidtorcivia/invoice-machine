@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from mcp.server.mcpserver.exceptions import ToolError
+
 from invoice_machine.config import get_settings
 from invoice_machine.database import Client, Invoice
 from invoice_machine.services import InvoiceService
@@ -21,7 +23,7 @@ async def generate_pdf(invoice_id: int) -> dict:
     async with get_session() as session:
         invoice = await InvoiceService.get_invoice(session, invoice_id)
         if not invoice:
-            return {"error": "Invoice not found"}
+            raise ToolError(f"Invoice {invoice_id} not found")
 
         # Explicit "regenerate" tool: always re-render.
         await store_invoice_pdf(session, invoice, force=True)
