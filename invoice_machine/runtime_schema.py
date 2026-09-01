@@ -55,13 +55,11 @@ def _inspect_existing_db(db_path: Path) -> tuple[bool, str | None, bool]:
 def run_alembic_migrations() -> None:
     """Upgrade the database schema to Alembic head.
 
-    Failure modes are explicit:
-    - A pre-Alembic database (has app tables but no alembic_version) is brought
-      current with the ad-hoc column backfill and then STAMPED at head.
-    - Any other database (fresh, or already under Alembic) is upgraded with
-      ``alembic upgrade head``. If that upgrade raises, the exception propagates
-      — we never stamp head over a failed/partial migration (which would
-      silently mark an incomplete schema as complete).
+    A pre-Alembic database (app tables but no alembic_version) is refused rather
+    than guessed at: nothing here can tell which of the 001-021 revisions its
+    schema already reflects, and stamping the wrong one loses tables silently.
+    Any other database is upgraded and a failure propagates — head is never
+    stamped over a partial migration.
     """
     from alembic import command
     from alembic.config import Config
@@ -74,15 +72,12 @@ def run_alembic_migrations() -> None:
         has_alembic, _current_version, has_users = _inspect_existing_db(db_path)
 
         if has_users and not has_alembic:
-            # Database predates Alembic: ensure every column exists, then stamp
-            # it as current (its schema IS current after the backfill).
-            logger.info("Pre-Alembic database detected; backfilling columns then stamping head")
-            from invoice_machine.migrations.add_new_fields import migrate
-
-            migrate(db_path)
-            command.stamp(alembic_cfg, "head")
-            logger.info("Stamped pre-Alembic database at head")
-            return
+            raise RuntimeError(
+                f"The database at {db_path} predates Alembic (it has application tables "
+                "but no alembic_version table) and cannot be upgraded automatically. "
+                "Back it up, then migrate it by hand: `alembic stamp 001_initial` "
+                "followed by `alembic upgrade head`."
+            )
 
     # Fresh database or one already under Alembic control: upgrade, fail loudly.
     command.upgrade(alembic_cfg, "head")

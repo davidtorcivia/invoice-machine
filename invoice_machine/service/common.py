@@ -1,6 +1,7 @@
 """Shared service-layer helpers."""
 
 import re
+from collections.abc import Awaitable, Callable
 from datetime import date, datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 
@@ -403,3 +404,27 @@ async def purge_trashed_records(
         "clients_deleted": client_count,
         "pdfs_deleted": pdfs_deleted,
     }
+
+
+async def run_per_row(
+    session: AsyncSession,
+    model: type,
+    row_ids: list[int],
+    handle: Callable[[object], Awaitable[None]],
+    on_error: Callable[[int, Exception], Awaitable[None]],
+) -> None:
+    """Apply ``handle`` to each id's freshly loaded row, isolating failures.
+
+    Each row is re-fetched inside the loop because a rollback expires every
+    loaded instance, and reading a stale one raises MissingGreenlet, which would
+    abort the remaining rows. A failing row is rolled back and the sweep goes on.
+    """
+    for row_id in row_ids:
+        row = await session.get(model, row_id)
+        if row is None:
+            continue
+        try:
+            await handle(row)
+        except Exception as exc:
+            await session.rollback()
+            await on_error(row_id, exc)

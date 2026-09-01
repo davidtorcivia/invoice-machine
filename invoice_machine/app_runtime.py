@@ -223,18 +223,6 @@ async def lifespan(app: FastAPI):
     except Exception as exc:
         logger.warning("FTS rebuild failed (non-fatal): %s", exc, exc_info=True)
 
-    # Run time-sensitive jobs once at startup so a restart doesn't skip a day.
-    # Both are idempotent (recurring catches up missed periods exactly once).
-    for name, job in (
-        ("Overdue check", _overdue_check_job),
-        ("Recurring invoices", _recurring_invoice_job),
-        ("Payment reminders", _payment_reminder_job),
-    ):
-        try:
-            await job()
-        except Exception as exc:
-            logger.warning("%s at startup failed (non-fatal): %s", name, exc, exc_info=True)
-
     tasks: list[asyncio.Task] = []
     scheduler_lock = _acquire_scheduler_lock()
     if scheduler_lock is None:
@@ -243,6 +231,19 @@ async def lifespan(app: FastAPI):
             "run in this worker (expected with multiple workers)."
         )
     else:
+        # Catch-up jobs run once at startup so a restart doesn't skip a day, and
+        # only under the lock: a second worker would double-generate recurring
+        # invoices. Both are idempotent within one holder.
+        for name, job in (
+            ("Overdue check", _overdue_check_job),
+            ("Recurring invoices", _recurring_invoice_job),
+            ("Payment reminders", _payment_reminder_job),
+        ):
+            try:
+                await job()
+            except Exception as exc:
+                logger.warning("%s at startup failed (non-fatal): %s", name, exc, exc_info=True)
+
         logger.info("Starting background tasks...")
         tasks = [
             asyncio.create_task(_run_hourly_task(app, "Session cleanup", _session_cleanup_job)),

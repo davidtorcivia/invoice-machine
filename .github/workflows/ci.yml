@@ -61,7 +61,7 @@ jobs:
         run: ruff format --check invoice_machine/ tests/
 
       - name: Run tests
-        run: pytest -q --cov --cov-report=term-missing --cov-report=xml --cov-fail-under=70
+        run: pytest -q --cov --cov-report=term-missing --cov-report=xml --cov-fail-under=79
 
       - name: Upload coverage
         if: matrix.python-version == '3.14'

@@ -15,6 +15,7 @@ from invoice_machine.service.common import (
     _align_to_year_month,
     _replace_with_valid_day,
     normalize_line_items,
+    run_per_row,
     validate_recurring_schedule,
 )
 from invoice_machine.service.reminders import business_now
@@ -433,82 +434,88 @@ class RecurringService:
         due_ids = [schedule.id for schedule in result.scalars().all()]
 
         results = []
-        # Re-fetch by id each iteration: a rollback in the except expires every
-        # loaded instance, and reading an expired attribute would raise
-        # MissingGreenlet (a lazy reload) and abort the rest of the run.
-        for schedule_id in due_ids:
-            schedule = await session.get(RecurringSchedule, schedule_id)
-            if schedule is None:
-                continue
+        # Set before the risky part so the error path can report the schedule.
+        pending: dict = {}
+
+        async def generate_for(schedule: RecurringSchedule) -> None:
+            schedule_id = schedule.id
             schedule_name = schedule.name
-            generated = 0
-            try:
-                while schedule.next_invoice_date <= today and generated < _MAX_CATCHUP_PER_SCHEDULE:
-                    period_date = schedule.next_invoice_date
-                    invoice = await RecurringService._create_invoice_from_schedule(
-                        session, schedule, period_date
-                    )
-                    # create_invoice may roll back on a numbering retry, which
-                    # expires this instance; re-fetch before reading its fields.
-                    schedule = await session.get(RecurringSchedule, schedule_id)
+            pending.update(name=schedule_name, generated=0)
 
-                    schedule.last_invoice_id = invoice.id
-                    schedule.next_invoice_date = RecurringService.calculate_next_date(
-                        period_date,
-                        schedule.frequency,
-                        schedule.schedule_day,
-                        schedule.schedule_month,
-                        schedule.quarter_month,
-                    )
-                    schedule.updated_at = utc_now()
-                    # Invoice and schedule advance commit together so a crash
-                    # cannot regenerate this period.
-                    await session.commit()
-                    generated += 1
+            while schedule.next_invoice_date <= today and pending["generated"] < (
+                _MAX_CATCHUP_PER_SCHEDULE
+            ):
+                period_date = schedule.next_invoice_date
+                invoice = await RecurringService._create_invoice_from_schedule(
+                    session, schedule, period_date
+                )
+                # create_invoice may roll back on a numbering retry, which
+                # expires this instance; re-fetch before reading its fields.
+                schedule = await session.get(RecurringSchedule, schedule_id)
 
-                    entry = {
-                        "schedule_id": schedule_id,
-                        "schedule_name": schedule_name,
-                        "invoice_id": invoice.id,
-                        "invoice_number": invoice.invoice_number,
-                        "issue_date": period_date.isoformat(),
-                        "success": True,
-                    }
-                    email_result = await RecurringService._auto_email_invoice(
-                        session, schedule, invoice.id
-                    )
-                    if email_result is not None:
-                        entry["emailed"] = bool(email_result.get("success"))
-                        if not email_result.get("success"):
-                            entry["email_error"] = email_result.get("error")
-                    results.append(entry)
+                schedule.last_invoice_id = invoice.id
+                schedule.next_invoice_date = RecurringService.calculate_next_date(
+                    period_date,
+                    schedule.frequency,
+                    schedule.schedule_day,
+                    schedule.schedule_month,
+                    schedule.quarter_month,
+                )
+                schedule.updated_at = utc_now()
+                # Invoice and schedule advance commit together so a crash
+                # cannot regenerate this period.
+                await session.commit()
+                pending["generated"] += 1
 
-                if generated >= _MAX_CATCHUP_PER_SCHEDULE and schedule.next_invoice_date <= today:
-                    logger.warning(
-                        "Recurring schedule %s (%s) hit the %s-invoice catch-up cap; "
-                        "remaining periods will generate on the next run.",
-                        schedule_id,
-                        schedule_name,
-                        _MAX_CATCHUP_PER_SCHEDULE,
-                    )
-            except Exception as exc:
-                await session.rollback()
-                logger.error(
-                    "Recurring schedule %s failed after generating %s invoice(s): %s",
+                entry = {
+                    "schedule_id": schedule_id,
+                    "schedule_name": schedule_name,
+                    "invoice_id": invoice.id,
+                    "invoice_number": invoice.invoice_number,
+                    "issue_date": period_date.isoformat(),
+                    "success": True,
+                }
+                email_result = await RecurringService._auto_email_invoice(
+                    session, schedule, invoice.id
+                )
+                if email_result is not None:
+                    entry["emailed"] = bool(email_result.get("success"))
+                    if not email_result.get("success"):
+                        entry["email_error"] = email_result.get("error")
+                results.append(entry)
+
+            if (
+                pending["generated"] >= _MAX_CATCHUP_PER_SCHEDULE
+                and schedule.next_invoice_date <= today
+            ):
+                logger.warning(
+                    "Recurring schedule %s (%s) hit the %s-invoice catch-up cap; "
+                    "remaining periods will generate on the next run.",
                     schedule_id,
-                    generated,
-                    exc,
-                    exc_info=True,
+                    schedule_name,
+                    _MAX_CATCHUP_PER_SCHEDULE,
                 )
-                results.append(
-                    {
-                        "schedule_id": schedule_id,
-                        "schedule_name": schedule_name,
-                        "invoices_generated": generated,
-                        "success": False,
-                        "error": str(exc),
-                    }
-                )
+
+        async def record_failure(schedule_id: int, exc: Exception) -> None:
+            generated = pending.get("generated", 0)
+            logger.error(
+                "Recurring schedule %s failed after generating %s invoice(s): %s",
+                schedule_id,
+                generated,
+                exc,
+                exc_info=True,
+            )
+            results.append(
+                {
+                    "schedule_id": schedule_id,
+                    "schedule_name": pending.get("name"),
+                    "invoices_generated": generated,
+                    "success": False,
+                    "error": str(exc),
+                }
+            )
+
+        await run_per_row(session, RecurringSchedule, due_ids, generate_for, record_failure)
 
         return results
 

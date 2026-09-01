@@ -571,3 +571,81 @@ class TestFromHeaderConstruction:
         msg = self._capture_message(service)
         assert "Acme Billing" in msg["From"]
         assert "billing@example.com" in msg["From"]
+
+
+class TestSendInvoiceEmailFlow:
+    """Tests for the shared send-an-invoice-by-email orchestration."""
+
+    @pytest.fixture(autouse=True)
+    def no_pdf_render(self, monkeypatch):
+        from unittest.mock import AsyncMock
+
+        monkeypatch.setattr("invoice_machine.pdf.generator.store_invoice_pdf", AsyncMock())
+
+    @pytest.mark.asyncio
+    async def test_refuses_when_smtp_is_disabled(self, db_session, business_profile, test_client):
+        from invoice_machine.service.email import send_invoice_email
+        from invoice_machine.services import InvoiceService
+
+        invoice = await InvoiceService.create_invoice(
+            db_session,
+            client_id=test_client.id,
+            items=[{"description": "x", "quantity": 1, "unit_price": "10"}],
+        )
+        result = await send_invoice_email(db_session, invoice.id)
+
+        assert result["success"] is False
+        assert "SMTP" in result["error"]
+
+    @pytest.mark.asyncio
+    async def test_missing_invoice_is_flagged_not_found(self, db_session, business_profile):
+        from invoice_machine.service.email import send_invoice_email
+
+        business_profile.smtp_enabled = 1
+        await db_session.commit()
+
+        result = await send_invoice_email(db_session, 999999)
+
+        assert result["not_found"] is True
+
+    @pytest.mark.asyncio
+    async def test_successful_send_moves_a_draft_to_sent(
+        self, db_session, business_profile, invoice_with_client, monkeypatch
+    ):
+        from unittest.mock import AsyncMock
+
+        from invoice_machine.service.email import send_invoice_email
+
+        business_profile.smtp_enabled = 1
+        await db_session.commit()
+        monkeypatch.setattr(
+            "invoice_machine.email.EmailService.send_invoice",
+            AsyncMock(return_value={"success": True, "recipient": "john@acme.com"}),
+        )
+
+        result = await send_invoice_email(db_session, invoice_with_client.id)
+
+        assert result["status_updated"] == "sent"
+        await db_session.refresh(invoice_with_client)
+        assert invoice_with_client.status == "sent"
+
+    @pytest.mark.asyncio
+    async def test_failed_send_leaves_the_invoice_a_draft(
+        self, db_session, business_profile, invoice_with_client, monkeypatch
+    ):
+        from unittest.mock import AsyncMock
+
+        from invoice_machine.service.email import send_invoice_email
+
+        business_profile.smtp_enabled = 1
+        await db_session.commit()
+        monkeypatch.setattr(
+            "invoice_machine.email.EmailService.send_invoice",
+            AsyncMock(return_value={"success": False, "error": "connection refused"}),
+        )
+
+        result = await send_invoice_email(db_session, invoice_with_client.id)
+
+        assert "status_updated" not in result
+        await db_session.refresh(invoice_with_client)
+        assert invoice_with_client.status == "draft"
