@@ -1,22 +1,64 @@
 <script lang="ts">
   import CollapsibleSection from '$lib/components/CollapsibleSection.svelte';
   import Icon from '$lib/components/Icons.svelte';
+  import SettingsPaymentMethodModal from './SettingsPaymentMethodModal.svelte';
+  import { createPaymentMethodDraft } from '$lib/settings/forms';
+  import { toast } from '$lib/stores';
 
   interface Props {
     open?: boolean;
     paymentMethods?: any;
-    openAddMethodModal: any;
-    openEditMethodModal: any;
-    deletePaymentMethod: any;
   }
 
-  let {
-    open = $bindable(false),
-    paymentMethods = [],
-    openAddMethodModal,
-    openEditMethodModal,
-    deletePaymentMethod
-  }: Props = $props();
+  let { open = $bindable(false), paymentMethods = $bindable([]) }: Props = $props();
+
+  let editingMethod = $state<any>(null);
+  let draft = $state(createPaymentMethodDraft());
+  let showModal = $state(false);
+
+  function openAddMethodModal() {
+    editingMethod = null;
+    draft = createPaymentMethodDraft();
+    showModal = true;
+  }
+
+  function openEditMethodModal(method) {
+    editingMethod = method;
+    draft = { name: method.name, instructions: method.instructions };
+    showModal = true;
+  }
+
+  function closeModal() {
+    showModal = false;
+    editingMethod = null;
+    draft = createPaymentMethodDraft();
+  }
+
+  function saveMethod() {
+    if (!draft.name.trim()) {
+      toast.error('Please enter a method name');
+      return;
+    }
+
+    if (editingMethod) {
+      paymentMethods = paymentMethods.map((method) =>
+        method.id === editingMethod.id
+          ? { ...method, name: draft.name.trim(), instructions: draft.instructions.trim() }
+          : method
+      );
+    } else {
+      paymentMethods = [
+        ...paymentMethods,
+        { id: Date.now().toString(), name: draft.name.trim(), instructions: draft.instructions.trim() }
+      ];
+    }
+
+    closeModal();
+  }
+
+  function deletePaymentMethod(id) {
+    paymentMethods = paymentMethods.filter((method) => method.id !== id);
+  }
 </script>
 
 <CollapsibleSection title="Payment Methods" subtitle="Configure payment options" icon="invoice" bind:open={open}>
@@ -60,6 +102,15 @@
     </div>
   {/if}
 </CollapsibleSection>
+
+<SettingsPaymentMethodModal
+  show={showModal}
+  {editingMethod}
+  bind:newMethodName={draft.name}
+  bind:newMethodInstructions={draft.instructions}
+  closePaymentMethodModal={closeModal}
+  savePaymentMethod={saveMethod}
+/>
 
 <style>
   .section-header-actions {

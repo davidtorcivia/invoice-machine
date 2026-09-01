@@ -1,22 +1,60 @@
 <script lang="ts">
   import CollapsibleSection from '$lib/components/CollapsibleSection.svelte';
   import Icon from '$lib/components/Icons.svelte';
+  import ConfirmModal from '$lib/components/ConfirmModal.svelte';
+  import { profileApi } from '$lib/api';
+  import { toast } from '$lib/stores';
 
   interface Props {
     open?: boolean;
     logoPreview?: any;
-    logoUploading?: boolean;
-    handleLogoSelect: any;
-    openDeleteLogoModal: any;
   }
 
-  let {
-    open = $bindable(false),
-    logoPreview = null,
-    logoUploading = false,
-    handleLogoSelect,
-    openDeleteLogoModal
-  }: Props = $props();
+  let { open = $bindable(false), logoPreview = $bindable(null) }: Props = $props();
+
+  let logoUploading = $state(false);
+  let showDeleteModal = $state(false);
+  let deleting = $state(false);
+
+  async function handleLogoSelect(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      toast.error('Please select an image file');
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error('Image must be less than 5MB');
+      return;
+    }
+
+    logoUploading = true;
+
+    try {
+      const result = await profileApi.uploadLogo(file);
+      logoPreview = `/api/profile/logo/${result.logo_path}`;
+      toast.success('Logo uploaded successfully');
+    } catch (error) {
+      toast.error('Failed to upload logo');
+    } finally {
+      logoUploading = false;
+      event.target.value = '';
+    }
+  }
+
+  async function deleteLogo() {
+    deleting = true;
+    try {
+      await profileApi.deleteLogo();
+      logoPreview = null;
+      toast.success('Logo deleted');
+      showDeleteModal = false;
+    } catch (error) {
+      toast.error('Failed to delete logo');
+    } finally {
+      deleting = false;
+    }
+  }
 </script>
 
 <CollapsibleSection title="Logo" subtitle="Company logo for invoices" icon="image" bind:open={open}>
@@ -56,7 +94,7 @@
         </label>
 
         {#if logoPreview && !logoUploading}
-          <button class="btn btn-ghost btn-danger-text" onclick={openDeleteLogoModal}>
+          <button class="btn btn-ghost btn-danger-text" onclick={() => (showDeleteModal = true)}>
             <Icon name="trash" size="sm" />
             Delete
           </button>
@@ -65,6 +103,19 @@
     </div>
   </div>
 </CollapsibleSection>
+
+<ConfirmModal
+  show={showDeleteModal}
+  title="Delete Logo"
+  message="This will remove your logo from all invoices. This action cannot be undone."
+  confirmText={deleting ? 'Deleting...' : 'Delete Logo'}
+  cancelText="Cancel"
+  variant="danger"
+  icon="trash"
+  loading={deleting}
+  onConfirm={deleteLogo}
+  onCancel={() => (showDeleteModal = false)}
+/>
 
 <style>
   .logo-section {

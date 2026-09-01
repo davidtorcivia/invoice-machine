@@ -2,9 +2,9 @@
   import { onMount } from 'svelte';
   import CollapsibleSection from '$lib/components/CollapsibleSection.svelte';
   import Icon from '$lib/components/Icons.svelte';
-  import ConfirmModal from '$lib/components/ConfirmModal.svelte';
+  import SettingsApiKeyManager from './SettingsApiKeyManager.svelte';
   import { apiKeysApi } from '$lib/api';
-  import { formatDate, toast } from '$lib/stores';
+  import { toast } from '$lib/stores';
 
   interface ApiKey {
     id: number;
@@ -30,16 +30,11 @@
   }: Props = $props();
 
   let keys = $state<ApiKey[]>([]);
-  let drafts = $state<Record<string, string>>({ mcp: '', bot: '' });
-  // Plaintext of a key just created or rotated, by key id. Never fetched again.
-  let revealed = $state<Record<number, string>>({});
-  let busy = $state(false);
-  let pending = $state<{ action: 'rotate' | 'revoke'; key: ApiKey } | null>(null);
+  let mcpRevealed = $state('');
+  let botRevealed = $state('');
 
   const mcpKeys = $derived(keys.filter((key) => key.kind === 'mcp'));
   const botKeys = $derived(keys.filter((key) => key.kind === 'bot'));
-  const mcpRevealed = $derived(mcpKeys.map((key) => revealed[key.id]).find(Boolean) ?? '');
-  const botRevealed = $derived(botKeys.map((key) => revealed[key.id]).find(Boolean) ?? '');
 
   onMount(load);
 
@@ -50,151 +45,7 @@
       toast.error('Failed to load API keys');
     }
   }
-
-  async function createKey(kind: string) {
-    const label = drafts[kind].trim();
-    if (!label) {
-      toast.error('Give the key a name first');
-      return;
-    }
-    busy = true;
-    try {
-      const created = await apiKeysApi.create(kind, label);
-      revealed[created.id] = created.key;
-      drafts[kind] = '';
-      await load();
-      toast.success('API key created');
-    } catch {
-      toast.error('Failed to create API key');
-    } finally {
-      busy = false;
-    }
-  }
-
-  async function confirmPending() {
-    if (!pending) return;
-    const { action, key } = pending;
-    busy = true;
-    try {
-      if (action === 'rotate') {
-        const rotated = await apiKeysApi.rotate(key.id);
-        revealed[key.id] = rotated.key;
-        toast.success('API key rotated');
-      } else {
-        await apiKeysApi.remove(key.id);
-        delete revealed[key.id];
-        toast.success('API key revoked');
-      }
-      await load();
-      pending = null;
-    } catch {
-      toast.error(action === 'rotate' ? 'Failed to rotate key' : 'Failed to revoke key');
-    } finally {
-      busy = false;
-    }
-  }
-
-  async function renameKey(key: ApiKey) {
-    const label = window.prompt('Rename key', key.label)?.trim();
-    if (!label || label === key.label) return;
-    try {
-      await apiKeysApi.rename(key.id, label);
-      await load();
-    } catch {
-      toast.error('Failed to rename key');
-    }
-  }
-
-  async function copyKey(id: number) {
-    if (!navigator.clipboard?.writeText) {
-      toast.error('Clipboard is unavailable (requires HTTPS). Copy the key manually.');
-      return;
-    }
-    try {
-      await navigator.clipboard.writeText(revealed[id]);
-      toast.success('API key copied to clipboard');
-    } catch {
-      toast.error('Could not copy to clipboard. Copy the key manually.');
-    }
-  }
 </script>
-
-{#snippet keyManager(kind: string, kindKeys: ApiKey[], placeholder: string)}
-  {#if kindKeys.length > 0}
-    <div class="table-container">
-      <table class="table">
-        <thead>
-          <tr>
-            <th>Name</th>
-            <th>Key</th>
-            <th>Created</th>
-            <th>Last used</th>
-            <th class="text-right">Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          {#each kindKeys as key (key.id)}
-            <tr>
-              <td>
-                <button type="button" class="btn btn-ghost btn-sm" disabled={busy} onclick={() => renameKey(key)} title="Rename" aria-label="Rename {key.label}">
-                  {key.label}
-                  <Icon name="pencil" size="sm" />
-                </button>
-              </td>
-              <td><span class="font-mono key-prefix">{key.prefix ? `${key.prefix}…` : '—'}</span></td>
-              <td class="text-secondary">{formatDate(key.created_at)}</td>
-              <td class="text-secondary">{key.last_used_at ? formatDate(key.last_used_at) : 'never'}</td>
-              <td class="text-right">
-                <button type="button" class="btn btn-ghost btn-sm" disabled={busy} onclick={() => (pending = { action: 'rotate', key })}>
-                  <Icon name="refresh" size="sm" />
-                  Rotate
-                </button>
-                <button type="button" class="btn btn-ghost btn-sm btn-danger-text" disabled={busy} onclick={() => (pending = { action: 'revoke', key })}>
-                  <Icon name="trash" size="sm" />
-                  Revoke
-                </button>
-              </td>
-            </tr>
-          {/each}
-        </tbody>
-      </table>
-    </div>
-  {/if}
-
-  <div class="key-new">
-    <input
-      type="text"
-      class="input"
-      maxlength="100"
-      placeholder={placeholder}
-      bind:value={drafts[kind]}
-      onkeydown={(event) => {
-        if (event.key === 'Enter') {
-          event.preventDefault();
-          createKey(kind);
-        }
-      }}
-    />
-    <button type="button" class="btn btn-primary" disabled={busy} onclick={() => createKey(kind)}>
-      <Icon name="plus" size="sm" />
-      New key
-    </button>
-  </div>
-
-  {#each kindKeys.filter((key) => revealed[key.id]) as key (key.id)}
-    <div class="mcp-key-display">
-      <label class="label" for="revealed-key-{key.id}">{key.label}</label>
-      <div class="mcp-key-row">
-        <input id="revealed-key-{key.id}" type="text" class="input" value={revealed[key.id]} readonly />
-        <button type="button" class="btn btn-secondary" onclick={() => copyKey(key.id)}>
-          <Icon name="copy" size="sm" />
-          Copy
-        </button>
-      </div>
-      <p class="form-hint">Shown once. Copy it now — it cannot be recovered.</p>
-    </div>
-  {/each}
-{/snippet}
 
 {#snippet statusPill(enabled: boolean, label: string, detail: string)}
   <div class="mcp-status {enabled ? 'mcp-enabled' : 'mcp-disabled'}">
@@ -235,7 +86,13 @@
     mcpKeys.length > 0 ? `Endpoint: ${mcpEndpointUrl}/mcp` : 'Create an API key to enable Claude Desktop connections'
   )}
 
-  {@render keyManager('mcp', mcpKeys, 'Key name (e.g. Laptop)')}
+  <SettingsApiKeyManager
+    kind="mcp"
+    keys={mcpKeys}
+    placeholder="Key name (e.g. Laptop)"
+    bind:revealedKey={mcpRevealed}
+    onchanged={load}
+  />
 
   <div class="mcp-help mt-4">
     <details>
@@ -288,7 +145,13 @@
     botKeys.length > 0 ? `Skill URL: ${mcpEndpointUrl}/SKILL.md` : 'Create a key to enable bearer token access for bots'
   )}
 
-  {@render keyManager('bot', botKeys, 'Key name (e.g. CI runner)')}
+  <SettingsApiKeyManager
+    kind="bot"
+    keys={botKeys}
+    placeholder="Key name (e.g. CI runner)"
+    bind:revealedKey={botRevealed}
+    onchanged={load}
+  />
 
   <div class="mcp-help mt-4">
     <details>
@@ -303,21 +166,6 @@
     </details>
   </div>
 </CollapsibleSection>
-
-<ConfirmModal
-  show={pending !== null}
-  title={pending?.action === 'rotate' ? 'Rotate API Key' : 'Revoke API Key'}
-  message={pending?.action === 'rotate'
-    ? `Rotating "${pending?.key.label}" invalidates only this key. Anything using it stops working until reconfigured. Continue?`
-    : `Revoking "${pending?.key.label}" is permanent. The integration using it stops working immediately. Continue?`}
-  confirmText={pending?.action === 'rotate' ? 'Rotate' : 'Revoke'}
-  cancelText="Cancel"
-  variant="danger"
-  icon={pending?.action === 'rotate' ? 'refresh' : 'trash'}
-  loading={busy}
-  onConfirm={confirmPending}
-  onCancel={() => (pending = null)}
-/>
 
 <style>
   .mcp-status {
@@ -374,37 +222,6 @@
     word-break: break-all;
   }
 
-  .key-prefix {
-    font-size: 0.8125rem;
-    color: var(--color-text-secondary);
-  }
-
-  .key-new {
-    display: flex;
-    gap: var(--space-2);
-    margin-top: var(--space-4);
-    margin-bottom: var(--space-4);
-  }
-
-  .key-new .input {
-    flex: 1;
-  }
-
-  .mcp-key-display {
-    margin-bottom: var(--space-4);
-  }
-
-  .mcp-key-row {
-    display: flex;
-    gap: var(--space-2);
-  }
-
-  .mcp-key-row .input {
-    flex: 1;
-    font-family: var(--font-mono);
-    font-size: 0.8125rem;
-  }
-
   .mcp-help {
     border-top: 1px solid var(--color-border-light);
     padding-top: var(--space-4);
@@ -456,13 +273,5 @@
     border-radius: var(--radius-sm);
     font-family: var(--font-mono);
     font-size: 0.875em;
-  }
-
-  .btn-danger-text {
-    color: var(--color-danger);
-  }
-
-  .btn-danger-text:hover:not(:disabled) {
-    background: var(--color-danger-light);
   }
 </style>
