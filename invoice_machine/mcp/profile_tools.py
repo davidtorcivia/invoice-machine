@@ -13,6 +13,52 @@ from .annotations import ADDITIVE, DESTRUCTIVE, READ_ONLY, UPDATE
 from .context import get_session, mcp
 
 
+def _validated_accent_color(value: str) -> str:
+    # accent_color is interpolated into the PDF stylesheet; enforce the same
+    # strict hex pattern the REST endpoint uses so a crafted value can't break
+    # out of the CSS context (the MCP path is otherwise unvalidated).
+    if not re.fullmatch(r"#[0-9a-fA-F]{6}", value):
+        raise ValueError("accent_color must be a hex color like #0891b2")
+    return value
+
+
+def _validated_theme(value: str) -> str:
+    if value not in ("system", "light", "dark"):
+        raise ValueError("theme_preference must be one of: system, light, dark")
+    return value
+
+
+def _validated_tax_rate(value: float) -> Decimal:
+    # Bounded like the REST schema: an out-of-range rate here would be applied
+    # to every subsequently created invoice.
+    rate = Decimal(str(value))
+    if not rate.is_finite() or rate < 0 or rate > 100:
+        raise ValueError("default_tax_rate must be between 0 and 100")
+    return rate
+
+
+def _encrypted_password(value: str) -> str | None:
+    from invoice_machine.crypto import encrypt_credential
+
+    return encrypt_credential(value) if value else None
+
+
+def _bool_flag(value) -> int:
+    return 1 if value else 0
+
+
+# Fields whose stored representation differs from the tool argument.
+_PROFILE_FIELD_COERCIONS = {
+    "accent_color": _validated_accent_color,
+    "theme_preference": _validated_theme,
+    "default_tax_enabled": _bool_flag,
+    "default_tax_rate": _validated_tax_rate,
+    "smtp_enabled": _bool_flag,
+    "smtp_use_tls": _bool_flag,
+    "smtp_password": _encrypted_password,
+}
+
+
 @mcp.tool(annotations=READ_ONLY)
 async def get_business_profile() -> dict:
     """Retrieve the current business profile."""
@@ -73,52 +119,21 @@ async def update_business_profile(
         email_body_template: Default email body template with placeholders
     """
 
+    # Copied before any other local exists so it holds only the tool arguments;
+    # on Python <=3.12 locals() is the live frame dict, so it must be copied.
+    arguments = dict(locals())
+
     async with get_session() as session:
         profile = await BusinessProfile.get_or_create(session)
 
-        updates = {
-            k: v
-            for k, v in locals().items()
-            if v is not None and k not in ("session", "json", "Decimal", "re")
-        }
-
-        # accent_color is interpolated into the PDF stylesheet; enforce the same
-        # strict hex pattern the REST endpoint uses so a crafted value can't break
-        # out of the CSS context (the MCP path is otherwise unvalidated).
-        if "accent_color" in updates and not re.fullmatch(
-            r"#[0-9a-fA-F]{6}", updates["accent_color"]
-        ):
-            raise ValueError("accent_color must be a hex color like #0891b2")
-
-        if "theme_preference" in updates and updates["theme_preference"] not in (
-            "system",
-            "light",
-            "dark",
-        ):
-            raise ValueError("theme_preference must be one of: system, light, dark")
-
-        if "smtp_password" in updates:
-            from invoice_machine.crypto import encrypt_credential
-
-            if updates["smtp_password"]:
-                updates["smtp_password"] = encrypt_credential(updates["smtp_password"])
-            else:
-                updates["smtp_password"] = None
-
-        if "default_tax_enabled" in updates:
-            updates["default_tax_enabled"] = 1 if updates["default_tax_enabled"] else 0
-        if "default_tax_rate" in updates:
-            # Bounded like the REST schema: an out-of-range rate here would be
-            # applied to every subsequently created invoice.
-            rate = Decimal(str(updates["default_tax_rate"]))
-            if not rate.is_finite() or rate < 0 or rate > 100:
-                raise ValueError("default_tax_rate must be between 0 and 100")
-            updates["default_tax_rate"] = rate
-
-        if "smtp_enabled" in updates:
-            updates["smtp_enabled"] = 1 if updates["smtp_enabled"] else 0
-        if "smtp_use_tls" in updates:
-            updates["smtp_use_tls"] = 1 if updates["smtp_use_tls"] else 0
+        # Coerce inside the session: get_session turns a validation ValueError
+        # into a ToolError the client can read.
+        updates = {}
+        for key, value in arguments.items():
+            if value is None:
+                continue
+            coerce = _PROFILE_FIELD_COERCIONS.get(key)
+            updates[key] = coerce(value) if coerce else value
 
         for key, value in updates.items():
             setattr(profile, key, value)

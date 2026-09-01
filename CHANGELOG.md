@@ -30,6 +30,9 @@ Notable changes to Invoice Machine. Format based on
 
 ### Fixed
 
+- A failed line-item search index rebuild dropped the old index first and left
+  search on the slow LIKE fallback until the next rebuild. The new index is now
+  built and populated before the old one is replaced.
 - `GET /mcp/status` returned 500 since the MCP 2026-07-28 upgrade (#24).
 - Production emitted no application logs after startup: the in-process Alembic
   upgrade reset the root logger.

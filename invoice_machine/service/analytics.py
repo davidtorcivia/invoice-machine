@@ -164,32 +164,13 @@ def _bucket_totals(vals: dict, cur: str) -> dict:
     }
 
 
-async def revenue_summary(
-    session: AsyncSession,
-    from_date_parsed: date,
-    to_date_parsed: date,
-    group_by: str = "month",
-) -> dict:
-    """Revenue summary grouped by currency, with period breakdown.
+def _amount_due_expr():
+    """Balance owed, not paper total (partial payments reduce what is outstanding)."""
+    return func.max(Invoice.total - func.coalesce(Invoice.amount_paid, 0), 0)
 
-    Period-scoped metrics (invoiced/paid/draft) honor the date range; point-in-
-    time metrics (outstanding/overdue) reflect current state across all invoices.
-    Overdue = status "overdue" OR (status "sent" AND past due).
-    """
-    today = utc_now().date()
 
-    period_filter = and_(
-        Invoice.document_type == "invoice",
-        Invoice.issue_date >= from_date_parsed,
-        Invoice.issue_date <= to_date_parsed,
-        Invoice.deleted_at.is_(None),
-    )
-    global_filter = and_(
-        Invoice.document_type == "invoice",
-        Invoice.deleted_at.is_(None),
-    )
-
-    period_rows = (
+async def _period_currency_rows(session: AsyncSession, period_filter) -> list:
+    return (
         await session.execute(
             select(
                 Invoice.currency_code.label("currency"),
@@ -210,39 +191,27 @@ async def revenue_summary(
         )
     ).all()
 
+
+async def _outstanding_currency_rows(session: AsyncSession, global_filter, today: date) -> list:
     is_effectively_overdue = or_(
         Invoice.status == "overdue",
         and_(Invoice.status == "sent", Invoice.due_date < today),
     )
-
-    outstanding_rows = (
+    return (
         await session.execute(
             select(
                 Invoice.currency_code.label("currency"),
                 func.coalesce(
                     func.sum(
                         case(
-                            (
-                                Invoice.status.in_(["sent", "overdue"]),
-                                # Balance owed, not paper total (partial payments
-                                # reduce what is actually outstanding).
-                                func.max(Invoice.total - func.coalesce(Invoice.amount_paid, 0), 0),
-                            ),
+                            (Invoice.status.in_(["sent", "overdue"]), _amount_due_expr()),
                             else_=0,
                         )
                     ),
                     0,
                 ).label("total_outstanding"),
                 func.coalesce(
-                    func.sum(
-                        case(
-                            (
-                                is_effectively_overdue,
-                                func.max(Invoice.total - func.coalesce(Invoice.amount_paid, 0), 0),
-                            ),
-                            else_=0,
-                        )
-                    ),
+                    func.sum(case((is_effectively_overdue, _amount_due_expr()), else_=0)),
                     0,
                 ).label("total_overdue"),
             )
@@ -251,37 +220,44 @@ async def revenue_summary(
         )
     ).all()
 
-    default_cur = await default_currency(session)
 
+def _merge_currency_buckets(period_rows, outstanding_rows, default_cur: str) -> dict[str, dict]:
+    """Merge both row sets keyed by currency.
+
+    Insertion order is period rows first: ``by_currency`` and
+    ``other_currencies`` are serialized in this order.
+    """
     per_currency: dict[str, dict] = {}
     for row in period_rows:
-        cur = row.currency or default_cur
-        bucket = per_currency.setdefault(cur, {})
+        bucket = per_currency.setdefault(row.currency or default_cur, {})
         bucket["invoice_count"] = row.invoice_count or 0
         bucket["invoiced"] = quantize_money(row.total_invoiced)
         bucket["paid"] = quantize_money(row.total_paid)
         bucket["draft"] = quantize_money(row.total_draft)
     for row in outstanding_rows:
-        cur = row.currency or default_cur
-        bucket = per_currency.setdefault(cur, {})
+        bucket = per_currency.setdefault(row.currency or default_cur, {})
         bucket["outstanding"] = quantize_money(row.total_outstanding)
         bucket["overdue"] = quantize_money(row.total_overdue)
+    return per_currency
 
-    primary = pick_primary_currency(per_currency, default_cur)
-    totals = _bucket_totals(per_currency.get(primary, {}), primary)
 
+def _period_expression(group_by: str):
     if group_by == "month":
-        period_expr = func.strftime("%Y-%m", Invoice.issue_date)
-    elif group_by == "quarter":
-        period_expr = func.printf(
+        return func.strftime("%Y-%m", Invoice.issue_date)
+    if group_by == "quarter":
+        return func.printf(
             "%d-Q%d",
             func.cast(func.strftime("%Y", Invoice.issue_date), Integer),
             (func.cast(func.strftime("%m", Invoice.issue_date), Integer) - 1) / 3 + 1,
         )
-    else:  # year
-        period_expr = func.strftime("%Y", Invoice.issue_date)
+    return func.strftime("%Y", Invoice.issue_date)
 
-    breakdown_rows = (
+
+async def _period_breakdown(
+    session: AsyncSession, period_filter, group_by: str, primary: str
+) -> list[dict]:
+    period_expr = _period_expression(group_by)
+    rows = (
         await session.execute(
             select(
                 period_expr.label("period"),
@@ -299,8 +275,7 @@ async def revenue_summary(
             .order_by(period_expr)
         )
     ).all()
-
-    breakdown = [
+    return [
         {
             "period": row.period,
             "invoiced": str(quantize_money(row.invoiced)),
@@ -309,13 +284,45 @@ async def revenue_summary(
             "paid_formatted": format_currency(quantize_money(row.paid), primary),
             "count": row.count,
         }
-        for row in breakdown_rows
+        for row in rows
     ]
+
+
+async def revenue_summary(
+    session: AsyncSession,
+    from_date_parsed: date,
+    to_date_parsed: date,
+    group_by: str = "month",
+) -> dict:
+    """Revenue summary grouped by currency, with period breakdown.
+
+    Period-scoped metrics (invoiced/paid/draft) honor the date range; point-in-
+    time metrics (outstanding/overdue) reflect current state across all invoices.
+    Overdue = status "overdue" OR (status "sent" AND past due).
+    """
+    period_filter = and_(
+        Invoice.document_type == "invoice",
+        Invoice.issue_date >= from_date_parsed,
+        Invoice.issue_date <= to_date_parsed,
+        Invoice.deleted_at.is_(None),
+    )
+    global_filter = and_(
+        Invoice.document_type == "invoice",
+        Invoice.deleted_at.is_(None),
+    )
+
+    period_rows = await _period_currency_rows(session, period_filter)
+    outstanding_rows = await _outstanding_currency_rows(session, global_filter, utc_now().date())
+    default_cur = await default_currency(session)
+
+    per_currency = _merge_currency_buckets(period_rows, outstanding_rows, default_cur)
+    primary = pick_primary_currency(per_currency, default_cur)
+    breakdown = await _period_breakdown(session, period_filter, group_by, primary)
 
     return {
         "period": f"{from_date_parsed} to {to_date_parsed}",
         "currency": primary,
-        "totals": totals,
+        "totals": _bucket_totals(per_currency.get(primary, {}), primary),
         "by_currency": {cur: _bucket_totals(vals, cur) for cur, vals in per_currency.items()},
         "other_currencies": [c for c in per_currency if c != primary],
         "breakdown": breakdown,

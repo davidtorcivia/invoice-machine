@@ -57,6 +57,258 @@ def _coerce_quantity(value):
     return quantize_quantity(value)
 
 
+def _resolve_tax_settings(tax_enabled, tax_rate, tax_name, client, business):
+    """Resolve tax settings by precedence: explicit argument, client, business default."""
+    if tax_enabled is not None:
+        use_tax_enabled = tax_enabled
+    elif client and client.tax_enabled is not None:
+        use_tax_enabled = bool(client.tax_enabled)
+    else:
+        use_tax_enabled = bool(business.default_tax_enabled)
+
+    if tax_rate is not None:
+        use_tax_rate = tax_rate
+    elif client and client.tax_rate is not None:
+        use_tax_rate = client.tax_rate
+    else:
+        use_tax_rate = business.default_tax_rate
+
+    if tax_name is not None:
+        use_tax_name = tax_name
+    elif client and client.tax_name is not None:
+        use_tax_name = client.tax_name
+    else:
+        use_tax_name = business.default_tax_name
+
+    return use_tax_enabled, use_tax_rate, use_tax_name
+
+
+def _invoice_column_values(
+    business: BusinessProfile,
+    client: Client | None,
+    *,
+    client_id,
+    invoice_date,
+    due_date,
+    payment_terms_days,
+    currency_code,
+    notes,
+    document_type,
+    client_reference,
+    show_payment_instructions,
+    selected_payment_methods,
+    tax_enabled,
+    tax_rate,
+    tax_name,
+    exchange_rate,
+    converted_from_invoice_id,
+) -> dict:
+    """Resolve every Invoice column except invoice_number, which the retry loop allocates."""
+    use_tax_enabled, use_tax_rate, use_tax_name = _resolve_tax_settings(
+        tax_enabled, tax_rate, tax_name, client, business
+    )
+    return {
+        "client_id": client_id,
+        "issue_date": invoice_date,
+        "due_date": calculate_due_date(
+            invoice_date, payment_terms_days, due_date, client, business
+        ),
+        "payment_terms_days": payment_terms_days
+        or (client.payment_terms_days if client else None)
+        or business.default_payment_terms_days,
+        "currency_code": currency_code,
+        "notes": notes,
+        "status": "draft",
+        "document_type": document_type,
+        "client_reference": client_reference,
+        "show_payment_instructions": 1 if show_payment_instructions else 0,
+        "selected_payment_methods": selected_payment_methods,
+        "tax_enabled": 1 if use_tax_enabled else 0,
+        "tax_rate": use_tax_rate or Decimal("0.00"),
+        "tax_name": use_tax_name or "Tax",
+        # Capture the FX rate into the base currency at issue time so consolidated
+        # reporting has a historically stable rate instead of today's.
+        "exchange_rate": resolve_exchange_rate(business, currency_code, exchange_rate),
+        "base_currency_code": business.default_currency_code or "USD",
+        "converted_from_invoice_id": converted_from_invoice_id,
+    }
+
+
+async def _insert_with_unique_number(
+    session: AsyncSession,
+    *,
+    fields: dict,
+    client: Client | None,
+    client_id: int | None,
+    invoice_date: date,
+    document_type: str,
+    normalized_items: list[dict],
+    commit: bool,
+    invoice_number_override: str | None,
+    converted_from_invoice_id: int | None,
+) -> Invoice:
+    """Allocate an invoice number and persist the invoice, retrying on a number collision."""
+    override = invoice_number_override is not None
+    override_number = (
+        normalize_invoice_number_override(invoice_number_override) if override else None
+    )
+    attempts = 1 if override else _NUMBER_ALLOCATION_ATTEMPTS
+    last_error: IntegrityError | None = None
+
+    # Retry loop guards against the read-max-then-+1 numbering race: if a
+    # concurrent create grabs the same number, the unique constraint fires
+    # and we regenerate instead of returning a 500.
+    for _attempt in range(attempts):
+        invoice_number = override_number or await generate_invoice_number(
+            session, invoice_date, document_type
+        )
+        invoice = Invoice(invoice_number=invoice_number, **fields)
+        if client:
+            await snapshot_client_info(session, client, invoice)
+
+        session.add(invoice)
+        try:
+            await _flush_invoice_with_items(session, invoice, normalized_items, commit)
+        except IntegrityError as exc:
+            await session.rollback()
+            last_error = exc
+            constraint = str(getattr(exc, "orig", exc))
+            if converted_from_invoice_id is not None and "converted_from" in constraint:
+                raise ValueError("Quote was already converted") from exc
+            if override:
+                raise ValueError(f"Invoice number '{override_number}' already exists") from exc
+            if "invoice_number" not in constraint:
+                raise
+            # Re-resolve objects expired by the rollback before retrying.
+            await BusinessProfile.get_or_create(session)
+            client = await session.get(Client, client_id) if client_id else None
+            continue
+
+        await session.refresh(invoice)
+        return invoice
+
+    raise ValueError("Could not allocate a unique invoice number; please retry") from last_error
+
+
+# Only these fields may be set via update_invoice(**kwargs). Computed money
+# fields (subtotal/tax_amount/total) and identity fields are intentionally
+# excluded so callers cannot desync totals from line items.
+_UPDATABLE_KWARGS = {
+    "payment_terms_days",
+    "client_reference",
+    "show_payment_instructions",
+    "selected_payment_methods",
+    "tax_enabled",
+    "tax_rate",
+    "tax_name",
+    "document_type",
+    "client_id",
+    "exchange_rate",
+}
+
+
+def _apply_update_kwargs(invoice: Invoice, kwargs: dict) -> tuple[bool, bool]:
+    """Apply allow-listed kwargs; report whether tax fields or document_type changed."""
+    tax_fields_changed = False
+    doc_type_changed = False
+    for key, value in kwargs.items():
+        if key == "invoice_number" and value is not None:
+            # Explicit custom number; normalize and treat as an override.
+            invoice.invoice_number = normalize_invoice_number_override(str(value))
+            continue
+        if key not in _UPDATABLE_KWARGS or value is None:
+            continue
+        if key in ("tax_enabled", "tax_rate") and getattr(invoice, key) != value:
+            tax_fields_changed = True
+        if key == "document_type" and value != invoice.document_type:
+            if (
+                invoice.status == "paid"
+                or (invoice.amount_paid or 0) > 0
+                or invoice.converted_to_invoice_id
+                or invoice.converted_from_invoice_id
+            ):
+                raise ValueError(
+                    "Cannot change the document type of a paid, partially paid, "
+                    "or converted document"
+                )
+            doc_type_changed = True
+        setattr(invoice, key, value)
+    return tax_fields_changed, doc_type_changed
+
+
+async def _apply_dates_and_number(
+    session: AsyncSession,
+    invoice: Invoice,
+    issue_date: date | None,
+    due_date: date | None,
+    doc_type_changed: bool,
+    client: Client | None,
+    business: BusinessProfile,
+) -> None:
+    date_changed = issue_date is not None and issue_date != invoice.issue_date
+    if date_changed:
+        invoice.issue_date = issue_date
+        if not due_date:
+            invoice.due_date = calculate_due_date(
+                issue_date, invoice.payment_terms_days, None, client, business
+            )
+
+    # Regenerate the auto-number when the date or document type changes, but
+    # NEVER overwrite a manual/custom invoice number.
+    if (date_changed or doc_type_changed) and is_auto_invoice_number(invoice.invoice_number):
+        invoice.invoice_number = await generate_invoice_number(
+            session, invoice.issue_date, invoice.document_type
+        )
+
+    if due_date:
+        invoice.due_date = due_date
+
+
+async def _apply_status(session: AsyncSession, invoice: Invoice, status: str) -> None:
+    valid_statuses = ["draft", "sent", "paid", "overdue", "cancelled"]
+    if status not in valid_statuses:
+        raise ValueError(f"Invalid status. Must be one of: {valid_statuses}")
+    if status == "paid" and getattr(invoice, "document_type", "invoice") == "quote":
+        raise ValueError("Cannot mark a quote as paid. Convert it to an invoice first.")
+    if status == "paid" and invoice.status != "paid":
+        remaining = invoice.amount_due
+        if remaining > 0:
+            session.add(
+                Payment(
+                    invoice_id=invoice.id,
+                    amount=remaining,
+                    currency_code=invoice.currency_code,
+                    payment_date=utc_now().date(),
+                    method=_MARKED_PAID_METHOD,
+                    notes=_MARKED_PAID_NOTE,
+                )
+            )
+            await session.flush()
+            await recalculate_invoice_payments(session, invoice)
+        invoice.status = "paid"
+        if invoice.paid_at is None:
+            invoice.paid_at = utc_now()
+    else:
+        if status != "paid" and invoice.status == "paid":
+            invoice.paid_at = None
+            await _drop_marked_paid_placeholder(session, invoice)
+        invoice.status = status
+
+
+async def _flush_invoice_with_items(
+    session: AsyncSession, invoice: Invoice, normalized_items: list[dict], commit: bool
+) -> None:
+    await session.flush()
+    if normalized_items:
+        session.add_all(InvoiceItem(invoice_id=invoice.id, **item) for item in normalized_items)
+        await session.flush()
+    await recalculate_invoice_totals(session, invoice)
+    if commit:
+        await session.commit()
+    else:
+        await session.flush()
+
+
 class InvoiceService:
     """Service for invoice operations."""
 
@@ -208,27 +460,6 @@ class InvoiceService:
         if client_id and client is None:
             raise ValueError(f"Client {client_id} not found")
 
-        if tax_enabled is not None:
-            use_tax_enabled = tax_enabled
-        elif client and client.tax_enabled is not None:
-            use_tax_enabled = bool(client.tax_enabled)
-        else:
-            use_tax_enabled = bool(business.default_tax_enabled)
-
-        if tax_rate is not None:
-            use_tax_rate = tax_rate
-        elif client and client.tax_rate is not None:
-            use_tax_rate = client.tax_rate
-        else:
-            use_tax_rate = business.default_tax_rate
-
-        if tax_name is not None:
-            use_tax_name = tax_name
-        elif client and client.tax_name is not None:
-            use_tax_name = client.tax_name
-        else:
-            use_tax_name = business.default_tax_name
-
         invoice_date = issue_date or utc_now().date()
 
         # Validate/normalize line items up front so a failure doesn't leave a
@@ -236,89 +467,38 @@ class InvoiceService:
         # coerced rather than crashing mid-build.
         normalized_items = normalize_line_items(items)
 
-        calculated_due_date = calculate_due_date(
-            invoice_date, payment_terms_days, due_date, client, business
+        fields = _invoice_column_values(
+            business,
+            client,
+            client_id=client_id,
+            invoice_date=invoice_date,
+            due_date=due_date,
+            payment_terms_days=payment_terms_days,
+            currency_code=currency_code,
+            notes=notes,
+            document_type=document_type,
+            client_reference=client_reference,
+            show_payment_instructions=show_payment_instructions,
+            selected_payment_methods=selected_payment_methods,
+            tax_enabled=tax_enabled,
+            tax_rate=tax_rate,
+            tax_name=tax_name,
+            exchange_rate=exchange_rate,
+            converted_from_invoice_id=converted_from_invoice_id,
         )
-        resolved_terms = (
-            payment_terms_days
-            or (client.payment_terms_days if client else None)
-            or business.default_payment_terms_days
+
+        return await _insert_with_unique_number(
+            session,
+            fields=fields,
+            client=client,
+            client_id=client_id,
+            invoice_date=invoice_date,
+            document_type=document_type,
+            normalized_items=normalized_items,
+            commit=commit,
+            invoice_number_override=invoice_number_override,
+            converted_from_invoice_id=converted_from_invoice_id,
         )
-
-        # Capture the FX rate into the base currency at issue time so consolidated
-        # reporting has a historically stable rate instead of today's.
-        base_currency = business.default_currency_code or "USD"
-        resolved_rate = resolve_exchange_rate(business, currency_code, exchange_rate)
-
-        override = invoice_number_override is not None
-        override_number = (
-            normalize_invoice_number_override(invoice_number_override) if override else None
-        )
-        attempts = 1 if override else _NUMBER_ALLOCATION_ATTEMPTS
-        last_error: IntegrityError | None = None
-
-        # Retry loop guards against the read-max-then-+1 numbering race: if a
-        # concurrent create grabs the same number, the unique constraint fires
-        # and we regenerate instead of returning a 500.
-        for _attempt in range(attempts):
-            invoice_number = override_number or await generate_invoice_number(
-                session, invoice_date, document_type
-            )
-            invoice = Invoice(
-                invoice_number=invoice_number,
-                client_id=client_id,
-                issue_date=invoice_date,
-                due_date=calculated_due_date,
-                payment_terms_days=resolved_terms,
-                currency_code=currency_code,
-                notes=notes,
-                status="draft",
-                document_type=document_type,
-                client_reference=client_reference,
-                show_payment_instructions=1 if show_payment_instructions else 0,
-                selected_payment_methods=selected_payment_methods,
-                tax_enabled=1 if use_tax_enabled else 0,
-                tax_rate=use_tax_rate or Decimal("0.00"),
-                tax_name=use_tax_name or "Tax",
-                exchange_rate=resolved_rate,
-                base_currency_code=base_currency,
-                converted_from_invoice_id=converted_from_invoice_id,
-            )
-            if client:
-                await snapshot_client_info(session, client, invoice)
-
-            session.add(invoice)
-            try:
-                await session.flush()
-                if normalized_items:
-                    session.add_all(
-                        InvoiceItem(invoice_id=invoice.id, **item) for item in normalized_items
-                    )
-                    await session.flush()
-                await recalculate_invoice_totals(session, invoice)
-                if commit:
-                    await session.commit()
-                else:
-                    await session.flush()
-            except IntegrityError as exc:
-                await session.rollback()
-                last_error = exc
-                constraint = str(getattr(exc, "orig", exc))
-                if converted_from_invoice_id is not None and "converted_from" in constraint:
-                    raise ValueError("Quote was already converted") from exc
-                if override:
-                    raise ValueError(f"Invoice number '{override_number}' already exists") from exc
-                if "invoice_number" not in constraint:
-                    raise
-                # Re-resolve objects expired by the rollback before retrying.
-                business = await BusinessProfile.get_or_create(session)
-                client = await session.get(Client, client_id) if client_id else None
-                continue
-
-            await session.refresh(invoice)
-            return invoice
-
-        raise ValueError("Could not allocate a unique invoice number; please retry") from last_error
 
     @staticmethod
     async def update_invoice(
@@ -338,99 +518,19 @@ class InvoiceService:
         business = await BusinessProfile.get_or_create(session)
         original_client_id = invoice.client_id
 
-        # Only these fields may be set via **kwargs. Computed money fields
-        # (subtotal/tax_amount/total) and identity fields are intentionally
-        # excluded so callers cannot desync totals from line items.
-        allowed_kwargs = {
-            "payment_terms_days",
-            "client_reference",
-            "show_payment_instructions",
-            "selected_payment_methods",
-            "tax_enabled",
-            "tax_rate",
-            "tax_name",
-            "document_type",
-            "client_id",
-            "exchange_rate",
-        }
-
-        tax_fields_changed = False
-        doc_type_changed = False
-        for key, value in kwargs.items():
-            if key == "invoice_number" and value is not None:
-                # Explicit custom number; normalize and treat as an override.
-                invoice.invoice_number = normalize_invoice_number_override(str(value))
-                continue
-            if key not in allowed_kwargs or value is None:
-                continue
-            if key in ("tax_enabled", "tax_rate") and getattr(invoice, key) != value:
-                tax_fields_changed = True
-            if key == "document_type" and value != invoice.document_type:
-                if (
-                    invoice.status == "paid"
-                    or (invoice.amount_paid or 0) > 0
-                    or invoice.converted_to_invoice_id
-                    or invoice.converted_from_invoice_id
-                ):
-                    raise ValueError(
-                        "Cannot change the document type of a paid, partially paid, "
-                        "or converted document"
-                    )
-                doc_type_changed = True
-            setattr(invoice, key, value)
+        tax_fields_changed, doc_type_changed = _apply_update_kwargs(invoice, kwargs)
 
         # Load the client *after* kwargs so a client_id reassignment resolves the
         # new client (for due-date terms and the snapshot below).
         client = await session.get(Client, invoice.client_id) if invoice.client_id else None
         client_changed = invoice.client_id != original_client_id
 
-        date_changed = issue_date is not None and issue_date != invoice.issue_date
-        if date_changed:
-            invoice.issue_date = issue_date
-            if not due_date:
-                invoice.due_date = calculate_due_date(
-                    issue_date, invoice.payment_terms_days, None, client, business
-                )
-
-        # Regenerate the auto-number when the date or document type changes, but
-        # NEVER overwrite a manual/custom invoice number.
-        if (date_changed or doc_type_changed) and is_auto_invoice_number(invoice.invoice_number):
-            invoice.invoice_number = await generate_invoice_number(
-                session, invoice.issue_date, invoice.document_type
-            )
-
-        if due_date:
-            invoice.due_date = due_date
+        await _apply_dates_and_number(
+            session, invoice, issue_date, due_date, doc_type_changed, client, business
+        )
 
         if status:
-            valid_statuses = ["draft", "sent", "paid", "overdue", "cancelled"]
-            if status not in valid_statuses:
-                raise ValueError(f"Invalid status. Must be one of: {valid_statuses}")
-            if status == "paid" and getattr(invoice, "document_type", "invoice") == "quote":
-                raise ValueError("Cannot mark a quote as paid. Convert it to an invoice first.")
-            if status == "paid" and invoice.status != "paid":
-                remaining = invoice.amount_due
-                if remaining > 0:
-                    session.add(
-                        Payment(
-                            invoice_id=invoice.id,
-                            amount=remaining,
-                            currency_code=invoice.currency_code,
-                            payment_date=utc_now().date(),
-                            method=_MARKED_PAID_METHOD,
-                            notes=_MARKED_PAID_NOTE,
-                        )
-                    )
-                    await session.flush()
-                    await recalculate_invoice_payments(session, invoice)
-                invoice.status = "paid"
-                if invoice.paid_at is None:
-                    invoice.paid_at = utc_now()
-            else:
-                if status != "paid" and invoice.status == "paid":
-                    invoice.paid_at = None
-                    await _drop_marked_paid_placeholder(session, invoice)
-                invoice.status = status
+            await _apply_status(session, invoice, status)
 
         if notes is not None:
             invoice.notes = notes
