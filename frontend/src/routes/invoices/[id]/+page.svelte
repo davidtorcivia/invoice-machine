@@ -3,19 +3,20 @@
 
   import { page } from '$app/stores';
   import { goto } from '$app/navigation';
-  import { invoicesApi, emailApi, paymentsApi } from '$lib/api';
+  import { invoicesApi, paymentsApi } from '$lib/api';
   import { toast } from '$lib/stores';
   import Header from '$lib/components/Header.svelte';
   import ConfirmModal from '$lib/components/ConfirmModal.svelte';
   import InvoiceClientCard from '$lib/components/invoices/InvoiceClientCard.svelte';
+  import InvoiceConversionLinkCard from '$lib/components/invoices/InvoiceConversionLinkCard.svelte';
   import InvoiceDetailHeader from '$lib/components/invoices/InvoiceDetailHeader.svelte';
+  import InvoiceEmailSender from '$lib/components/invoices/InvoiceEmailSender.svelte';
   import InvoiceLineItemsSummaryCard from '$lib/components/invoices/InvoiceLineItemsSummaryCard.svelte';
+  import InvoicePayOnlineCard from '$lib/components/invoices/InvoicePayOnlineCard.svelte';
   import InvoicePaymentsCard from '$lib/components/invoices/InvoicePaymentsCard.svelte';
   import InvoiceSidebarDetailsCard from '$lib/components/invoices/InvoiceSidebarDetailsCard.svelte';
   import InvoiceStatusBanner from '$lib/components/invoices/InvoiceStatusBanner.svelte';
   import RecordPaymentModal from '$lib/components/invoices/RecordPaymentModal.svelte';
-  import SendInvoiceEmailModal from '$lib/components/invoices/SendInvoiceEmailModal.svelte';
-
 
   let invoice = $state(/** @type {import('$lib/types').Invoice|null} */ (null));
   let items = $state([]);
@@ -26,19 +27,12 @@
   let deleting = $state(false);
   let showConvertModal = $state(false);
   let converting = $state(false);
-  let showSendEmailModal = $state(false);
-  let emailLoading = $state(false);
-  let emailSending = $state(false);
-  let emailRecipient = $state('');
-  let emailSubject = $state('');
-  let emailBody = $state('');
+  let emailSender = $state(/** @type {any} */ (null));
   let payments = $state([]);
   let showRecordPaymentModal = $state(false);
   let savingPayment = $state(false);
   let paymentsBusy = $state(false);
   let deletePaymentTarget = $state(/** @type {any} */ (null));
-  let creatingPaymentLink = $state(false);
-
 
   async function loadInvoice() {
     loading = true;
@@ -99,30 +93,6 @@
     } finally {
       paymentsBusy = false;
       deletePaymentTarget = null;
-    }
-  }
-
-  async function createPaymentLink() {
-    creatingPaymentLink = true;
-    try {
-      const result = await invoicesApi.createPaymentLink(invoiceId);
-      toast.success('Payment link created');
-      await loadInvoice();
-      window.open(result.payment_link_url, '_blank', 'noopener');
-    } catch (error) {
-      toast.error(error.message || 'Failed to create payment link');
-    } finally {
-      creatingPaymentLink = false;
-    }
-  }
-
-  async function copyPaymentLink() {
-    if (!invoice?.payment_link_url) return;
-    try {
-      await navigator.clipboard.writeText(invoice.payment_link_url);
-      toast.success('Payment link copied');
-    } catch (error) {
-      toast.error('Could not copy the link');
     }
   }
 
@@ -198,52 +168,6 @@
     showConvertModal = false;
   }
 
-  async function openSendEmailModal() {
-    showSendEmailModal = true;
-    emailLoading = true;
-    emailRecipient = invoice?.client_email || '';
-
-    try {
-      const preview = await emailApi.previewEmail(invoiceId, {});
-      emailSubject = preview.subject;
-      emailBody = preview.body;
-    } catch (error) {
-      toast.error('Failed to load email preview');
-      showSendEmailModal = false;
-    } finally {
-      emailLoading = false;
-    }
-  }
-
-  function cancelSendEmail() {
-    showSendEmailModal = false;
-    emailSubject = '';
-    emailBody = '';
-    emailRecipient = '';
-  }
-
-  async function confirmSendEmail() {
-    if (!emailRecipient) {
-      toast.error('Recipient email is required');
-      return;
-    }
-
-    emailSending = true;
-    try {
-      await emailApi.sendInvoice(invoiceId, {
-        recipient_email: emailRecipient,
-        subject: emailSubject,
-        body: emailBody
-      });
-      toast.success('Email sent successfully');
-      cancelSendEmail();
-      await loadInvoice();
-    } catch (error) {
-      toast.error(error.message || 'Failed to send email');
-    } finally {
-      emailSending = false;
-    }
-  }
   let invoiceId = $derived($page.params.id || '');
   run(() => {
     if (invoiceId) loadInvoice();
@@ -267,7 +191,7 @@
       {generatingPdf}
       ongeneratepdf={generatePdf}
       ondownloadpdf={downloadPdf}
-      onsendemail={openSendEmailModal}
+      onsendemail={() => emailSender?.open()}
     />
 
     <div class="invoice-layout">
@@ -307,69 +231,10 @@
             ondelete={(detail) => (deletePaymentTarget = detail)}
           />
 
-          <div class="card">
-            <div class="card-header">
-              <h2 class="card-title">Pay online</h2>
-            </div>
-            <div class="card-body">
-              {#if invoice.payment_link_url}
-                <p class="link-hint">Share this link so the client can pay by card.</p>
-                <div class="link-actions">
-                  <a
-                    href={invoice.payment_link_url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    class="btn btn-secondary btn-sm"
-                  >Open</a>
-                  <button type="button" class="btn btn-secondary btn-sm" onclick={copyPaymentLink}>
-                    Copy link
-                  </button>
-                  <button
-                    type="button"
-                    class="btn btn-secondary btn-sm"
-                    onclick={createPaymentLink}
-                    disabled={creatingPaymentLink}
-                  >
-                    {creatingPaymentLink ? 'Refreshing...' : 'Refresh'}
-                  </button>
-                </div>
-              {:else}
-                <p class="link-hint">
-                  Create a hosted checkout link for the outstanding balance. Requires
-                  online payments to be configured in settings.
-                </p>
-                <button
-                  type="button"
-                  class="btn btn-secondary btn-sm"
-                  onclick={createPaymentLink}
-                  disabled={creatingPaymentLink || parseFloat(invoice.amount_due) <= 0}
-                >
-                  {creatingPaymentLink ? 'Creating...' : 'Create payment link'}
-                </button>
-              {/if}
-            </div>
-          </div>
+          <InvoicePayOnlineCard {invoiceId} {invoice} onupdated={loadInvoice} />
         {/if}
 
-        {#if invoice.converted_to_invoice_id}
-          <div class="card">
-            <div class="card-body">
-              <p class="link-hint">
-                This quote was converted to
-                <a href="/invoices/{invoice.converted_to_invoice_id}">an invoice</a>.
-              </p>
-            </div>
-          </div>
-        {:else if invoice.converted_from_invoice_id}
-          <div class="card">
-            <div class="card-body">
-              <p class="link-hint">
-                Created from
-                <a href="/invoices/{invoice.converted_from_invoice_id}">a quote</a>.
-              </p>
-            </div>
-          </div>
-        {/if}
+        <InvoiceConversionLinkCard {invoice} />
       </div>
     </div>
   {:else}
@@ -432,16 +297,12 @@
   onCancel={() => (deletePaymentTarget = null)}
 />
 
-<SendInvoiceEmailModal
-  show={showSendEmailModal}
+<InvoiceEmailSender
+  bind:this={emailSender}
+  {invoiceId}
+  {invoice}
   {documentLabel}
-  {emailLoading}
-  {emailSending}
-  bind:emailRecipient
-  bind:emailSubject
-  bind:emailBody
-  oncancel={cancelSendEmail}
-  onconfirm={confirmSendEmail}
+  onsent={loadInvoice}
 />
 
 <style>
@@ -498,19 +359,6 @@
     display: flex;
     flex-direction: column;
     gap: var(--space-6);
-  }
-
-  .link-hint {
-    margin: 0 0 0.75rem;
-    color: var(--color-text-muted);
-    font-size: 0.85rem;
-    line-height: 1.5;
-  }
-
-  .link-actions {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.5rem;
   }
 
   .invoice-sidebar {

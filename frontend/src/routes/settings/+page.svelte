@@ -16,12 +16,9 @@
     buildSmtpPayload,
     createApiAccessState,
     createBackupForm,
-    createPaymentMethodDraft,
     createProfileForm,
     createSmtpForm,
     DEFAULT_SETTINGS_SECTIONS,
-    formatBackupBytes,
-    formatBackupDate,
     mapBackupSettingsToForm,
     mapProfileToApiAccess,
     mapProfileToProfileForm,
@@ -31,8 +28,6 @@
   import { countries } from '$lib/data/countries';
   import { currencies } from '$lib/data/currencies';
   import Header from '$lib/components/Header.svelte';
-  import Icon from '$lib/components/Icons.svelte';
-  import ConfirmModal from '$lib/components/ConfirmModal.svelte';
   import SettingsApiAccessSection from '$lib/components/settings/SettingsApiAccessSection.svelte';
   import SettingsAccountSection from '$lib/components/settings/SettingsAccountSection.svelte';
   import SettingsAddressSection from '$lib/components/settings/SettingsAddressSection.svelte';
@@ -40,8 +35,8 @@
   import SettingsBusinessInfoSection from '$lib/components/settings/SettingsBusinessInfoSection.svelte';
   import SettingsInvoiceDefaultsSection from '$lib/components/settings/SettingsInvoiceDefaultsSection.svelte';
   import SettingsLogoSection from '$lib/components/settings/SettingsLogoSection.svelte';
-  import SettingsPaymentMethodModal from '$lib/components/settings/SettingsPaymentMethodModal.svelte';
   import SettingsPaymentMethodsSection from '$lib/components/settings/SettingsPaymentMethodsSection.svelte';
+  import SettingsSaveBar from '$lib/components/settings/SettingsSaveBar.svelte';
   import SettingsSmtpSection from '$lib/components/settings/SettingsSmtpSection.svelte';
   import SettingsTaxSection from '$lib/components/settings/SettingsTaxSection.svelte';
   import SettingsPaymentsSection from '$lib/components/settings/SettingsPaymentsSection.svelte';
@@ -57,44 +52,22 @@
   let apiAccess = $state(createApiAccessState());
 
   let paymentMethods = $state([]);
-  let editingMethod = $state(/** @type {any} */ (null));
-  let paymentMethodDraft = $state(createPaymentMethodDraft());
-  let showPaymentMethodModal = $state(false);
-
   let logoPreview = $state(/** @type {any} */ (null));
-  let logoUploading = $state(false);
-  let showDeleteLogoModal = $state(false);
-  let deletingLogo = $state(false);
+  let backupSection = $state(/** @type {any} */ (null));
 
-  let loadingBackups = $state(false);
-  let backups = $state([]);
-  let creatingBackup = $state(false);
-  let restoringBackup = $state(/** @type {any} */ (null));
   let testingS3 = $state(false);
-  let showRestoreModal = $state(false);
-  let restoreTarget = $state(/** @type {any} */ (null));
-  let showDeleteBackupModal = $state(false);
-  let deleteBackupTarget = $state(/** @type {any} */ (null));
-  let deletingBackup = $state(false);
-
   let testingSmtp = $state(false);
   let changingPassword = $state(false);
 
   let mcpEndpointUrl = $derived(apiAccess.appBaseUrl || (typeof window !== 'undefined' ? window.location.origin : ''));
 
-  // Deferred-save state. The page has three independent deferred-save forms
-  // (business profile incl. payment methods + app URL, SMTP, backup). Each is
-  // tracked against its own post-load snapshot and re-baselined after its own
-  // save; the sticky save bar appears when any form is dirty and saves all
-  // dirty forms at once. Immediate actions (logo, API keys) are not tracked.
-  // The dirty expressions must reference the form variables directly — Svelte
-  // does not trace dependencies through helper-function bodies.
+  // Immediate actions (logo, API keys) are not snapshot-tracked; the dirty
+  // expressions must name form variables directly — Svelte cannot trace helpers.
   let savingAll = $state(false);
   let profileSnapshot = $state('');
   let smtpSnapshot = $state('');
   let backupSnapshot = $state('');
 
-  // Online payments, reminders and FX rates.
   let paymentsForm = $state({
     payments_enabled: false,
     stripe_secret_key_set: false,
@@ -165,7 +138,8 @@
   onMount(async () => {
     await loadProfile();
     await loadBackupSettings();
-    await loadBackups();
+    // Listing backups depends on the s3Enabled flag that loadBackupSettings sets.
+    await backupSection?.reloadBackups();
     await loadPaymentSettings();
     await loadReminderSettings();
     await loadFxRates();
@@ -365,98 +339,6 @@
     }
   }
 
-  async function handleLogoSelect(event) {
-    const file = event.target.files[0];
-    if (!file) return;
-    if (!file.type.startsWith('image/')) {
-      toast.error('Please select an image file');
-      return;
-    }
-    if (file.size > 5 * 1024 * 1024) {
-      toast.error('Image must be less than 5MB');
-      return;
-    }
-
-    logoUploading = true;
-
-    try {
-      const result = await profileApi.uploadLogo(file);
-      logoPreview = `/api/profile/logo/${result.logo_path}`;
-      toast.success('Logo uploaded successfully');
-    } catch (error) {
-      toast.error('Failed to upload logo');
-    } finally {
-      logoUploading = false;
-      event.target.value = '';
-    }
-  }
-
-  function openDeleteLogoModal() {
-    showDeleteLogoModal = true;
-  }
-
-  function closeDeleteLogoModal() {
-    showDeleteLogoModal = false;
-  }
-
-  async function deleteLogo() {
-    deletingLogo = true;
-    try {
-      await profileApi.deleteLogo();
-      logoPreview = null;
-      toast.success('Logo deleted');
-      closeDeleteLogoModal();
-    } catch (error) {
-      toast.error('Failed to delete logo');
-    } finally {
-      deletingLogo = false;
-    }
-  }
-
-  function openAddMethodModal() {
-    editingMethod = null;
-    paymentMethodDraft = createPaymentMethodDraft();
-    showPaymentMethodModal = true;
-  }
-
-  function openEditMethodModal(method) {
-    editingMethod = method;
-    paymentMethodDraft = { name: method.name, instructions: method.instructions };
-    showPaymentMethodModal = true;
-  }
-
-  function closePaymentMethodModal() {
-    showPaymentMethodModal = false;
-    editingMethod = null;
-    paymentMethodDraft = createPaymentMethodDraft();
-  }
-
-  function savePaymentMethod() {
-    if (!paymentMethodDraft.name.trim()) {
-      toast.error('Please enter a method name');
-      return;
-    }
-
-    if (editingMethod) {
-      paymentMethods = paymentMethods.map((method) =>
-        method.id === editingMethod.id
-          ? { ...method, name: paymentMethodDraft.name.trim(), instructions: paymentMethodDraft.instructions.trim() }
-          : method
-      );
-    } else {
-      paymentMethods = [
-        ...paymentMethods,
-        { id: Date.now().toString(), name: paymentMethodDraft.name.trim(), instructions: paymentMethodDraft.instructions.trim() }
-      ];
-    }
-
-    closePaymentMethodModal();
-  }
-
-  function deletePaymentMethod(id) {
-    paymentMethods = paymentMethods.filter((method) => method.id !== id);
-  }
-
   async function loadBackupSettings() {
     try {
       backupForm = mapBackupSettingsToForm(await backupsApi.getSettings());
@@ -464,75 +346,6 @@
       // Use defaults.
     } finally {
       backupSnapshot = backupState();
-    }
-  }
-
-  async function loadBackups() {
-    loadingBackups = true;
-    try {
-      backups = await backupsApi.list(backupForm.s3Enabled);
-    } catch (error) {
-      backups = [];
-    } finally {
-      loadingBackups = false;
-    }
-  }
-
-  async function createBackup() {
-    creatingBackup = true;
-    try {
-      const result = await backupsApi.create(true);
-      toast.success(`Backup created: ${result.filename}`);
-      await loadBackups();
-    } catch (error) {
-      toast.error(error.message || 'Failed to create backup');
-    } finally {
-      creatingBackup = false;
-    }
-  }
-
-  function openRestoreModal(backup) {
-    restoreTarget = backup;
-    showRestoreModal = true;
-  }
-
-  function closeRestoreModal() {
-    showRestoreModal = false;
-    restoreTarget = null;
-  }
-
-  async function restoreBackup() {
-    if (!restoreTarget) return;
-    restoringBackup = restoreTarget.filename;
-    try {
-      const result = await backupsApi.restore(restoreTarget.filename, restoreTarget.location === 's3');
-      toast.success(result.message);
-      closeRestoreModal();
-    } catch (error) {
-      toast.error(error.message || 'Failed to restore backup');
-    } finally {
-      restoringBackup = null;
-    }
-  }
-
-  function openDeleteBackupModal(backup) {
-    deleteBackupTarget = backup;
-    showDeleteBackupModal = true;
-  }
-
-  async function confirmDeleteBackup() {
-    if (!deleteBackupTarget) return;
-    deletingBackup = true;
-    try {
-      await backupsApi.delete(deleteBackupTarget.filename);
-      toast.success('Backup deleted');
-      showDeleteBackupModal = false;
-      await loadBackups();
-    } catch (error) {
-      toast.error('Failed to delete backup');
-    } finally {
-      deletingBackup = false;
-      deleteBackupTarget = null;
     }
   }
 
@@ -572,13 +385,7 @@
     </div>
   {:else}
     <div class="settings-layout">
-      <SettingsLogoSection
-        bind:open={openSections.logo}
-        {logoPreview}
-        {logoUploading}
-        {handleLogoSelect}
-        {openDeleteLogoModal}
-      />
+      <SettingsLogoSection bind:open={openSections.logo} bind:logoPreview />
 
       <SettingsAccountSection
         bind:open={openSections.account}
@@ -619,10 +426,7 @@
 
       <SettingsPaymentMethodsSection
         bind:open={openSections.paymentMethods}
-        {paymentMethods}
-        {openAddMethodModal}
-        {openEditMethodModal}
-        {deletePaymentMethod}
+        bind:paymentMethods
       />
 
       <SettingsTaxSection
@@ -673,9 +477,8 @@
       />
 
       <SettingsBackupSection
+        bind:this={backupSection}
         bind:open={openSections.backup}
-        {creatingBackup}
-        {createBackup}
         bind:backupEnabled={backupForm.enabled}
         bind:backupRetentionDays={backupForm.retentionDays}
         bind:backupS3Enabled={backupForm.s3Enabled}
@@ -687,95 +490,20 @@
         bind:backupS3Prefix={backupForm.s3Prefix}
         {testingS3}
         {testS3Connection}
-        {loadingBackups}
-        {backups}
-        {restoringBackup}
-        {openRestoreModal}
-        {openDeleteBackupModal}
-        formatBytes={formatBackupBytes}
-        formatDate={formatBackupDate}
-        downloadBackupHref={backupsApi.download}
       />
 
     </div>
 
     {#if settingsDirty}
-      <div class="save-bar" role="status">
-        <span class="save-bar-text">
-          Unsaved changes
-          <span class="save-bar-sections">{dirtySectionLabels.join(' · ')}</span>
-        </span>
-        <div class="save-bar-actions">
-          <button type="button" class="btn btn-secondary" onclick={discardChanges} disabled={savingAll}>
-            Discard
-          </button>
-          <button type="button" class="btn btn-primary" onclick={saveAll} disabled={savingAll}>
-            {#if savingAll}
-              <span class="spinner-sm"></span>
-              Saving...
-            {:else}
-              <Icon name="check" size="sm" />
-              Save Changes
-            {/if}
-          </button>
-        </div>
-      </div>
+      <SettingsSaveBar
+        labels={dirtySectionLabels}
+        saving={savingAll}
+        ondiscard={discardChanges}
+        onsave={saveAll}
+      />
     {/if}
   {/if}
 </div>
-
-<ConfirmModal
-  show={showDeleteLogoModal}
-  title="Delete Logo"
-  message="This will remove your logo from all invoices. This action cannot be undone."
-  confirmText={deletingLogo ? 'Deleting...' : 'Delete Logo'}
-  cancelText="Cancel"
-  variant="danger"
-  icon="trash"
-  loading={deletingLogo}
-  onConfirm={deleteLogo}
-  onCancel={closeDeleteLogoModal}
-/>
-
-<ConfirmModal
-  show={showRestoreModal && !!restoreTarget}
-  title="Restore Backup"
-  message={restoreTarget
-    ? `This will overwrite your current database with ${restoreTarget.filename}. A pre-restore backup will be created automatically. The application will need to be restarted after restore.`
-    : 'Restore this backup?'}
-  confirmText={restoringBackup ? 'Restoring...' : 'Restore Backup'}
-  cancelText="Cancel"
-  variant="warning"
-  icon="refresh"
-  loading={!!restoringBackup}
-  onConfirm={restoreBackup}
-  onCancel={closeRestoreModal}
-/>
-
-<SettingsPaymentMethodModal
-  show={showPaymentMethodModal}
-  {editingMethod}
-  bind:newMethodName={paymentMethodDraft.name}
-  bind:newMethodInstructions={paymentMethodDraft.instructions}
-  {closePaymentMethodModal}
-  {savePaymentMethod}
-/>
-
-<ConfirmModal
-  show={showDeleteBackupModal}
-  title="Delete Backup"
-  message="Delete backup {deleteBackupTarget?.filename}? This action cannot be undone."
-  confirmText="Delete"
-  cancelText="Cancel"
-  variant="danger"
-  icon="trash"
-  loading={deletingBackup}
-  onConfirm={confirmDeleteBackup}
-  onCancel={() => {
-    showDeleteBackupModal = false;
-    deleteBackupTarget = null;
-  }}
-/>
 
 <style>
   .page-content {
@@ -795,56 +523,6 @@
     gap: var(--space-6);
   }
 
-  .save-bar {
-    position: sticky;
-    bottom: var(--space-4);
-    z-index: 10;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--space-4);
-    margin-top: var(--space-6);
-    padding: var(--space-3) var(--space-4);
-    background: var(--color-bg-elevated);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-lg);
-    box-shadow: var(--shadow-lg);
-    animation: save-bar-in 0.15s ease;
-  }
-
-  @keyframes save-bar-in {
-    from {
-      opacity: 0;
-      transform: translateY(8px);
-    }
-    to {
-      opacity: 1;
-      transform: translateY(0);
-    }
-  }
-
-  .save-bar-text {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    font-size: 0.875rem;
-    font-weight: 600;
-    color: var(--color-text);
-    min-width: 0;
-  }
-
-  .save-bar-sections {
-    font-size: 0.75rem;
-    font-weight: 400;
-    color: var(--color-text-tertiary);
-  }
-
-  .save-bar-actions {
-    display: flex;
-    gap: var(--space-2);
-    flex-shrink: 0;
-  }
-
   @media (min-width: 1400px) {
     .page-content {
       max-width: 900px;
@@ -855,25 +533,11 @@
     .page-content {
       padding: var(--space-4);
     }
-
-    .save-bar {
-      bottom: var(--space-3);
-    }
   }
 
   @media (max-width: 480px) {
     .page-content {
       padding: var(--space-3);
-    }
-
-    .save-bar {
-      flex-direction: column;
-      align-items: stretch;
-      text-align: center;
-    }
-
-    .save-bar-actions .btn {
-      flex: 1;
     }
   }
 </style>

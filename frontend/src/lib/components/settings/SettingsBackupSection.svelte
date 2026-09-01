@@ -1,11 +1,13 @@
 <script lang="ts">
   import CollapsibleSection from '$lib/components/CollapsibleSection.svelte';
   import Icon from '$lib/components/Icons.svelte';
+  import SettingsBackupList from './SettingsBackupList.svelte';
+  import ConfirmModal from '$lib/components/ConfirmModal.svelte';
+  import { backupsApi } from '$lib/api';
+  import { toast } from '$lib/stores';
 
   interface Props {
     open?: boolean;
-    creatingBackup?: boolean;
-    createBackup: any;
     backupEnabled?: boolean;
     backupRetentionDays?: number;
     backupS3Enabled?: boolean;
@@ -17,20 +19,10 @@
     backupS3Prefix?: string;
     testingS3?: boolean;
     testS3Connection: any;
-    loadingBackups?: boolean;
-    backups?: any;
-    restoringBackup?: any;
-    openRestoreModal: any;
-    openDeleteBackupModal: any;
-    formatBytes: any;
-    formatDate: any;
-    downloadBackupHref: any;
   }
 
   let {
     open = $bindable(false),
-    creatingBackup = false,
-    createBackup,
     backupEnabled = $bindable(true),
     backupRetentionDays = $bindable(30),
     backupS3Enabled = $bindable(false),
@@ -41,16 +33,73 @@
     backupS3Region = $bindable(''),
     backupS3Prefix = $bindable('invoice-machine-backups'),
     testingS3 = false,
-    testS3Connection,
-    loadingBackups = false,
-    backups = [],
-    restoringBackup = null,
-    openRestoreModal,
-    openDeleteBackupModal,
-    formatBytes,
-    formatDate,
-    downloadBackupHref
+    testS3Connection
   }: Props = $props();
+
+  let backups = $state<any[]>([]);
+  let loadingBackups = $state(false);
+  let creatingBackup = $state(false);
+  // Restore and delete state lives above CollapsibleSection: collapsing the
+  // section unmounts its children mid-request otherwise.
+  let restoringBackup = $state<any>(null);
+  let restoreTarget = $state<any>(null);
+  let deleteTarget = $state<any>(null);
+  let deletingBackup = $state(false);
+
+  // Fetching lives here rather than in the list child: CollapsibleSection only
+  // renders its children while expanded, so the child may not exist yet.
+  export async function reloadBackups() {
+    loadingBackups = true;
+    try {
+      backups = await backupsApi.list(backupS3Enabled);
+    } catch (error) {
+      backups = [];
+    } finally {
+      loadingBackups = false;
+    }
+  }
+
+  async function restoreBackup() {
+    if (!restoreTarget) return;
+    restoringBackup = restoreTarget.filename;
+    try {
+      const result = await backupsApi.restore(restoreTarget.filename, restoreTarget.location === 's3');
+      toast.success(result.message);
+      restoreTarget = null;
+    } catch (error) {
+      toast.error(error.message || 'Failed to restore backup');
+    } finally {
+      restoringBackup = null;
+    }
+  }
+
+  async function deleteBackup() {
+    if (!deleteTarget) return;
+    deletingBackup = true;
+    try {
+      await backupsApi.delete(deleteTarget.filename);
+      toast.success('Backup deleted');
+      await reloadBackups();
+    } catch (error) {
+      toast.error('Failed to delete backup');
+    } finally {
+      deletingBackup = false;
+      deleteTarget = null;
+    }
+  }
+
+  async function createBackup() {
+    creatingBackup = true;
+    try {
+      const result = await backupsApi.create(true);
+      toast.success(`Backup created: ${result.filename}`);
+      await reloadBackups();
+    } catch (error) {
+      toast.error(error.message || 'Failed to create backup');
+    } finally {
+      creatingBackup = false;
+    }
+  }
 </script>
 
 <CollapsibleSection title="Backup & Restore" subtitle="Manage your data backups" icon="download" bind:open={open}>
@@ -179,65 +228,42 @@
     {/if}
   </div>
 
-  <div class="backup-list mt-4">
-    <h4 class="backup-list-title">Available Backups</h4>
-
-    {#if loadingBackups}
-      <div class="loading-container">
-        <div class="spinner"></div>
-      </div>
-    {:else if backups.length === 0}
-      <p class="text-secondary">No backups yet. Create one using the button above.</p>
-    {:else}
-      <div class="backup-items">
-        {#each backups as backup}
-          <div class="backup-item">
-            <div class="backup-info">
-              <span class="backup-filename">{backup.filename}</span>
-              <span class="backup-meta">
-                {formatBytes(backup.size_bytes)} | {formatDate(backup.created_at)}
-                {#if backup.location === 's3'}
-                  <span class="backup-location">S3</span>
-                {/if}
-              </span>
-            </div>
-            <div class="backup-item-actions">
-              {#if backup.location === 'local'}
-                <a
-                  href={downloadBackupHref(backup.filename)}
-                  class="btn btn-ghost btn-icon btn-sm"
-                  title="Download"
-                  download
-                >
-                  <Icon name="download" size="sm" />
-                </a>
-              {/if}
-              <button
-                type="button"
-                class="btn btn-ghost btn-icon btn-sm"
-                onclick={() => openRestoreModal(backup)}
-                title="Restore"
-                disabled={restoringBackup === backup.filename}
-              >
-                <Icon name="refresh" size="sm" />
-              </button>
-              {#if backup.location === 'local'}
-                <button
-                  type="button"
-                  class="btn btn-ghost btn-icon btn-sm"
-                  onclick={() => openDeleteBackupModal(backup)}
-                  title="Delete"
-                >
-                  <Icon name="trash" size="sm" />
-                </button>
-              {/if}
-            </div>
-          </div>
-        {/each}
-      </div>
-    {/if}
-  </div>
+  <SettingsBackupList
+    {backups}
+    loading={loadingBackups}
+    {restoringBackup}
+    onrestore={(backup) => (restoreTarget = backup)}
+    ondelete={(backup) => (deleteTarget = backup)}
+  />
 </CollapsibleSection>
+
+<ConfirmModal
+  show={!!restoreTarget}
+  title="Restore Backup"
+  message={restoreTarget
+    ? `This will overwrite your current database with ${restoreTarget.filename}. A pre-restore backup will be created automatically. The application will need to be restarted after restore.`
+    : 'Restore this backup?'}
+  confirmText={restoringBackup ? 'Restoring...' : 'Restore Backup'}
+  cancelText="Cancel"
+  variant="warning"
+  icon="refresh"
+  loading={!!restoringBackup}
+  onConfirm={restoreBackup}
+  onCancel={() => (restoreTarget = null)}
+/>
+
+<ConfirmModal
+  show={!!deleteTarget}
+  title="Delete Backup"
+  message="Delete backup {deleteTarget?.filename}? This action cannot be undone."
+  confirmText="Delete"
+  cancelText="Cancel"
+  variant="danger"
+  icon="trash"
+  loading={deletingBackup}
+  onConfirm={deleteBackup}
+  onCancel={() => (deleteTarget = null)}
+/>
 
 <style>
   .section-header-actions {
@@ -278,84 +304,4 @@
     margin-bottom: var(--space-3);
   }
 
-  .backup-list {
-    border-top: 1px solid var(--color-border-light);
-    padding-top: var(--space-4);
-  }
-
-  .backup-list-title {
-    font-size: 0.9375rem;
-    font-weight: 600;
-    margin-bottom: var(--space-3);
-    color: var(--color-text);
-  }
-
-  .backup-items {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-2);
-  }
-
-  .backup-item {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: var(--space-3);
-    background: var(--color-bg-sunken);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-md);
-    gap: var(--space-3);
-  }
-
-  .backup-info {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-1);
-    min-width: 0;
-    flex: 1;
-  }
-
-  .backup-filename {
-    font-family: var(--font-mono);
-    font-size: 0.8125rem;
-    font-weight: 500;
-    color: var(--color-text);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .backup-meta {
-    font-size: 0.75rem;
-    color: var(--color-text-tertiary);
-  }
-
-  .backup-location {
-    display: inline-block;
-    padding: 0.1em 0.4em;
-    background: var(--color-primary-light);
-    color: var(--color-primary);
-    border-radius: var(--radius-sm);
-    font-weight: 500;
-    font-size: 0.6875rem;
-    text-transform: uppercase;
-    margin-left: var(--space-2);
-  }
-
-  .backup-item-actions {
-    display: flex;
-    gap: var(--space-1);
-    flex-shrink: 0;
-  }
-
-  .loading-container {
-    display: flex;
-    justify-content: center;
-    padding: var(--space-12);
-  }
-
-  .text-secondary {
-    color: var(--color-text-secondary);
-    font-size: 0.875rem;
-  }
 </style>
