@@ -20,6 +20,7 @@ mcp = MCPServer(
     # Spec 2026-07-28 requires ttlMs/cacheScope on list results (SEP-2549); the
     # SDK otherwise stamps ttl_ms=0, telling clients never to cache. "private"
     # keeps shared proxies from caching a self-hosted instance's inventory.
+    # Safe only because the tool set is fixed at import time.
     cache_hints={
         "tools/list": CacheHint(ttl_ms=300_000, scope="private"),
         "server/discover": CacheHint(ttl_ms=300_000, scope="private"),

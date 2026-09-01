@@ -61,7 +61,10 @@ async def get_consolidated_summary(
     to_date: str | None = Query(None, description="End date (ISO format)"),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
-    """Opt-in single-currency roll-up using each invoice's captured FX rate."""
+    """Opt-in single-currency roll-up using each invoice's captured FX rate.
+
+    Invoices with no recorded rate are excluded and counted in ``uncovered``.
+    """
     return await analytics_service.consolidated_summary(
         session,
         from_date_parsed=date.fromisoformat(from_date) if from_date else None,

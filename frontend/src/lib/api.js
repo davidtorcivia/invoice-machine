@@ -173,8 +173,7 @@ export async function request(endpoint, options = {}) {
   /** @type {RequestInit} */
   const fetchConfig = {
     ...config,
-    // Always send cookies (session + CSRF), even if the API is ever served
-    // from a different origin than the SPA.
+    // Cookies travel same-origin only; the API serves the SPA itself.
     credentials: config.credentials ?? 'same-origin',
     body: config.body ?? undefined,
   };
