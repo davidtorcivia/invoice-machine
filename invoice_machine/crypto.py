@@ -15,7 +15,6 @@ import secrets
 
 from cryptography.fernet import Fernet, InvalidToken
 
-# Cache the encryption key after first retrieval
 _cached_key: bytes | None = None
 
 
@@ -26,17 +25,10 @@ class EncryptionKeyError(Exception):
 
 
 def _get_encryption_key() -> bytes:
-    """
-    Get encryption key from environment variable.
+    """Return the encryption key from the environment.
 
-    SECURITY: In production, this function will FAIL if the key is not set.
-    Development mode allows a derived key with a warning.
-
-    Returns:
-        The encryption key as bytes
-
-    Raises:
-        EncryptionKeyError: If key is missing in production or invalid format
+    Raises in production when the key is missing; development falls back to a
+    key derived from the hostname, with a warning.
     """
     global _cached_key
     if _cached_key is not None:
@@ -54,7 +46,6 @@ def _get_encryption_key() -> bytes:
             _cached_key = base64.urlsafe_b64encode(decoded)
             return _cached_key
 
-        # Validate base64 format (must decode to 32 bytes)
         try:
             decoded = base64.urlsafe_b64decode(key.encode())
             if len(decoded) == 32:
@@ -73,7 +64,6 @@ def _get_encryption_key() -> bytes:
                 'python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"'
             )
 
-    # No key found - behavior depends on environment
     if environment == "production":
         raise EncryptionKeyError(
             "INVOICE_MACHINE_ENCRYPTION_KEY environment variable is REQUIRED in production. "
@@ -81,13 +71,11 @@ def _get_encryption_key() -> bytes:
             'python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"'
         )
 
-    # Development mode: generate a deterministic key with warning
     logging.warning(
         "INVOICE_MACHINE_ENCRYPTION_KEY not set. Using derived key for DEVELOPMENT ONLY. "
         "For production, set INVOICE_MACHINE_ENCRYPTION_KEY to a 32-byte base64-encoded value."
     )
 
-    # Derive from a machine-specific value to maintain consistency in development
     machine_id = os.environ.get("HOSTNAME", "invoice-machine-dev-default")
     derived = hashlib.pbkdf2_hmac(
         "sha256",
@@ -113,15 +101,7 @@ def require_production_encryption_key() -> None:
 
 
 def encrypt_credential(plaintext: str) -> str:
-    """
-    Encrypt a credential (password, API key, etc.) for storage.
-
-    Args:
-        plaintext: The credential to encrypt
-
-    Returns:
-        Base64-encoded encrypted string with 'enc:' prefix
-    """
+    """Encrypt a credential for storage, returned with an ``enc:`` prefix."""
     if not plaintext:
         return plaintext
 
@@ -138,27 +118,16 @@ class UnencryptedCredentialError(Exception):
 
 
 def decrypt_credential(ciphertext: str, allow_plaintext: bool = False) -> str:
-    """
-    Decrypt an encrypted credential.
+    """Decrypt a credential stored with an ``enc:`` prefix.
 
-    SECURITY: Plaintext credentials are NOT allowed by default. This prevents
-    downgrade attacks where an attacker replaces encrypted data with plaintext.
-
-    Args:
-        ciphertext: The encrypted credential (with 'enc:' prefix)
-        allow_plaintext: If True, allows returning plaintext values (DEVELOPMENT ONLY)
-
-    Returns:
-        Decrypted plaintext string
-
-    Raises:
-        ValueError: If decryption fails
-        UnencryptedCredentialError: If credential is not encrypted and allow_plaintext=False
+    A value without the prefix is rejected in production: allowing it would be
+    a downgrade path for an attacker who can write to the database. Outside
+    production it is returned as-is, and ``allow_plaintext`` suppresses the
+    warning.
     """
     if not ciphertext:
         return ciphertext
 
-    # Check if this is an encrypted value
     if not ciphertext.startswith("enc:"):
         environment = os.environ.get("ENVIRONMENT", "development").lower()
 
@@ -175,7 +144,6 @@ def decrypt_credential(ciphertext: str, allow_plaintext: bool = False) -> str:
                 "Plaintext credentials will be rejected in production."
             )
 
-        # Development only: return plaintext with warning
         return ciphertext
 
     try:
@@ -196,44 +164,18 @@ def is_encrypted(value: str) -> bool:
     return bool(value) and value.startswith("enc:")
 
 
-# MCP API Key hashing
-
-
 def hash_api_key(api_key: str) -> str:
-    """
-    Hash an API key for storage.
-
-    Uses SHA-256 with a unique salt for each key.
-
-    Args:
-        api_key: The plain API key
-
-    Returns:
-        Hashed key in format 'hash:<salt>:<hash>'
-    """
+    """Hash an API key for storage in the format ``hash:<salt>:<hash>``."""
     salt = secrets.token_hex(16)
     hash_value = hashlib.sha256((salt + api_key).encode()).hexdigest()
     return f"hash:{salt}:{hash_value}"
 
 
 def verify_api_key(api_key: str, hashed: str) -> bool:
-    """
-    Verify an API key against its hash.
-
-    SECURITY: Plaintext API keys are logged as warnings but still accepted
-    for backwards compatibility. They should be regenerated.
-
-    Args:
-        api_key: The plain API key to verify
-        hashed: The stored hash in format 'hash:<salt>:<hash>'
-
-    Returns:
-        True if the key matches, False otherwise
-    """
+    """Verify an API key against its stored ``hash:<salt>:<hash>`` value."""
     if not hashed or not api_key:
         return False
 
-    # Check for legacy unhashed keys
     if not hashed.startswith("hash:"):
         environment = os.environ.get("ENVIRONMENT", "development").lower()
 

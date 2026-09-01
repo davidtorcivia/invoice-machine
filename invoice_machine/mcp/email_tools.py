@@ -20,19 +20,12 @@ async def _confirm_send(
     recipient_email: str | None,
     ctx: Context,
 ) -> Confirmation | Elicit[Confirmation]:
-    """Ask before an invoice leaves for a real inbox.
-
-    Names the actual recipient rather than the invoice ID, because the risk
-    being confirmed is "this goes to that person", and the address may come
-    from the client record rather than the caller.
-    """
+    """Ask before an invoice leaves for a real inbox."""
     async with get_session() as session:
         invoice = await InvoiceService.get_invoice(session, invoice_id)
         number = invoice.invoice_number if invoice else invoice_id
-        # Mirror EmailService.send_invoice's own resolution exactly
-        # (`recipient_email or invoice.client_email`) so the address quoted in
-        # the prompt is the address that will actually receive the mail, not
-        # the client record's current one.
+        # Mirror EmailService.send_invoice's own resolution so the address
+        # quoted in the prompt is the one that will actually receive the mail.
         to = recipient_email or (invoice.client_email if invoice else None)
 
     return confirmed(
@@ -53,18 +46,9 @@ async def send_invoice_email(
     """
     Send an invoice PDF via email.
 
-    Requires SMTP to be configured in business profile settings.
-
-    Asks the user to confirm before sending, where the client supports it.
-
-    Args:
-        invoice_id: The invoice ID to send
-        recipient_email: Override recipient (defaults to client's email)
-        subject: Override email subject (defaults to "Invoice {number}")
-        body: Override email body (defaults to friendly message with invoice details)
-
-    Returns:
-        Success status and details
+    Requires SMTP to be configured in business profile settings. Asks the user
+    to confirm before sending, where the client supports it. The recipient
+    defaults to the client's email, subject and body to the saved templates.
     """
     from invoice_machine.service.email import send_invoice_email as send_invoice_email_service
 
@@ -82,12 +66,7 @@ async def send_invoice_email(
 
 @mcp.tool(annotations=READ_ONLY_REMOTE)
 async def test_smtp_connection() -> dict:
-    """
-    Test SMTP connection without sending an email.
-
-    Returns:
-        Success status and connection details
-    """
+    """Test SMTP connection without sending an email."""
     from invoice_machine.email import EmailService
 
     async with get_session() as session:
@@ -105,12 +84,7 @@ async def test_smtp_connection() -> dict:
 
 @mcp.tool(annotations=READ_ONLY)
 async def get_email_templates() -> dict:
-    """
-    Get the current email templates for invoice/quote emails.
-
-    Returns:
-        Current email subject and body templates, plus available placeholders.
-    """
+    """Get the email templates for invoice/quote emails, plus the placeholders."""
     from invoice_machine.email import DEFAULT_BODY_TEMPLATE, DEFAULT_SUBJECT_TEMPLATE
 
     async with get_session() as session:
@@ -150,13 +124,6 @@ async def update_email_templates(
 
     Use placeholders like {invoice_number}, {client_name}, {total}, {due_date} etc.
     Set a template to empty string to clear it (will use defaults).
-
-    Args:
-        email_subject_template: Template for email subject
-        email_body_template: Template for email body
-
-    Returns:
-        Updated email templates
     """
     async with get_session() as session:
         profile = await BusinessProfile.get_or_create(session)
@@ -182,17 +149,7 @@ async def preview_invoice_email(
     subject_template: str | None = None,
     body_template: str | None = None,
 ) -> dict:
-    """
-    Preview what an invoice email will look like with template expansion.
-
-    Args:
-        invoice_id: The invoice ID to preview email for
-        subject_template: Optional override for subject template
-        body_template: Optional override for body template
-
-    Returns:
-        Expanded subject, body, recipient email, and available placeholders
-    """
+    """Preview an invoice email with its templates expanded."""
     from invoice_machine.email import (
         DEFAULT_BODY_TEMPLATE,
         DEFAULT_SUBJECT_TEMPLATE,
@@ -206,7 +163,6 @@ async def preview_invoice_email(
 
         profile = await BusinessProfile.get_or_create(session)
 
-        # Use provided templates, fall back to saved templates, then defaults
         subj_tmpl = (
             subject_template
             if subject_template is not None

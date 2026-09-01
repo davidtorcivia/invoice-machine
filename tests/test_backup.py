@@ -1,12 +1,4 @@
-"""Tests for backup service functionality.
-
-These tests verify:
-- Local backup creation (compressed and uncompressed)
-- Backup listing
-- Retention cleanup
-- S3 upload (mocked)
-- Error handling
-"""
+"""Tests for backup service functionality."""
 
 import gzip
 import io
@@ -46,7 +38,6 @@ class TestBackupServiceInit:
     """Tests for BackupService initialization."""
 
     def test_init_creates_backup_dir(self):
-        """Backup directory is created if it doesn't exist."""
         with tempfile.TemporaryDirectory() as tmpdir:
             backup_dir = Path(tmpdir) / "backups"
             assert not backup_dir.exists()
@@ -57,7 +48,6 @@ class TestBackupServiceInit:
             assert service.backup_dir == backup_dir
 
     def test_init_custom_retention(self):
-        """Custom retention days are stored."""
         with tempfile.TemporaryDirectory() as tmpdir:
             backup_dir = Path(tmpdir) / "backups"
             service = BackupService(backup_dir=backup_dir, retention_days=7)
@@ -65,7 +55,6 @@ class TestBackupServiceInit:
             assert service.retention_days == 7
 
     def test_init_s3_config(self):
-        """S3 configuration is stored."""
         with tempfile.TemporaryDirectory() as tmpdir:
             backup_dir = Path(tmpdir) / "backups"
             s3_config = {
@@ -92,7 +81,6 @@ class TestCreateBackup:
             yield db_file
 
     def test_create_backup_compressed(self, mock_db_file):
-        """Create a compressed backup."""
         with tempfile.TemporaryDirectory() as tmpdir:
             backup_dir = Path(tmpdir) / "backups"
             service = BackupService(backup_dir=backup_dir)
@@ -118,7 +106,6 @@ class TestCreateBackup:
                     )
 
     def test_create_backup_uncompressed(self, mock_db_file):
-        """Create an uncompressed backup."""
         with tempfile.TemporaryDirectory() as tmpdir:
             backup_dir = Path(tmpdir) / "backups"
             service = BackupService(backup_dir=backup_dir)
@@ -142,7 +129,6 @@ class TestCreateBackup:
                     )
 
     def test_create_backup_db_not_found(self):
-        """Raise error when database doesn't exist."""
         with tempfile.TemporaryDirectory() as tmpdir:
             backup_dir = Path(tmpdir) / "backups"
             service = BackupService(backup_dir=backup_dir)
@@ -154,7 +140,6 @@ class TestCreateBackup:
                     service.create_backup()
 
     def test_create_backup_with_s3_upload(self, mock_db_file):
-        """Upload backup to S3 when configured."""
         with tempfile.TemporaryDirectory() as tmpdir:
             backup_dir = Path(tmpdir) / "backups"
             s3_config = {
@@ -176,7 +161,6 @@ class TestCreateBackup:
                     mock_upload.assert_called_once()
 
     def test_create_backup_s3_upload_failure(self, mock_db_file):
-        """Handle S3 upload failure gracefully."""
         with tempfile.TemporaryDirectory() as tmpdir:
             backup_dir = Path(tmpdir) / "backups"
             s3_config = {"enabled": True, "bucket": "test-bucket"}
@@ -194,7 +178,6 @@ class TestCreateBackup:
                     assert "S3 error" in result["s3_error"]
 
     def test_create_backup_timestamp_in_filename(self, mock_db_file):
-        """Backup filename includes timestamp."""
         with tempfile.TemporaryDirectory() as tmpdir:
             backup_dir = Path(tmpdir) / "backups"
             service = BackupService(backup_dir=backup_dir)
@@ -204,9 +187,7 @@ class TestCreateBackup:
 
                 result = service.create_backup()
 
-                # Filename should contain date/time pattern
                 assert "invoice_machine_backup_" in result["filename"]
-                # Should be in format YYYYMMDD_HHMMSS
                 import re
 
                 pattern = r"invoice_machine_backup_\d{8}_\d{6}$"
@@ -219,7 +200,6 @@ class TestListBackups:
     """Tests for backup listing."""
 
     def test_list_backups_empty(self):
-        """List empty backup directory."""
         with tempfile.TemporaryDirectory() as tmpdir:
             backup_dir = Path(tmpdir) / "backups"
             service = BackupService(backup_dir=backup_dir)
@@ -229,12 +209,10 @@ class TestListBackups:
             assert result == []
 
     def test_list_backups_multiple(self):
-        """List multiple backups sorted by date."""
         with tempfile.TemporaryDirectory() as tmpdir:
             backup_dir = Path(tmpdir) / "backups"
             backup_dir.mkdir()
 
-            # Create test backups
             old_backup = backup_dir / "invoice_machine_backup_20250101_120000.db.gz"
             old_backup.write_bytes(b"old backup")
 
@@ -248,14 +226,12 @@ class TestListBackups:
             result = service.list_backups()
 
             assert len(result) == 3
-            # Check all backups are listed
             filenames = [b["filename"] for b in result]
             assert "invoice_machine_backup_20250101_120000.db.gz" in filenames
             assert "invoice_machine_backup_20250115_120000.db.gz" in filenames
             assert "invoice_machine_backup_20250110_120000.db" in filenames
 
     def test_list_backups_includes_metadata(self):
-        """Backup listing includes metadata."""
         with tempfile.TemporaryDirectory() as tmpdir:
             backup_dir = Path(tmpdir) / "backups"
             backup_dir.mkdir()
@@ -274,14 +250,11 @@ class TestListBackups:
             assert "created_at" in backup
 
     def test_list_backups_ignores_other_files(self):
-        """Only list backup files, ignore others."""
         with tempfile.TemporaryDirectory() as tmpdir:
             backup_dir = Path(tmpdir) / "backups"
             backup_dir.mkdir()
 
-            # Create valid backup
             (backup_dir / "invoice_machine_backup_20250115_120000.db.gz").write_bytes(b"backup")
-            # Create other files that should be ignored
             (backup_dir / "random_file.txt").write_bytes(b"text")
             (backup_dir / "other_backup.db").write_bytes(b"other")
 
@@ -296,7 +269,6 @@ class TestS3Upload:
     """Tests for S3 upload functionality."""
 
     def test_upload_to_s3_no_config(self):
-        """Raise error when S3 config is missing."""
         with tempfile.TemporaryDirectory() as tmpdir:
             backup_dir = Path(tmpdir) / "backups"
             service = BackupService(backup_dir=backup_dir)
@@ -305,7 +277,6 @@ class TestS3Upload:
                 service._upload_to_s3(Path("/test/file"), "test.db.gz")
 
     def test_upload_to_s3_success(self):
-        """Successfully upload to S3."""
         with tempfile.TemporaryDirectory() as tmpdir:
             backup_dir = Path(tmpdir) / "backups"
             backup_dir.mkdir()
@@ -336,7 +307,6 @@ class TestS3Upload:
                 assert call_args[0][2] == "backups/test.db.gz"  # key
 
     def test_upload_to_s3_default_prefix(self):
-        """Use default prefix when not specified."""
         with tempfile.TemporaryDirectory() as tmpdir:
             backup_dir = Path(tmpdir) / "backups"
             backup_dir.mkdir()
@@ -358,7 +328,6 @@ class TestS3Upload:
                 service._upload_to_s3(backup_file, "test.db.gz")
 
                 call_args = mock_client.upload_file.call_args
-                # Should use default prefix
                 assert call_args[0][2] == "invoice-machine-backups/test.db.gz"
 
 
@@ -366,13 +335,12 @@ class TestRetentionCleanup:
     """Tests for backup retention cleanup."""
 
     def test_cleanup_old_backups(self):
-        """Delete backups older than retention period."""
         with tempfile.TemporaryDirectory() as tmpdir:
             backup_dir = Path(tmpdir) / "backups"
             backup_dir.mkdir()
 
-            # Retention now uses the timestamp embedded in the filename (not
-            # mtime), so build names relative to "now".
+            # Retention keys on the timestamp in the filename, not mtime, so
+            # names are built relative to now.
             now = datetime.now(UTC)
             old_backup = backup_dir / _backup_filename(now - timedelta(days=40))
             old_backup.write_bytes(b"old")
@@ -388,12 +356,10 @@ class TestRetentionCleanup:
             assert new_backup.exists()
 
     def test_cleanup_preserves_recent(self):
-        """Preserve backups within retention period."""
         with tempfile.TemporaryDirectory() as tmpdir:
             backup_dir = Path(tmpdir) / "backups"
             backup_dir.mkdir()
 
-            # Create recent backups (within the retention window relative to now)
             now = datetime.now(UTC)
             for i in range(3):
                 backup = backup_dir / _backup_filename(now - timedelta(days=i))
@@ -403,7 +369,6 @@ class TestRetentionCleanup:
             deleted_count = service.cleanup_old_backups()
 
             assert deleted_count == 0
-            # All backups should still exist
             backups = list(backup_dir.glob("invoice_machine_backup_*.db.gz"))
             assert len(backups) == 3
 
@@ -429,14 +394,12 @@ class TestRestoreBackup:
     """Tests for backup restoration."""
 
     def test_restore_backup_success(self):
-        """Successfully restore from backup."""
         with tempfile.TemporaryDirectory() as tmpdir:
             data_dir = Path(tmpdir) / "data"
             data_dir.mkdir()
             backup_dir = Path(tmpdir) / "backups"
             backup_dir.mkdir()
 
-            # Create original database
             db_file = data_dir / "invoice_machine.db"
             db_file.write_bytes(b"original database content")
 
@@ -456,20 +419,16 @@ class TestRestoreBackup:
 
                 assert "restored_from" in result
                 assert result["restored_from"] == "invoice_machine_backup_20250115_120000.db"
-                # Pre-restore backup should be created
                 assert result["pre_restore_backup"] is not None
-                # Database should be restored
                 assert db_file.read_bytes() == backup_content
 
     def test_restore_compressed_backup(self):
-        """Restore from compressed backup."""
         with tempfile.TemporaryDirectory() as tmpdir:
             data_dir = Path(tmpdir) / "data"
             data_dir.mkdir()
             backup_dir = Path(tmpdir) / "backups"
             backup_dir.mkdir()
 
-            # Create original database
             db_file = data_dir / "invoice_machine.db"
             db_file.write_bytes(b"original")
 
@@ -492,7 +451,6 @@ class TestRestoreBackup:
                 assert db_file.read_bytes() == backup_content
 
     def test_restore_backup_not_found(self):
-        """Handle missing backup file."""
         with tempfile.TemporaryDirectory() as tmpdir:
             backup_dir = Path(tmpdir) / "backups"
             backup_dir.mkdir()
@@ -503,14 +461,12 @@ class TestRestoreBackup:
                 service.restore_backup("nonexistent.db.gz")
 
     def test_restore_creates_pre_restore_backup(self):
-        """Create pre-restore backup of existing database."""
         with tempfile.TemporaryDirectory() as tmpdir:
             data_dir = Path(tmpdir) / "data"
             data_dir.mkdir()
             backup_dir = Path(tmpdir) / "backups"
             backup_dir.mkdir()
 
-            # Create original database
             db_file = data_dir / "invoice_machine.db"
             original_content = b"original database"
             db_file.write_bytes(original_content)
@@ -529,7 +485,6 @@ class TestRestoreBackup:
                     "invoice_machine_backup_20250115_120000.db", validate=False
                 )
 
-                # Pre-restore backup should be created
                 pre_restore_file = backup_dir / result["pre_restore_backup"]
                 assert pre_restore_file.exists()
                 assert pre_restore_file.read_bytes() == original_content
@@ -622,12 +577,7 @@ class TestS3ConfigResolution:
 
 
 class TestLogoBackupAndRestore:
-    """Logos are the only user files the app cannot regenerate.
-
-    Backups used to hold the database alone, so a restore resurrected rows
-    pointing at a logo file that no longer existed and every PDF thereafter
-    rendered unbranded.
-    """
+    """Logos are the only user files the app cannot regenerate."""
 
     def _service(self, tmp_path, monkeypatch):
         data_dir = tmp_path / "data"
@@ -682,7 +632,6 @@ class TestLogoBackupAndRestore:
         assert (logo_dir / "added-later.png").exists()
 
     def test_old_database_only_backups_still_restore(self, tmp_path, monkeypatch):
-        """Backups written before this change must keep working."""
         service, data_dir, _ = self._service(tmp_path, monkeypatch)
         legacy = service.backup_dir / "invoice_machine_backup_20260101_120000.db"
         legacy.parent.mkdir(parents=True, exist_ok=True)

@@ -21,9 +21,9 @@
    * @property {string} [message]
    * @property {string} [confirmText]
    * @property {string} [cancelText]
-   * @property {'danger' | 'warning' | 'primary'} [variant] - 'danger', 'warning', 'primary'
+   * @property {'danger' | 'warning' | 'primary'} [variant]
    * @property {'danger' | 'warning' | 'primary' | undefined} [confirmVariant]
-   * @property {string} [icon] - icon name
+   * @property {string} [icon]
    * @property {boolean} [loading]
    * @property {() => void} [onConfirm]
    * @property {() => void} [onCancel]

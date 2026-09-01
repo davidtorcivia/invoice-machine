@@ -61,20 +61,16 @@ class InvoiceSchema(BaseModel):
     tax_rate: str = "0"
     tax_name: str = "Tax"
     tax_amount: str = "0"
-    # Payment state
     amount_paid: str = "0"
     amount_due: str = "0"
     is_partially_paid: bool = False
     # Multi-currency: rate into base_currency_code, captured at issue time
     exchange_rate: str | None = None
     base_currency_code: str | None = None
-    # Quote <-> invoice conversion links
     converted_from_invoice_id: int | None = None
     converted_to_invoice_id: int | None = None
-    # Hosted payment link
     payment_link_url: str | None = None
     payment_link_created_at: datetime | None = None
-    # Reminder bookkeeping
     last_reminder_sent_at: datetime | None = None
     reminders_sent: list[int] = []
     notes: str | None = None
@@ -128,7 +124,6 @@ class InvoiceUpdate(BaseModel):
     client_reference: str | None = Field(None, max_length=100)
     show_payment_instructions: bool | None = None
     selected_payment_methods: str | None = Field(None, max_length=1000)
-    # Tax settings
     tax_enabled: int | None = Field(None, ge=0, le=1)
     tax_rate: Decimal | None = Field(None, ge=0, le=100)
     tax_name: str | None = Field(None, max_length=50)
@@ -142,7 +137,7 @@ class InvoiceItemUpdate(BaseModel):
     quantity: Decimal | None = Field(None, gt=0, le=10000)
     unit_type: str | None = Field(None, pattern="^(qty|hours)$")
     # Decimal (not str) so non-numeric input is rejected at the schema with 422
-    # instead of raising an uncaught decimal.InvalidOperation (500) in the service.
+    # rather than raising decimal.InvalidOperation in the service.
     unit_price: Decimal | None = Field(None, ge=0)
     sort_order: int | None = Field(None, ge=0)
 
@@ -528,7 +523,6 @@ async def generate_invoice_pdf(
     if not invoice:
         raise HTTPException(status_code=404, detail="Invoice not found")
 
-    # Explicit "regenerate" action: always re-render.
     await store_invoice_pdf(session, invoice, force=True)
 
     return {

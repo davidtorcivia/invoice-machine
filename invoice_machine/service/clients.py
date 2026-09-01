@@ -247,8 +247,8 @@ class ClientService:
     async def update_client(session: AsyncSession, client_id: int, **kwargs) -> Client | None:
         """Update a client in place.
 
-        An explicitly-supplied null clears a nullable field — previously any None
-        was skipped, so an address line or email could never be removed once set.
+        An explicitly-supplied null clears a nullable field, so an address line
+        or email can be removed once set.
         """
         client = await ClientService.get_client(session, client_id)
         if not client:

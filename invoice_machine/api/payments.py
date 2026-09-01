@@ -109,8 +109,6 @@ async def record_payment(
 
     Send an ``Idempotency-Key`` header to make a retry safe: replaying the same
     key returns the payment already recorded rather than adding a second one.
-    Optional rather than required, because this is the browser path and the
-    existing UI does not send one.
     """
     if idempotency_key is not None:
         idempotency_key = idempotency_key.strip()

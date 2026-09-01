@@ -1,6 +1,3 @@
-/**
- * Svelte stores for Invoice Machine
- */
 import { writable } from 'svelte/store';
 import { browser } from '$app/environment';
 import { request, setCsrfToken } from '$lib/api';

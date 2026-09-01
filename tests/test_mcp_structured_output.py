@@ -1,11 +1,8 @@
 """Tests for the MCP tools' structured output.
 
-The SDK does not just publish `outputSchema` - it validates each result against
-the declared model and re-dumps it as `structuredContent`. That makes a wrong
-annotation a data corruption bug rather than a loud failure: declare a money
-field as a float and `"100.00"` silently becomes `100.0`.
-
-So these tests assert the round trip, not just the presence of a schema.
+The SDK re-dumps each result through the declared model, so a wrong annotation
+corrupts data silently: a money field typed as float turns "100.00" into 100.0.
+These assert the round trip, not just the presence of a schema.
 """
 
 import pytest
@@ -21,12 +18,7 @@ def _server():
 
 
 def _unwrap(structured):
-    """Return the payload, accounting for how the SDK wraps non-object results.
-
-    A tool returning a bare model puts its fields at the top level. A tool
-    returning `Model | None` or `list[Model]` cannot - neither is a JSON object
-    - so the SDK nests it under a single "result" key.
-    """
+    """Return the payload; the SDK nests non-object results under "result"."""
     if isinstance(structured, dict) and set(structured) == {"result"}:
         return structured["result"]
     return structured
@@ -54,11 +46,7 @@ async def test_tools_publish_output_schemas(mcp_db):
 
 @pytest.mark.asyncio
 async def test_money_survives_the_round_trip_as_exact_strings(mcp_db):
-    """Amounts must reach the client byte-identical, never as floats.
-
-    0.1 + 0.2 is the classic float trap; an invoice for 1234.56 must not come
-    back as 1234.5599999999999.
-    """
+    """Amounts must reach the client byte-identical, never as floats."""
     client_rec = await client_tools.create_client(name="Precision Co")
     created = await invoice_tools.create_invoice(
         client_id=client_rec["id"],
@@ -74,7 +62,6 @@ async def test_money_survives_the_round_trip_as_exact_strings(mcp_db):
     assert structured["total"] == "1234.56"
     assert isinstance(structured["total"], str)
     assert isinstance(structured["subtotal"], str)
-    # Every amount field stays a string - no silent float coercion anywhere.
     for field in ("amount_paid", "amount_due", "tax_amount"):
         assert isinstance(structured[field], str), (
             f"{field} was coerced to {type(structured[field])}"
@@ -98,11 +85,7 @@ async def test_structured_content_matches_the_tool_return(mcp_db):
 
 @pytest.mark.asyncio
 async def test_unmodelled_keys_are_not_dropped(mcp_db):
-    """extra="allow" keeps presenter-added keys that the model does not name.
-
-    list_invoices asks for a formatted total and a line-item preview; neither is
-    a field on InvoiceOut, and both must still reach the client.
-    """
+    """extra="allow" keeps presenter-added keys that the model does not name."""
     client_rec = await client_tools.create_client(name="Extras")
     await invoice_tools.create_invoice(
         client_id=client_rec["id"],
@@ -135,7 +118,6 @@ async def test_record_payment_requires_an_idempotency_key(mcp_db):
 
     schema = tools["record_payment"].input_schema
     assert "idempotency_key" in schema["required"]
-    # And it is now advertised as safe to retry.
     assert tools["record_payment"].annotations.idempotent_hint is True
 
 
@@ -171,12 +153,7 @@ async def test_record_payment_replay_does_not_double_count(mcp_db):
 
 @pytest.mark.asyncio
 async def test_every_tool_is_annotated(mcp_db):
-    """No tool may ship unlabelled.
-
-    Annotations are how a client tells a lookup from something that moves money.
-    A tool added without them silently reads as "unknown risk", so this guards
-    the whole set rather than any single tool.
-    """
+    """No tool may ship unlabelled; an unannotated tool reads as unknown risk."""
     async with Client(_server()) as client:
         tools = (await client.list_tools()).tools
 

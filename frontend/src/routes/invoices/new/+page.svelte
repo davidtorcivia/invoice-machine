@@ -31,11 +31,8 @@
   let profile = $state(/** @type {import('$lib/types').BusinessProfile|null} */ (null));
   let loading = $state(false);
   let saving = $state(false);
-  // Warn before navigating away from a partially-filled form.
   let allowLeave = $state(false);
 
-
-  // Form data
   let clientId = $state('');
   let issueDate = $state(new Date().toISOString().split('T')[0]);
   let paymentTermsDays = $state(30);
@@ -49,12 +46,10 @@
   /** @type {string[]} */
   let selectedPaymentMethods = $state([]);
 
-  // Tax settings
   let taxEnabled = $state(false);
   let taxRate = $state('');
   let taxName = $state('Tax');
 
-  // Line items
   /** @type {InvoiceItemDraft[]} */
   let items = $state([{ description: '', quantity: 1, unit_price: '', unit_type: 'qty' }]);
 
@@ -74,7 +69,6 @@
     }
   });
 
-  // Modal states
   let showClientModal = $state(false);
   let clientModalSaving = $state(false);
   let showDiscardModal = $state(false);
@@ -127,8 +121,6 @@
       console.error('Failed to load profile');
     }
   }
-
-
 
   // Apply client defaults ONLY when the selected client actually changes, so a
   // background clients refresh (or any other reactive recompute) can't clobber
@@ -186,7 +178,6 @@
         client_reference: clientReference || undefined,
         show_payment_instructions: showPaymentInstructions,
         selected_payment_methods: stringifyJsonArray(selectedPaymentMethods),
-        // Tax settings
         tax_enabled: taxEnabled ? 1 : 0,
         tax_rate: taxEnabled && taxRate ? parseFloat(taxRate) : 0,
         tax_name: taxName || 'Tax',
@@ -198,7 +189,6 @@
         })),
       };
 
-      // Add invoice number override if provided
       if (invoiceNumberOverride.trim()) {
         invoiceData.invoice_number_override = invoiceNumberOverride.trim();
       }
@@ -254,15 +244,14 @@
     allowLeave = true;
     goto('/invoices');
   }
-  // Computed values
+
   let defaultNotesText = $derived(profile?.default_notes || '');
   let effectiveNotes = $derived(useDefaultNotes && defaultNotesText ? defaultNotesText : notes);
-  // Get selected client data
   let selectedClient = $derived(clients.find(c => c.id === parseInt(clientId)) || null);
   run(() => {
     applyClientDefaults(selectedClient);
   });
-  // Parse payment methods from profile
+
   /** @type {PaymentMethod[]} */
   let availablePaymentMethods = $derived(parseJsonArray(profile?.payment_methods));
 </script>
@@ -312,7 +301,6 @@
 
       <InvoiceNotesCard bind:useDefaultNotes {defaultNotesText} bind:notes />
 
-      <!-- Actions -->
       <div class="form-actions">
         <button
           type="button"
@@ -335,7 +323,6 @@
   {/if}
 </div>
 
-<!-- Discard Changes Modal -->
 <ConfirmModal
   show={showDiscardModal}
   title="Discard Changes?"
@@ -373,21 +360,18 @@
     gap: var(--space-3);
   }
 
-  /* Responsive - Large screens */
   @media (min-width: 1400px) {
     .page-content {
       max-width: 1100px;
     }
   }
 
-  /* Responsive - Medium screens */
   @media (max-width: 768px) {
     .page-content {
       padding: var(--space-4);
     }
   }
 
-  /* Responsive - Small screens */
   @media (max-width: 480px) {
     .page-content {
       padding: var(--space-3);

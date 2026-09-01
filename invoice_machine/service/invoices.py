@@ -470,9 +470,7 @@ class InvoiceService:
         """Create an invoice from an accepted quote, keeping both documents.
 
         The quote is preserved verbatim (it is the document the client agreed to)
-        and the two are linked via converted_to/converted_from. This replaces
-        flipping ``document_type`` in place, which destroyed the quote and
-        renumbered it, leaving no record of what was actually quoted.
+        and the two are linked via converted_to/converted_from.
 
         Returns None if the quote does not exist; raises ValueError if the source
         is not a quote or has already been converted.
@@ -577,7 +575,7 @@ class InvoiceService:
         if unit_type not in valid_unit_types:
             raise ValueError(f"Invalid unit type. Must be one of: {valid_unit_types}")
 
-        # Resolve the parent first: inserting against a missing invoice_id used to
+        # Resolve the parent first: inserting against a missing invoice_id would
         # trip the foreign key and surface as a 500 instead of a clean 404.
         invoice = await session.get(Invoice, invoice_id)
         if invoice is None or invoice.deleted_at is not None:

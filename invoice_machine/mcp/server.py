@@ -4,9 +4,7 @@ from __future__ import annotations
 
 import logging
 
-# Import tool modules to register @mcp.tool() decorated functions, plus the
-# resource and prompt modules. New tools added to any module are automatically
-# registered.
+# Imported for their side effect: registering @mcp.tool/resource/prompt objects.
 from . import (  # noqa: F401
     analytics_tools,
     client_tools,
@@ -35,15 +33,8 @@ def run_http_server(host: str = "0.0.0.0", port: int = 8081):
     """
     Run a standalone MCP server over Streamable HTTP for remote access.
 
-    This enables Claude Desktop and other MCP clients to connect over HTTP from:
-    - Another machine on your LAN
-    - Remotely via Cloudflare Tunnel or similar
-
     Prefer running the main web app, which already serves /mcp on the same port.
     This entry point exists for deployments that want MCP on its own port.
-
-    Usage:
-        python -m invoice_machine.mcp.server --http --port 8081
     """
     import asyncio
 
@@ -114,8 +105,8 @@ def run_http_server(host: str = "0.0.0.0", port: int = 8081):
 if __name__ == "__main__":
     import sys
 
-    # --sse is the pre-2026 spelling; the SSE transport is deprecated, so it
-    # now starts the Streamable HTTP server that superseded it.
+    # --sse is accepted as an alias: that transport is deprecated and its
+    # callers get the Streamable HTTP server instead.
     if "--http" in sys.argv or "--sse" in sys.argv:
         port = 8081
         for i, arg in enumerate(sys.argv):

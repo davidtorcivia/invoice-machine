@@ -112,11 +112,9 @@ class BackupService:
         """Create a backup of the database and uploaded logos.
 
         Produces a tar archive holding the database snapshot alongside the
-        ``logos/`` directory. Earlier releases backed up the database alone, so a
-        restore resurrected rows pointing at a logo file that no longer existed
-        and every subsequent PDF rendered without branding. Logos are the only
-        user-supplied files the app cannot regenerate; PDFs are deliberately
-        excluded because they are rebuilt on demand from the database.
+        ``logos/`` directory. Logos are the only user-supplied files the app
+        cannot regenerate; PDFs are deliberately excluded because they are
+        rebuilt on demand from the database.
         """
         settings = get_settings()
         timestamp = utc_now()
@@ -275,9 +273,8 @@ class BackupService:
 
         deleted = 0
         for obj in response.get("Contents", []):
-            # boto3 returns a tz-aware LastModified; cutoff (from utc_now()) is also
-            # tz-aware. Compare aware-to-aware — stripping the tzinfo here raised a
-            # TypeError that silently aborted every S3 cleanup.
+            # boto3 returns a tz-aware LastModified and cutoff (from utc_now()) is
+            # also tz-aware; stripping either tzinfo makes the comparison a TypeError.
             if obj["LastModified"] < cutoff:
                 s3_client.delete_object(Bucket=bucket, Key=obj["Key"])
                 deleted += 1

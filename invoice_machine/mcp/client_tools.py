@@ -15,16 +15,7 @@ async def list_clients(
     search: str | None = None,
     include_deleted: bool = False,
 ) -> list[ClientOut]:
-    """
-    List all clients.
-
-    Args:
-        search: Optional search term to filter by name or business name
-        include_deleted: Whether to include soft-deleted clients
-
-    Returns:
-        List of clients with their details
-    """
+    """List all clients, optionally filtering by name or business name."""
     async with get_session() as session:
         clients = await ClientService.list_clients(
             session, search=search, include_deleted=include_deleted
@@ -34,15 +25,7 @@ async def list_clients(
 
 @mcp.tool(annotations=READ_ONLY)
 async def get_client(client_id: int) -> ClientOut | None:
-    """
-    Get client by ID.
-
-    Args:
-        client_id: The client's ID
-
-    Returns:
-        Client details or null if not found
-    """
+    """Get client by ID."""
     async with get_session() as session:
         client = await ClientService.get_client(session, client_id)
         if not client:
@@ -74,27 +57,11 @@ async def create_client(
     At minimum, provide either name or business_name to identify the client.
 
     Args:
-        name: Contact person's name
-        business_name: Company/business name
-        address_line1: Street address
-        address_line2: Apartment/suite number
-        city: City
-        state: State/province
-        postal_code: ZIP/postal code
-        country: Country
-        email: Contact email
-        phone: Phone number
-        payment_terms_days: Default payment terms for this client (default: 30)
-        notes: Additional notes
         tax_enabled: Per-client tax override (None = use global, 0 = disabled, 1 = enabled)
         tax_rate: Per-client tax rate override (e.g. 8.25 for 8.25%)
         tax_name: Per-client tax name override (e.g. "Sales Tax")
-
-    Returns:
-        Created client with ID
     """
     async with get_session() as session:
-        # Build kwargs, converting tax_rate to Decimal if provided
         kwargs = {
             "name": name,
             "business_name": business_name,
@@ -141,33 +108,14 @@ async def update_client(
     tax_name: str | None = None,
 ) -> ClientOut | None:
     """
-    Update client fields.
-
-    Only provide the fields you want to change.
+    Update client fields. Only provide the fields you want to change.
 
     Args:
-        client_id: The client's ID
-        name: Contact person's name
-        business_name: Company/business name
-        address_line1: Street address
-        address_line2: Apartment/suite number
-        city: City
-        state: State/province
-        postal_code: ZIP/postal code
-        country: Country
-        email: Contact email
-        phone: Phone number
-        payment_terms_days: Default payment terms for this client
-        notes: Additional notes
         tax_enabled: Per-client tax override (None = use global, 0 = disabled, 1 = enabled)
         tax_rate: Per-client tax rate override (e.g. 8.25 for 8.25%)
         tax_name: Per-client tax name override (e.g. "Sales Tax")
-
-    Returns:
-        Updated client or null if not found
     """
     async with get_session() as session:
-        # Build updates dict, handling tax_rate Decimal conversion
         updates = {}
         local_vars = {
             "name": name,
@@ -203,29 +151,13 @@ async def update_client(
 
 @mcp.tool(annotations=DESTRUCTIVE)
 async def delete_client(client_id: int) -> bool:
-    """
-    Move client to trash (soft delete).
-
-    Args:
-        client_id: The client's ID
-
-    Returns:
-        True if deleted, False if not found
-    """
+    """Move client to trash (soft delete)."""
     async with get_session() as session:
         return await ClientService.delete_client(session, client_id)
 
 
 @mcp.tool(annotations=ADDITIVE_IDEMPOTENT)
 async def restore_client(client_id: int) -> bool:
-    """
-    Restore a client from trash.
-
-    Args:
-        client_id: The client's ID
-
-    Returns:
-        True if restored, False if not found
-    """
+    """Restore a client from trash."""
     async with get_session() as session:
         return await ClientService.restore_client(session, client_id)

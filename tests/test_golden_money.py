@@ -1,18 +1,9 @@
 """The money and date arithmetic must not drift.
 
 tests/golden/*.json pin the exact output of every pure function that decides
-what a customer is charged -- rounding, minor-unit conversion, FX, quantity
-coercion, due dates -- across a matrix that includes the boundaries and the
-error cases.
-
-If this test fails, something changed what the software charges people. That is
-either a bug you just caught, or a deliberate change that needs the golden
-regenerated and the diff reviewed line by line:
-
-    python tests/golden/generate.py
-
-Never regenerate to make this pass without reading the diff. The whole point is
-that the diff is the behavior change.
+what a customer is charged. A failure means the charged amounts changed: fix the
+bug, or regenerate with `python tests/golden/generate.py` and review the diff
+line by line. Never regenerate to make this pass -- the diff is the change.
 """
 
 import json
@@ -58,11 +49,7 @@ def test_golden_matches_current_behavior(name):
 
 
 def test_generator_is_deterministic():
-    """Two runs of the generator must produce identical bytes.
-
-    A golden that depends on dict ordering, a clock, or locale would drift on
-    its own and train everyone to regenerate without reading the diff.
-    """
+    """Two runs must produce identical bytes."""
     for name, builder in BUILDERS.items():
         assert serialize(builder()) == serialize(builder()), f"{name} is not deterministic"
 

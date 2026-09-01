@@ -22,16 +22,7 @@ async def list_recurring_schedules(
     client_id: int | None = None,
     include_paused: bool = False,
 ) -> list[RecurringScheduleOut]:
-    """
-    List recurring invoice schedules.
-
-    Args:
-        client_id: Filter by client ID
-        include_paused: Include paused schedules (default: False, only active)
-
-    Returns:
-        List of recurring schedules with their details
-    """
+    """List recurring invoice schedules (active only unless include_paused)."""
     async with get_session() as session:
         schedules = await RecurringService.list_schedules(
             session,
@@ -43,15 +34,7 @@ async def list_recurring_schedules(
 
 @mcp.tool(annotations=READ_ONLY)
 async def get_recurring_schedule(schedule_id: int) -> RecurringScheduleOut | None:
-    """
-    Get a recurring schedule by ID.
-
-    Args:
-        schedule_id: The schedule ID
-
-    Returns:
-        Schedule details or null if not found
-    """
+    """Get a recurring schedule by ID."""
     async with get_session() as session:
         schedule = await RecurringService.get_schedule(session, schedule_id)
         if not schedule:
@@ -86,7 +69,6 @@ async def create_recurring_schedule(
     Create a recurring invoice schedule.
 
     Args:
-        client_id: Client ID for the recurring invoices
         name: Schedule name (e.g., "Monthly Retainer", "Quarterly Hosting")
         frequency: One of: daily, weekly, monthly, quarterly, yearly
         items: Line items: [{description, quantity, unit_price, unit_type}]
@@ -94,31 +76,18 @@ async def create_recurring_schedule(
                       or day of week (0=Mon, 6=Sun) for weekly
         schedule_month: Calendar month (1-12) for yearly schedules
         quarter_month: Which month within each quarter (1-3) for quarterly schedules
-        currency_code: Currency code (default: USD)
-        payment_terms_days: Payment terms in days (default: 30)
-        notes: Invoice notes
         use_default_notes: Use the business profile's default notes instead of `notes`
         next_invoice_date: First invoice date (ISO format, defaults to next scheduled date)
-        show_payment_instructions: Show payment details on generated invoices
         selected_payment_methods: Payment method IDs to show on generated invoices
         auto_email_enabled: Email each generated invoice to the client automatically
-        email_subject_template: Subject override for auto-emails
-        email_body_template: Body override for auto-emails
         tax_enabled: Override tax setting (None = use client/global default)
-        tax_rate: Override tax rate
-        tax_name: Override tax name
-
-    Returns:
-        Created schedule details
     """
 
     async with get_session() as session:
-        # Parse next_invoice_date if provided
         parsed_date = None
         if next_invoice_date:
             parsed_date = date.fromisoformat(next_invoice_date)
 
-        # Convert tax_rate to Decimal if provided
         tax_rate_decimal = Decimal(str(tax_rate)) if tax_rate is not None else None
 
         schedule = await RecurringService.create_schedule(
@@ -172,34 +141,18 @@ async def update_recurring_schedule(
     tax_name: str | None = None,
 ) -> RecurringScheduleOut | None:
     """
-    Update a recurring schedule.
-
-    Only provide the fields you want to change.
+    Update a recurring schedule. Only provide the fields you want to change.
 
     Args:
-        schedule_id: The schedule ID
-        name: Schedule name
         frequency: One of: daily, weekly, monthly, quarterly, yearly
-        schedule_day: Day of month/week
+        schedule_day: Day of month (1-31), or day of week (0=Mon, 6=Sun) for weekly
         schedule_month: Calendar month (1-12) for yearly schedules
         quarter_month: Which month within each quarter (1-3) for quarterly schedules
-        currency_code: Currency code
-        payment_terms_days: Payment terms in days
-        notes: Invoice notes
         use_default_notes: Use the business profile's default notes instead of `notes`
         items: Line items: [{description, quantity, unit_price, unit_type}]
         next_invoice_date: Next invoice date (ISO format)
-        show_payment_instructions: Show payment details on generated invoices
         selected_payment_methods: Payment method IDs to show on generated invoices
         auto_email_enabled: Email each generated invoice to the client automatically
-        email_subject_template: Subject override for auto-emails
-        email_body_template: Body override for auto-emails
-        tax_enabled: Tax setting override
-        tax_rate: Tax rate override
-        tax_name: Tax name override
-
-    Returns:
-        Updated schedule or null if not found
     """
 
     async with get_session() as session:
@@ -252,47 +205,21 @@ async def update_recurring_schedule(
 
 @mcp.tool(annotations=DESTRUCTIVE)
 async def delete_recurring_schedule(schedule_id: int) -> bool:
-    """
-    Delete a recurring schedule.
-
-    Args:
-        schedule_id: The schedule ID
-
-    Returns:
-        True if deleted, False if not found
-    """
+    """Delete a recurring schedule."""
     async with get_session() as session:
         return await RecurringService.delete_schedule(session, schedule_id)
 
 
 @mcp.tool(annotations=UPDATE)
 async def pause_recurring_schedule(schedule_id: int) -> bool:
-    """
-    Pause a recurring schedule.
-
-    Paused schedules won't generate invoices until resumed.
-
-    Args:
-        schedule_id: The schedule ID
-
-    Returns:
-        True if paused, False if not found
-    """
+    """Pause a recurring schedule; it generates no invoices until resumed."""
     async with get_session() as session:
         return await RecurringService.pause_schedule(session, schedule_id)
 
 
 @mcp.tool(annotations=UPDATE)
 async def resume_recurring_schedule(schedule_id: int) -> bool:
-    """
-    Resume a paused recurring schedule.
-
-    Args:
-        schedule_id: The schedule ID
-
-    Returns:
-        True if resumed, False if not found
-    """
+    """Resume a paused recurring schedule."""
     async with get_session() as session:
         return await RecurringService.resume_schedule(session, schedule_id)
 
@@ -323,17 +250,8 @@ async def trigger_recurring_schedule(
 
     This creates an invoice immediately and updates the next scheduled date.
     Asks the user to confirm first, where the client supports it.
-
-    Args:
-        schedule_id: The schedule ID
-
-    Returns:
-        Result with invoice details or error
     """
     ensure_confirmed(confirmation, "Triggering this schedule")
 
     async with get_session() as session:
         return await RecurringService.trigger_schedule(session, schedule_id)
-
-
-# Import for type references

@@ -415,12 +415,7 @@ class TestQuoteConversion:
 
 
 class TestPaymentIdempotency:
-    """A retried payment must not be recorded twice.
-
-    The outstanding-balance check already blocked a repeated *full* payment,
-    so the gap was partial payments: recording 400.00 twice against a 1000.00
-    invoice left it showing 800.00 received from a single real payment.
-    """
+    """A retried payment must not be recorded twice."""
 
     @pytest.mark.asyncio
     async def test_replaying_a_key_returns_the_same_payment(
@@ -465,11 +460,7 @@ class TestPaymentIdempotency:
     async def test_replay_does_not_depend_on_matching_amount(
         self, db_session, business_profile, test_client
     ):
-        """The key identifies the payment; the rest of the call is ignored.
-
-        A retry that reconstructs its arguments slightly differently must still
-        be recognised as the same payment rather than recorded afresh.
-        """
+        """The key identifies the payment; the rest of the call is ignored."""
         invoice = await _invoice(db_session, test_client)
 
         first = await PaymentService.record_payment(
@@ -484,7 +475,6 @@ class TestPaymentIdempotency:
 
     @pytest.mark.asyncio
     async def test_unkeyed_payments_are_unaffected(self, db_session, business_profile, test_client):
-        """Existing callers that pass no key keep working as before."""
         invoice = await _invoice(db_session, test_client)
 
         await PaymentService.record_payment(db_session, invoice.id, amount="400.00")
@@ -507,7 +497,6 @@ class TestPaymentIdempotency:
     async def test_duplicate_full_payment_is_still_rejected(
         self, db_session, business_profile, test_client
     ):
-        """The balance guard that already caught this must stay in place."""
         invoice = await _invoice(db_session, test_client)
 
         await PaymentService.record_payment(
@@ -521,8 +510,6 @@ class TestPaymentIdempotency:
 
 
 class TestAuditRegressionsSeptember2026:
-    """Guards for the September 2026 audit findings."""
-
     @pytest.mark.asyncio
     async def test_paid_at_is_the_payment_date(self, db_session, business_profile, test_client):
         invoice = await _invoice(db_session, test_client, total=Decimal("100.00"))

@@ -1,12 +1,4 @@
-"""Tests for PDF generation functionality.
-
-These tests verify:
-- PDF file creation and output
-- Logo embedding and path traversal protection
-- Payment instructions rendering
-- Invoice data formatting
-- Edge cases (missing logo, long invoice numbers, tax handling)
-"""
+"""Tests for PDF generation functionality."""
 
 import tempfile
 from datetime import date
@@ -37,30 +29,24 @@ class TestFormatMoney:
     """Tests for currency formatting."""
 
     def test_format_usd(self):
-        """Format USD amounts correctly."""
         assert format_money(100, "USD") == "$100.00"
         assert format_money(1234.56, "USD") == "$1,234.56"
         assert format_money("99.99", "USD") == "$99.99"
 
     def test_format_other_currencies(self):
-        """Format non-USD currencies correctly."""
         assert format_money(100, "EUR") == "100.00 EUR"
         assert format_money(1000, "GBP") == "1,000.00 GBP"
 
     def test_format_decimal(self):
-        """Format Decimal amounts correctly."""
         assert format_money(Decimal("1234.56"), "USD") == "$1,234.56"
 
     def test_format_large_amounts(self):
-        """Format large amounts with proper comma separation."""
         assert format_money(1000000, "USD") == "$1,000,000.00"
 
     def test_format_zero(self):
-        """Format zero amounts correctly."""
         assert format_money(0, "USD") == "$0.00"
 
     def test_format_negative(self):
-        """Format negative amounts correctly."""
         assert format_money(-100, "USD") == "$-100.00"
 
 
@@ -68,21 +54,17 @@ class TestFilters:
     """Tests for Jinja2 template filters."""
 
     def test_strftime_filter_date(self):
-        """Format date objects correctly."""
         test_date = date(2025, 1, 15)
         assert strftime_filter(test_date, "%m/%d/%y") == "01/15/25"
         assert strftime_filter(test_date, "%B %d, %Y") == "January 15, 2025"
 
     def test_strftime_filter_none(self):
-        """Handle None values."""
         assert strftime_filter(None) == ""
 
     def test_strftime_filter_string(self):
-        """Handle string values."""
         assert strftime_filter("2025-01-15") == "2025-01-15"
 
     def test_zfill_filter(self):
-        """Pad values with zeros correctly."""
         assert zfill_filter(5, 3) == "005"
         assert zfill_filter(123, 5) == "00123"
         assert zfill_filter("42", 4) == "0042"
@@ -92,31 +74,26 @@ class TestGetLogoBase64:
     """Tests for logo loading and path traversal protection."""
 
     def test_get_logo_data_uri_no_path(self):
-        """Return None when no logo path set."""
         profile = MagicMock(spec=BusinessProfile)
         profile.logo_path = None
         assert get_logo_data_uri(profile) is None
 
     def test_get_logo_data_uri_path_traversal_slash(self):
-        """Reject paths with forward slashes."""
         profile = MagicMock(spec=BusinessProfile)
         profile.logo_path = "../etc/passwd"
         assert get_logo_data_uri(profile) is None
 
     def test_get_logo_data_uri_path_traversal_backslash(self):
-        """Reject paths with backslashes."""
         profile = MagicMock(spec=BusinessProfile)
         profile.logo_path = "..\\windows\\system.ini"
         assert get_logo_data_uri(profile) is None
 
     def test_get_logo_data_uri_path_traversal_dotdot(self):
-        """Reject paths with parent directory references."""
         profile = MagicMock(spec=BusinessProfile)
         profile.logo_path = "..logo.png"
         assert get_logo_data_uri(profile) is None
 
     def test_get_logo_data_uri_nonexistent(self):
-        """Return None when logo file doesn't exist."""
         profile = MagicMock(spec=BusinessProfile)
         profile.logo_path = "nonexistent.png"
 
@@ -125,11 +102,9 @@ class TestGetLogoBase64:
             assert get_logo_data_uri(profile) is None
 
     def test_get_logo_data_uri_valid_file(self):
-        """Successfully load and encode a valid logo file."""
         profile = MagicMock(spec=BusinessProfile)
         profile.logo_path = "test_logo.png"
 
-        # Create a temporary logo file
         with tempfile.TemporaryDirectory() as tmpdir:
             logo_dir = Path(tmpdir)
             logo_file = logo_dir / "test_logo.png"
@@ -201,7 +176,6 @@ class TestGeneratePDF:
 
     @pytest.mark.asyncio
     async def test_generate_pdf_creates_file(self, mock_invoice, mock_business_profile, db_session):
-        """PDF generation creates a file on disk."""
         with tempfile.TemporaryDirectory() as tmpdir:
             pdf_dir = Path(tmpdir)
 
@@ -218,7 +192,6 @@ class TestGeneratePDF:
                         "invoice_machine.pdf.generator.run_in_threadpool",
                         side_effect=lambda fn, *args: fn(*args),
                     ):
-                        # Mock the database query for invoice items
                         mock_result = MagicMock()
                         mock_result.scalars.return_value.all.return_value = []
                         db_session.execute = AsyncMock(return_value=mock_result)
@@ -230,7 +203,6 @@ class TestGeneratePDF:
 
     @pytest.mark.asyncio
     async def test_generate_pdf_with_items(self, mock_invoice, mock_business_profile, db_session):
-        """PDF generation includes line items."""
         mock_items = [
             MagicMock(
                 spec=InvoiceItem,
@@ -267,12 +239,10 @@ class TestGeneratePDF:
                         assert result == "pdfs/20250115-1-1.pdf"
                         pdf_file = pdf_dir / "20250115-1-1.pdf"
                         assert pdf_file.exists()
-                        # Verify PDF has content
                         assert pdf_file.stat().st_size > 0
 
     @pytest.mark.asyncio
     async def test_generate_pdf_with_tax(self, mock_invoice, mock_business_profile, db_session):
-        """PDF generation handles tax correctly."""
         mock_invoice.tax_enabled = 1
         mock_invoice.tax_rate = Decimal("8.25")
         mock_invoice.tax_amount = Decimal("82.50")
@@ -305,7 +275,6 @@ class TestGeneratePDF:
 
     @pytest.mark.asyncio
     async def test_generate_pdf_quote(self, mock_invoice, mock_business_profile, db_session):
-        """PDF generation works for quotes."""
         mock_invoice.document_type = "quote"
         mock_invoice.invoice_number = "Q-20250115-1"
 
@@ -337,7 +306,6 @@ class TestGeneratePDF:
     async def test_generate_pdf_with_payment_methods(
         self, mock_invoice, mock_business_profile, db_session
     ):
-        """PDF generation includes selected payment methods."""
         mock_invoice.selected_payment_methods = '["pm-1", "pm-2"]'
         mock_business_profile.payment_methods = (
             '[{"id": "pm-1", "name": "Bank Transfer", "instructions": "Account: 12345"}, '
@@ -372,7 +340,6 @@ class TestGeneratePDF:
     async def test_generate_pdf_long_invoice_number(
         self, mock_invoice, mock_business_profile, db_session
     ):
-        """PDF generation handles long invoice numbers."""
         mock_invoice.invoice_number = "INV-20250115-SPECIAL-CLIENT-12345"
 
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -404,16 +371,13 @@ class TestPDFTemplate:
     """Tests for PDF template rendering."""
 
     def test_template_exists(self):
-        """Verify the HTML template file exists."""
         template_path = Path(__file__).parent.parent / "invoice_machine" / "pdf" / "template.html"
         assert template_path.exists(), "PDF template file should exist"
 
     def test_template_has_required_elements(self):
-        """Verify template contains required elements."""
         template_path = Path(__file__).parent.parent / "invoice_machine" / "pdf" / "template.html"
         content = template_path.read_text()
 
-        # Check for required template variables
         assert "{{ invoice.invoice_number }}" in content or "invoice_number" in content
         assert "{{ business.name }}" in content or "business.name" in content
         assert "format_money" in content
@@ -428,10 +392,8 @@ class TestStoreInvoicePDF:
     ):
         """A stamped PDF must not immediately look stale again.
 
-        `updated_at` has an `onupdate` default that fires at flush time, i.e.
-        always *after* the `pdf_generated_at` written in the same statement. That
-        made every invoice permanently stale and re-rendered the PDF on every
-        single fetch.
+        `updated_at` has an `onupdate` default that fires at flush time, always
+        after the `pdf_generated_at` written in the same statement.
         """
         from invoice_machine.pdf.generator import store_invoice_pdf
 
@@ -496,8 +458,8 @@ class TestStoreInvoicePDF:
     def test_filenames_are_unique_across_punctuation_variants(self):
         """ "INV.001" and "INV001" must not share a PDF file.
 
-        sanitize_filename_component drops dots, so a number-only filename let one
-        invoice's PDF be served (and emailed) for a different invoice.
+        sanitize_filename_component drops dots, so the filename cannot be built
+        from the invoice number alone.
         """
         from invoice_machine.pdf.generator import invoice_pdf_filename
 

@@ -8,7 +8,6 @@ class TestAnalyticsEndpoints:
 
     @pytest.mark.asyncio
     async def test_get_revenue_empty(self, test_client):
-        """Get revenue analytics with no invoices."""
         response = await test_client.get("/api/analytics/revenue")
         assert response.status_code == 200
 
@@ -18,7 +17,6 @@ class TestAnalyticsEndpoints:
 
     @pytest.mark.asyncio
     async def test_get_dashboard_summary_excludes_quotes(self, test_client):
-        """Dashboard summary only counts invoice documents."""
         paid_invoice = await test_client.post(
             "/api/invoices",
             json={
@@ -99,8 +97,6 @@ class TestAnalyticsEndpoints:
 
     @pytest.mark.asyncio
     async def test_get_revenue_with_invoices(self, test_client):
-        """Get revenue analytics with invoices."""
-        # Create an invoice with items
         await test_client.post(
             "/api/invoices",
             json={
@@ -109,7 +105,6 @@ class TestAnalyticsEndpoints:
             },
         )
 
-        # Get analytics
         response = await test_client.get("/api/analytics/revenue")
         assert response.status_code == 200
 
@@ -183,7 +178,6 @@ class TestAnalyticsEndpoints:
 
     @pytest.mark.asyncio
     async def test_get_revenue_with_date_filter(self, test_client):
-        """Get revenue analytics with date filter."""
         response = await test_client.get(
             "/api/analytics/revenue?from_date=2025-01-01&to_date=2025-12-31"
         )
@@ -194,7 +188,6 @@ class TestAnalyticsEndpoints:
 
     @pytest.mark.asyncio
     async def test_get_revenue_group_by_month(self, test_client):
-        """Get revenue analytics grouped by month."""
         response = await test_client.get("/api/analytics/revenue?group_by=month")
         assert response.status_code == 200
 
@@ -203,7 +196,6 @@ class TestAnalyticsEndpoints:
 
     @pytest.mark.asyncio
     async def test_get_revenue_group_by_quarter(self, test_client):
-        """Get revenue analytics grouped by quarter."""
         response = await test_client.get("/api/analytics/revenue?group_by=quarter")
         assert response.status_code == 200
 
@@ -212,12 +204,10 @@ class TestAnalyticsEndpoints:
 
     @pytest.mark.asyncio
     async def test_get_revenue_outstanding_and_overdue_not_filtered_by_date(self, test_client):
-        """Outstanding and overdue totals include invoices from all years."""
         today = date.today()
         last_year = f"{today.year - 1}-06-15"
         this_year = f"{today.year}-03-01"
 
-        # Create an overdue invoice from last year
         old_invoice = await test_client.post(
             "/api/invoices",
             json={
@@ -231,7 +221,6 @@ class TestAnalyticsEndpoints:
             json={"status": "overdue"},
         )
 
-        # Create an overdue invoice from this year
         new_invoice = await test_client.post(
             "/api/invoices",
             json={
@@ -245,7 +234,6 @@ class TestAnalyticsEndpoints:
             json={"status": "overdue"},
         )
 
-        # Query revenue for this year only
         response = await test_client.get(
             f"/api/analytics/revenue?from_date={today.year}-01-01&to_date={today.year}-12-31"
         )
@@ -261,12 +249,10 @@ class TestAnalyticsEndpoints:
 
     @pytest.mark.asyncio
     async def test_get_revenue_sent_past_due_counted_as_overdue(self, test_client):
-        """Sent invoices past their due date are counted as overdue in reports."""
         today = date.today()
         past_due_date = (today - timedelta(days=10)).isoformat()
         issue_date = (today - timedelta(days=40)).isoformat()
 
-        # Create invoice with status "sent" but past its due date
         sent_past_due = await test_client.post(
             "/api/invoices",
             json={
@@ -281,7 +267,6 @@ class TestAnalyticsEndpoints:
             json={"status": "sent"},
         )
 
-        # Create invoice with explicit overdue status
         explicitly_overdue = await test_client.post(
             "/api/invoices",
             json={
@@ -300,14 +285,11 @@ class TestAnalyticsEndpoints:
         assert response.status_code == 200
         data = response.json()
 
-        # Both should count as outstanding
         assert data["totals"]["outstanding"] == "8000.00"
-        # Both should count as overdue (sent+past_due and explicit overdue)
         assert data["totals"]["overdue"] == "8000.00"
 
     @pytest.mark.asyncio
     async def test_update_invoice_tax_recalculates_total(self, test_client):
-        """Updating tax settings on an invoice recalculates the total."""
         invoice = await test_client.post(
             "/api/invoices",
             json={
@@ -318,7 +300,6 @@ class TestAnalyticsEndpoints:
         invoice_data = invoice.json()
         assert invoice_data["total"] == "1000.00"
 
-        # Enable 10% tax
         updated = await test_client.put(
             f"/api/invoices/{invoice_data['id']}",
             json={"tax_enabled": 1, "tax_rate": 10},
@@ -327,7 +308,6 @@ class TestAnalyticsEndpoints:
         assert updated_data["total"] == "1100.00"
         assert updated_data["tax_amount"] == "100.00"
 
-        # Disable tax
         updated2 = await test_client.put(
             f"/api/invoices/{invoice_data['id']}",
             json={"tax_enabled": 0},
@@ -360,13 +340,11 @@ class TestAnalyticsEndpoints:
         assert response.status_code == 200
         data = response.json()
 
-        # Should count as outstanding but NOT overdue
         assert data["totals"]["outstanding"] == "2000.00"
         assert data["totals"]["overdue"] == "0.00"
 
     @pytest.mark.asyncio
     async def test_get_client_lifetime_values_empty(self, test_client):
-        """Get client lifetime values with no data."""
         response = await test_client.get("/api/analytics/clients")
         assert response.status_code == 200
 
@@ -375,12 +353,9 @@ class TestAnalyticsEndpoints:
 
     @pytest.mark.asyncio
     async def test_get_client_lifetime_values_with_data(self, test_client):
-        """Get client lifetime values with paid invoices."""
-        # Create a client
         client_response = await test_client.post("/api/clients", json={"name": "LTV Client"})
         client_id = client_response.json()["id"]
 
-        # Create a paid invoice for the client
         await test_client.post(
             "/api/invoices",
             json={
@@ -390,20 +365,17 @@ class TestAnalyticsEndpoints:
             },
         )
 
-        # Get client LTV
         response = await test_client.get("/api/analytics/clients")
         assert response.status_code == 200
 
         data = response.json()
         assert isinstance(data, list)
-        # Should have the client in results
         if len(data) > 0:
             assert "name" in data[0]
             assert "total_paid" in data[0] or "total_invoiced" in data[0]
 
     @pytest.mark.asyncio
     async def test_get_client_lifetime_values_excludes_quotes(self, test_client):
-        """Client lifetime value only counts invoice documents."""
         client_response = await test_client.post(
             "/api/clients", json={"name": "Invoice-only Client"}
         )
@@ -443,7 +415,6 @@ class TestAnalyticsEndpoints:
 
     @pytest.mark.asyncio
     async def test_get_client_lifetime_values_with_limit(self, test_client):
-        """Get client lifetime values with limit."""
         response = await test_client.get("/api/analytics/clients?limit=5")
         assert response.status_code == 200
 
@@ -452,7 +423,6 @@ class TestAnalyticsEndpoints:
 
     @pytest.mark.asyncio
     async def test_get_client_lifetime_values_limit_uses_top_paid_clients(self, test_client):
-        """Client LTV limit is applied after sorting by paid revenue."""
         clients = []
         for name in ["Lower", "Highest", "Middle"]:
             response = await test_client.post("/api/clients", json={"name": name})
@@ -518,7 +488,6 @@ class TestAnalyticsEndpoints:
         # Top-level total must equal a single currency's total, NOT 1500
         assert data["totals"]["invoiced"] in ("1000.00", "500.00")
         assert data["currency"] in ("USD", "EUR")
-        # Both currencies present in the breakdown
         assert set(data["by_currency"].keys()) == {"USD", "EUR"}
         assert data["by_currency"]["USD"]["invoiced"] == "1000.00"
         assert data["by_currency"]["EUR"]["invoiced"] == "500.00"

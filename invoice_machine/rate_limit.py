@@ -29,7 +29,6 @@ def get_client_ip(request) -> str:
     return get_remote_address(request)
 
 
-# Create limiter instance keyed on the resolved client IP.
 limiter = Limiter(key_func=get_client_ip)
 
 

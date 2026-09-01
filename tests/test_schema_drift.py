@@ -1,10 +1,7 @@
 """Guard against schema drift between SQLAlchemy models and Alembic migrations.
 
-The app runs `alembic upgrade head` on startup against a real file database, but
-the rest of the test suite builds the schema with `Base.metadata.create_all`. So
-a column added to a model without a matching migration (or vice versa) would not
-be caught by any other test. This test runs the real migrations on a throwaway
-database and asserts every model table/column exists in the result.
+The rest of the suite builds the schema with `Base.metadata.create_all`, so only
+running the real migrations catches a model column with no matching migration.
 """
 
 import os
@@ -65,12 +62,7 @@ def test_alembic_head_has_all_model_columns():
 
 
 def test_alembic_head_keeps_fts_triggers():
-    """The line-item FTS sync triggers must survive `alembic upgrade head`.
-
-    Migration 013 rebuilds invoice_items via batch_alter, which silently drops the
-    triggers created in 008; 013 must recreate them or new line items stop being
-    indexed for search.
-    """
+    """The line-item FTS sync triggers must survive `alembic upgrade head`."""
     with tempfile.TemporaryDirectory() as tmp:
         db_file = Path(tmp) / "fts.db"
         env = dict(os.environ)
@@ -100,6 +92,8 @@ def test_alembic_head_keeps_fts_triggers():
         finally:
             conn.close()
 
+        # Migration 013's batch_alter silently drops the triggers created in 008,
+        # so it must recreate them or new line items stop being indexed.
         assert {
             "invoice_items_fts_insert",
             "invoice_items_fts_delete",

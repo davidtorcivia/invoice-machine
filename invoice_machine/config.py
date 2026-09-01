@@ -29,34 +29,28 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    # Database
     database_url: str = "sqlite+aiosqlite:///./data/invoice_machine.db"
 
-    # Application
     port: int = 8080
     app_base_url: str = "http://localhost:8080"
     trash_retention_days: int = 90
 
-    # Security
     # Declared for documentation/validation only. The actual key is read from
     # os.environ directly in invoice_machine.crypto (so it must be a real
     # process environment variable, not just a .env entry, in production).
     invoice_machine_encryption_key: str | None = None
     cors_origins: str = "http://localhost:3000,http://localhost:8080"
-    secure_cookies: bool = False  # Set to True when using HTTPS in production
+    secure_cookies: bool = False
     environment: str = "development"  # development, staging, production
     # Trust CF-Connecting-IP / X-Forwarded-For. Off unless a proxy overwrites them.
     trust_proxy_headers: bool = False
 
-    # Paths
     data_dir: Path = Path("./data")
 
-    # Invoice defaults
     default_payment_terms_days: int = 30
     default_currency_code: str = "USD"
     default_accent_color: str = "#16a34a"
 
-    # File upload limits
     max_logo_size_mb: int = 5
     # Note: SVG is excluded due to XSS security risks (can contain embedded JavaScript)
     allowed_logo_extensions: list[str] = [".jpg", ".jpeg", ".png", ".gif", ".webp"]
@@ -76,14 +70,7 @@ class Settings(BaseSettings):
         self.logo_dir.mkdir(parents=True, exist_ok=True)
 
     def migrate_legacy_database(self) -> None:
-        """
-        Migrate database from old name (invoicely.db) to new name (invoice_machine.db).
-
-        This ensures existing production installations continue to work seamlessly
-        after the rename. The migration only happens if:
-        1. The old database file exists (invoicely.db)
-        2. The new database file does NOT exist (invoice_machine.db)
-        """
+        """Rename a legacy invoicely.db to invoice_machine.db, if only the old one exists."""
         old_db_path = self.data_dir / "invoicely.db"
         new_db_path = self.data_dir / "invoice_machine.db"
 

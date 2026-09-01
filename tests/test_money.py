@@ -53,7 +53,7 @@ async def test_invoice_totals_reconcile_to_cents(db_session, test_client):
 
 @pytest.mark.asyncio
 async def test_fractional_hours_quantity(db_session, test_client):
-    """1.5 hours at $100 must bill $150 (quantity is no longer truncated)."""
+    """1.5 hours at $100 must bill $150."""
     invoice = await InvoiceService.create_invoice(
         db_session,
         client_id=test_client.id,
@@ -95,7 +95,6 @@ async def test_client_stats_do_not_mix_currencies(db_session, test_client):
     stats = await ClientService.get_client_invoice_stats(db_session, client_id=test_client.id)
     assert len(stats) == 1
     stat = stats[0]
-    # Both currencies are tracked separately
     assert set(stat["by_currency"].keys()) == {"USD", "EUR"}
     assert stat["by_currency"]["USD"]["invoiced"] == "1000.00"
     assert stat["by_currency"]["EUR"]["invoiced"] == "500.00"

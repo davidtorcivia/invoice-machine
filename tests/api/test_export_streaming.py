@@ -1,4 +1,4 @@
-"""Does the CSV export still work when the body is consumed after the handler returns?"""
+"""Streaming CSV export tests."""
 
 import pytest
 

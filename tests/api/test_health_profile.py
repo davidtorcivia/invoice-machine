@@ -16,7 +16,6 @@ class TestHealthEndpoint:
 
     @pytest.mark.asyncio
     async def test_health_check(self, test_client):
-        """Health check returns 200."""
         response = await test_client.get("/health")
         assert response.status_code == 200
         assert response.json() == {"status": "healthy"}
@@ -26,9 +25,7 @@ class TestHealthEndpoint:
         """Cloudflare-proxied requests may reach Insights, without weakening script-src.
 
         Insights loads from its own origin with a src attribute, so allowing the
-        host is sufficient. It previously also granted 'unsafe-inline', which was
-        both unnecessary for Insights and the only reason the SPA booted at all
-        (see TestSpaContentSecurityPolicy in tests/test_security.py).
+        host is sufficient; 'unsafe-inline' must not be granted.
         """
         response = await test_client.get("/health", headers={"cf-ray": "test-ray-id"})
         assert response.status_code == 200
@@ -44,7 +41,6 @@ class TestHealthEndpoint:
 
     @pytest.mark.asyncio
     async def test_cors_preflight_allows_csrf_header(self, test_client):
-        """CORS preflight allows the CSRF header required for unsafe methods."""
         response = await test_client.options(
             "/api/clients",
             headers={
@@ -125,8 +121,7 @@ class TestMcpStreamableHttp:
     async def test_stateless_tool_calls_work_without_session(self, test_client):
         """Each request stands alone: initialize and a bare tools/list both succeed.
 
-        This is the property that fixes the Cloudflare drop bug — no server-side
-        session means nothing to lose when a connection dies.
+        No server-side session means nothing to lose when a connection dies.
         """
         from invoice_machine.api.mcp import streamable_http_lifespan
 
@@ -225,7 +220,6 @@ class TestMcpModernProtocol:
 
     @pytest.mark.asyncio
     async def test_tools_list_without_handshake(self, test_client):
-        """A modern client gets tools straight away - no initialize first."""
         response = await self._post(await self._key(test_client), "tools/list")
 
         assert response.status_code == 200
@@ -295,7 +289,6 @@ class TestProfileEndpoints:
 
     @pytest.mark.asyncio
     async def test_get_profile(self, test_client):
-        """Get business profile."""
         response = await test_client.get("/api/profile")
         assert response.status_code == 200
 
@@ -306,7 +299,6 @@ class TestProfileEndpoints:
 
     @pytest.mark.asyncio
     async def test_update_profile(self, test_client):
-        """Update business profile."""
         response = await test_client.put(
             "/api/profile", json={"name": "Updated Name", "phone": "555-1234"}
         )
@@ -322,7 +314,6 @@ class TestProfileEndpoints:
         response = await test_client.put("/api/profile", json={"phone": "555-9999"})
         assert response.status_code == 200
 
-        # Name should be unchanged
         data = response.json()
         assert data["name"] == "Test Business"
         assert data["phone"] == "555-9999"
@@ -381,7 +372,6 @@ class TestTaxSettingsEndpoints:
 
     @pytest.mark.asyncio
     async def test_get_profile_includes_tax_settings(self, test_client):
-        """Profile response includes tax settings."""
         response = await test_client.get("/api/profile")
         assert response.status_code == 200
 
@@ -392,7 +382,6 @@ class TestTaxSettingsEndpoints:
 
     @pytest.mark.asyncio
     async def test_update_tax_settings(self, test_client):
-        """Update tax settings via profile."""
         response = await test_client.put(
             "/api/profile",
             json={

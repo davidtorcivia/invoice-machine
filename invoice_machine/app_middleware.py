@@ -50,11 +50,7 @@ def spa_inline_script_hashes() -> tuple[str, ...]:
     SvelteKit emits one inline <script> in index.html to boot hydration. Under a
     strict ``script-src 'self'`` the browser refuses to run it and the whole app
     is a blank page. Hashing it keeps the policy strict while letting exactly
-    that script through, which is what allowed 'unsafe-inline' to be dropped.
-
-    Previously the policy only relaxed to 'unsafe-inline' when a Cloudflare
-    header was present, so the app booted through the CDN and nowhere else:
-    direct-to-origin and every non-Cloudflare deployment served a blank page.
+    that script through.
 
     Cached because it is per-build, not per-request. Empty when the SPA has not
     been built (running the API alone in development).

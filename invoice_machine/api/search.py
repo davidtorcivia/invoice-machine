@@ -21,14 +21,7 @@ async def search(
     limit: int = Query(20, ge=1, le=100, description="Max results per category"),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
-    """
-    Search across invoices, clients, and line items.
-
-    Uses full-text search (FTS5) for fast matching.
-    Returns matching invoices, clients, and line items with relevance ranking.
-    Empty query returns empty results.
-    """
-    # Return empty results for empty/whitespace queries
+    """Search across invoices, clients, and line items."""
     if not q or not q.strip():
         return {"invoices": [], "clients": [], "line_items": []}
 

@@ -18,7 +18,6 @@ from invoice_machine.utils import utc_now
 
 router = APIRouter(prefix="/api/analytics", tags=["analytics"])
 
-# Reasonable limits to prevent excessive queries
 MAX_CLIENT_LIMIT = 100
 
 
@@ -62,11 +61,7 @@ async def get_consolidated_summary(
     to_date: str | None = Query(None, description="End date (ISO format)"),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
-    """Opt-in single-currency roll-up using each invoice's captured FX rate.
-
-    Reports how many invoices could not be converted instead of silently
-    dropping or mis-summing them.
-    """
+    """Opt-in single-currency roll-up using each invoice's captured FX rate."""
     return await analytics_service.consolidated_summary(
         session,
         from_date_parsed=date.fromisoformat(from_date) if from_date else None,

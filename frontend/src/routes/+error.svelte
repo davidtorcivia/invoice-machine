@@ -6,7 +6,6 @@
   let status = $derived($page.status);
   let message = $derived($page.error?.message);
 
-  // Error configurations based on status code
   const errorConfigs = {
     401: {
       title: 'Unauthorized',
@@ -61,17 +60,14 @@
 
 <div class="error-page">
   <div class="error-container">
-    <!-- Error Status Badge -->
     <div class="error-badge">
       <span class="error-code">{status}</span>
     </div>
 
-    <!-- Error Icon -->
     <div class="error-icon">
       <Icon name={config.icon} size="xl" />
     </div>
 
-    <!-- Error Content -->
     <h1 class="error-title">{config.title}</h1>
     <p class="error-description">{config.description}</p>
 
@@ -81,7 +77,6 @@
       </div>
     {/if}
 
-    <!-- Actions -->
     <div class="error-actions">
       <button class="btn btn-primary" onclick={handleAction}>
         <Icon name={config.actionPath === '/login' ? 'user' : config.actionPath ? 'home' : 'refresh'} size="sm" />
@@ -96,7 +91,6 @@
       {/if}
     </div>
 
-    <!-- Helpful Links -->
     <div class="error-links">
       <a href="/dashboard">Dashboard</a>
       <span class="divider">•</span>
@@ -108,7 +102,6 @@
     </div>
   </div>
 
-  <!-- Decorative background pattern -->
   <div class="error-pattern" aria-hidden="true">
     <svg viewBox="0 0 100 100" preserveAspectRatio="none">
       <defs>
@@ -252,7 +245,6 @@
     height: 100%;
   }
 
-  /* Responsive adjustments */
   @media (max-width: 480px) {
     .error-page {
       padding: var(--space-4);

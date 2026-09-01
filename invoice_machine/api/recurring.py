@@ -123,7 +123,6 @@ async def create_schedule(
 ) -> dict:
     """Create a new recurring schedule."""
     try:
-        # Convert line items to list of dicts
         line_items = None
         if data.line_items:
             line_items = [item.model_dump() for item in data.line_items]
@@ -180,10 +179,8 @@ async def update_schedule(
     session: AsyncSession = Depends(get_session),
 ) -> dict:
     """Update a recurring schedule."""
-    # Build update kwargs
     update_data = data.model_dump(exclude_unset=True)
 
-    # Convert line items to list of dicts
     if "line_items" in update_data and update_data["line_items"] is not None:
         update_data["line_items"] = [
             item if isinstance(item, dict) else item.model_dump()

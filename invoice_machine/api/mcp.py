@@ -19,7 +19,6 @@ async def verify_mcp_auth(request: Request) -> bool:
     if bearer_auth_throttle.is_blocked(client_ip):
         return False
 
-    # Check Authorization header (only Bearer token, no query params for security)
     auth_header = request.headers.get("Authorization", "")
     if not auth_header.startswith("Bearer "):
         return False
@@ -50,23 +49,16 @@ async def streamable_http_lifespan():
 
     from invoice_machine.mcp.server import mcp
 
-    # streamable_http_app() is the SDK's public builder: it configures the
-    # transport and instantiates a fresh session manager, which it then exposes
-    # via mcp.session_manager for exactly this "mount into an existing app"
-    # case. The Starlette app it returns is unused - we serve the endpoint
-    # through MCPStreamableHTTPHandler so our Bearer auth runs first.
+    # Called for its side effect of building a fresh session manager on
+    # mcp.session_manager; the Starlette app it returns is unused, because the
+    # endpoint is served through MCPStreamableHTTPHandler so Bearer auth runs first.
     mcp.streamable_http_app(
-        # Stateless + JSON responses: every MCP call is an independent POST
-        # with no server-side session and no long-lived stream, so proxies
-        # (Cloudflare) dropping idle connections can't strand the client the
-        # way the SSE transport's per-connection sessions could. Under spec
-        # 2026-07-28 this is the protocol's own model; the flag now only
-        # governs how pre-2026 clients are served.
+        # Stateless: every MCP call is an independent POST with no server-side
+        # session, so proxies dropping idle connections cannot strand a client.
         json_response=True,
         stateless_http=True,
-        # We terminate TLS and validate the Host at the reverse proxy, and the
-        # public hostname is deployment-specific, so leave the SDK's
-        # DNS-rebinding check off rather than hardcode an allowed-hosts list.
+        # Host is validated at the reverse proxy and the public hostname is
+        # deployment-specific, so the SDK's DNS-rebinding check stays off.
         transport_security=TransportSecuritySettings(enable_dns_rebinding_protection=False),
     )
     manager = mcp.session_manager
@@ -97,7 +89,6 @@ class MCPStreamableHTTPHandler:
         await _http_session_manager.handle_request(scope, receive, send)
 
 
-# Global SSE transport - initialized lazily
 _sse_transport = None
 _mcp_server = None
 
@@ -123,7 +114,7 @@ class MCPSseHandler:
     """ASGI app for SSE endpoint - allows MCP transport to control response directly."""
 
     async def __call__(self, scope, receive, send):
-        # SSE only supports GET - return 405 for other methods so client falls back to SSE transport
+        # SSE is GET-only; a 405 makes the client fall back to the SSE transport.
         if scope.get("method", "GET") != "GET":
             response = StarletteResponse("Method Not Allowed", status_code=405)
             await response(scope, receive, send)
@@ -185,7 +176,6 @@ class MCPStatusHandler:
         await response(scope, receive, send)
 
 
-# Instantiate the ASGI handlers
 mcp_streamable_http_handler = MCPStreamableHTTPHandler()
 mcp_sse_handler = MCPSseHandler()
 mcp_messages_handler = MCPMessagesHandler()

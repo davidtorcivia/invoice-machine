@@ -26,14 +26,11 @@ class TestInvoiceNumberGeneration:
 
     @pytest.mark.asyncio
     async def test_first_invoice_of_day(self, db_session):
-        """First invoice gets sequence 1."""
         num = await generate_invoice_number(db_session, date(2025, 1, 15))
         assert num == "20250115-1"
 
     @pytest.mark.asyncio
     async def test_second_invoice_of_day(self, db_session):
-        """Second invoice gets sequence 2."""
-        # Create first invoice
         invoice = Invoice(
             invoice_number="20250115-1",
             client_id=None,
@@ -48,8 +45,6 @@ class TestInvoiceNumberGeneration:
 
     @pytest.mark.asyncio
     async def test_different_day_resets_sequence(self, db_session):
-        """Different day resets sequence to 1."""
-        # Create invoice on previous day
         invoice = Invoice(
             invoice_number="20250114-5",
             client_id=None,
@@ -64,8 +59,6 @@ class TestInvoiceNumberGeneration:
 
     @pytest.mark.asyncio
     async def test_ignores_malformed_numbers(self, db_session):
-        """Ignores malformed invoice numbers when calculating sequence."""
-        # Create malformed invoices
         for num in ["20250115-bad", "not-a-number", "20250115-"]:
             invoice = Invoice(
                 invoice_number=num,
@@ -75,7 +68,6 @@ class TestInvoiceNumberGeneration:
             )
             db_session.add(invoice)
 
-        # Create one valid
         invoice = Invoice(
             invoice_number="20250115-3",
             client_id=None,
@@ -93,14 +85,12 @@ class TestDueDateCalculation:
     """Tests for due date calculation."""
 
     def test_explicit_due_date(self):
-        """Explicit due date takes precedence."""
         issue = date(2025, 1, 15)
         due = date(2025, 2, 15)
         result = calculate_due_date(issue, explicit_due_date=due)
         assert result == due
 
     def test_invoice_terms_override(self, business_profile, test_client):
-        """Invoice terms override client terms."""
         issue = date(2025, 1, 15)
         result = calculate_due_date(
             issue, payment_terms_days=60, client=test_client, business=business_profile
@@ -108,19 +98,16 @@ class TestDueDateCalculation:
         assert result == issue + timedelta(days=60)
 
     def test_uses_client_terms(self, business_profile, test_client):
-        """Uses client terms when no invoice terms."""
         issue = date(2025, 1, 15)
         result = calculate_due_date(issue, client=test_client, business=business_profile)
         assert result == issue + timedelta(days=30)
 
     def test_uses_business_default(self, business_profile):
-        """Uses business default when no client terms."""
         issue = date(2025, 1, 15)
         result = calculate_due_date(issue, client=None, business=business_profile)
         assert result == issue + timedelta(days=30)
 
     def test_fallback_to_thirty_days(self):
-        """Falls back to 30 days when nothing specified."""
         issue = date(2025, 1, 15)
         result = calculate_due_date(issue, client=None, business=None)
         assert result == issue + timedelta(days=30)
@@ -131,7 +118,6 @@ class TestInvoiceTotals:
 
     @pytest.mark.asyncio
     async def test_recalculate_empty_invoice(self, db_session):
-        """Empty invoice has zero totals."""
         invoice = Invoice(
             invoice_number="20250115-1",
             issue_date=date.today(),
@@ -147,7 +133,6 @@ class TestInvoiceTotals:
 
     @pytest.mark.asyncio
     async def test_recalculate_with_items(self, db_session):
-        """Recalculates totals from line items."""
         invoice = Invoice(
             invoice_number="20250115-1",
             issue_date=date.today(),
@@ -156,7 +141,6 @@ class TestInvoiceTotals:
         db_session.add(invoice)
         await db_session.flush()
 
-        # Add items
         item1 = InvoiceItem(
             invoice_id=invoice.id,
             description="Service 1",
@@ -185,7 +169,6 @@ class TestClientSnapshot:
 
     @pytest.mark.asyncio
     async def test_snapshot_copies_client_fields(self, db_session, test_client):
-        """Snapshot copies relevant client fields to invoice."""
         invoice = Invoice(
             invoice_number="20250115-1",
             client_id=test_client.id,
@@ -204,7 +187,6 @@ class TestClientSnapshot:
 
     @pytest.mark.asyncio
     async def test_snapshot_with_minimal_client(self, db_session):
-        """Snapshot handles client with minimal info."""
         client = Client(name="Minimal Client")
         db_session.add(client)
         await db_session.commit()
@@ -246,20 +228,17 @@ class TestClientService:
 
     @pytest.mark.asyncio
     async def test_list_clients_empty(self, db_session):
-        """Listing with no clients returns empty list."""
         clients = await ClientService.list_clients(db_session)
         assert clients == []
 
     @pytest.mark.asyncio
     async def test_list_clients_with_data(self, db_session, test_client):
-        """Lists all active clients."""
         clients = await ClientService.list_clients(db_session)
         assert len(clients) == 1
         assert clients[0].id == test_client.id
 
     @pytest.mark.asyncio
     async def test_list_clients_excludes_deleted(self, db_session, test_client):
-        """Soft-deleted clients excluded by default."""
         test_client.deleted_at = date.today()
         await db_session.commit()
 
@@ -273,21 +252,17 @@ class TestClientService:
         test_client.business_name = "Acme Corporation"
         await db_session.commit()
 
-        # Search by name
         results = await ClientService.list_clients(db_session, search="John")
         assert len(results) == 1
 
-        # Search by business
         results = await ClientService.list_clients(db_session, search="Acme")
         assert len(results) == 1
 
-        # No match
         results = await ClientService.list_clients(db_session, search="XYZ")
         assert len(results) == 0
 
     @pytest.mark.asyncio
     async def test_create_client(self, db_session):
-        """Creates a new client."""
         client = await ClientService.create_client(
             db_session, name="Jane Doe", business_name="Jane's Company"
         )
@@ -298,7 +273,6 @@ class TestClientService:
 
     @pytest.mark.asyncio
     async def test_update_client(self, db_session, test_client):
-        """Updates client fields."""
         updated = await ClientService.update_client(
             db_session, test_client.id, name="Updated Name", phone="555-0000"
         )
@@ -308,17 +282,14 @@ class TestClientService:
 
     @pytest.mark.asyncio
     async def test_delete_client_soft(self, db_session, test_client):
-        """Delete is a soft delete."""
         success = await ClientService.delete_client(db_session, test_client.id)
         assert success is True
 
-        # Refresh from DB
         await db_session.refresh(test_client)
         assert test_client.deleted_at is not None
 
     @pytest.mark.asyncio
     async def test_restore_client(self, db_session, test_client):
-        """Restores a soft-deleted client."""
         test_client.deleted_at = date.today()
         await db_session.commit()
 
@@ -334,7 +305,6 @@ class TestInvoiceService:
 
     @pytest.mark.asyncio
     async def test_create_minimal_invoice(self, db_session, business_profile):
-        """Creates invoice with minimal data."""
         invoice = await InvoiceService.create_invoice(db_session)
 
         assert invoice.id is not None
@@ -344,7 +314,6 @@ class TestInvoiceService:
 
     @pytest.mark.asyncio
     async def test_create_invoice_with_client(self, db_session, test_client):
-        """Creates invoice linked to client."""
         invoice = await InvoiceService.create_invoice(db_session, client_id=test_client.id)
 
         assert invoice.client_id == test_client.id
@@ -353,7 +322,6 @@ class TestInvoiceService:
 
     @pytest.mark.asyncio
     async def test_create_invoice_with_items(self, db_session):
-        """Creates invoice with line items."""
         invoice = await InvoiceService.create_invoice(
             db_session,
             items=[
@@ -367,14 +335,12 @@ class TestInvoiceService:
 
     @pytest.mark.asyncio
     async def test_create_invoice_backdated(self, db_session):
-        """Backdated invoice gets correct number."""
         invoice = await InvoiceService.create_invoice(db_session, issue_date=date(2024, 12, 15))
 
         assert invoice.invoice_number == "20241215-1"
 
     @pytest.mark.asyncio
     async def test_update_invoice_status(self, db_session, business_profile):
-        """Updates invoice status."""
         invoice = await InvoiceService.create_invoice(db_session)
 
         updated = await InvoiceService.update_invoice(db_session, invoice.id, status="sent")
@@ -383,7 +349,6 @@ class TestInvoiceService:
 
     @pytest.mark.asyncio
     async def test_update_invoice_issue_date_changes_number(self, db_session):
-        """Changing issue date regenerates invoice number."""
         invoice = await InvoiceService.create_invoice(db_session)
         original_number = invoice.invoice_number
 
@@ -408,7 +373,6 @@ class TestInvoiceService:
 
     @pytest.mark.asyncio
     async def test_delete_invoice_soft(self, db_session):
-        """Delete is a soft delete."""
         invoice = await InvoiceService.create_invoice(db_session)
 
         success = await InvoiceService.delete_invoice(db_session, invoice.id)
@@ -419,7 +383,6 @@ class TestInvoiceService:
 
     @pytest.mark.asyncio
     async def test_add_item_to_invoice(self, db_session):
-        """Adds line item to invoice."""
         invoice = await InvoiceService.create_invoice(db_session)
 
         item = await InvoiceService.add_item(
@@ -434,7 +397,6 @@ class TestInvoiceService:
 
     @pytest.mark.asyncio
     async def test_update_item(self, db_session):
-        """Updates line item."""
         invoice = await InvoiceService.create_invoice(db_session)
         item = await InvoiceService.add_item(
             db_session, invoice.id, description="Original", quantity=1, unit_price=100
@@ -450,7 +412,6 @@ class TestInvoiceService:
 
     @pytest.mark.asyncio
     async def test_remove_item(self, db_session):
-        """Removes line item."""
         invoice = await InvoiceService.create_invoice(db_session)
         item = await InvoiceService.add_item(
             db_session, invoice.id, description="To Remove", quantity=1, unit_price=100

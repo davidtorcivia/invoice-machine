@@ -19,17 +19,8 @@ async def search(
     """
     Search across invoices, clients, and line items using full-text search.
 
-    Supports partial matching and returns relevance-ranked results.
-
-    Args:
-        query: Search query (e.g., "acme", "consulting", "INV-2025")
-        search_invoices: Include invoices in search (default: True)
-        search_clients: Include clients in search (default: True)
-        search_line_items: Include invoice line items in search (default: True)
-        limit: Maximum results per category (default: 20)
-
-    Returns:
-        Dict with 'invoices', 'clients', and 'line_items' lists containing matching results
+    Supports partial matching and returns relevance-ranked results under
+    'invoices', 'clients', and 'line_items', capped at `limit` per category.
     """
     async with get_session() as session:
         return await SearchService.search(

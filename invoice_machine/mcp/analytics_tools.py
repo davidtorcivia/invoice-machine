@@ -1,8 +1,4 @@
-"""Analytics MCP tools.
-
-These delegate to invoice_machine.service.analytics so MCP results match the
-REST analytics endpoints exactly (currency-aware, consistent overdue logic).
-"""
+"""Analytics MCP tools, delegating to service.analytics so MCP matches REST."""
 
 from __future__ import annotations
 
@@ -34,15 +30,13 @@ async def get_revenue_summary(
     """
     Get revenue summary for the specified period.
 
+    Outstanding and overdue are point-in-time across all invoices; overdue
+    counts "sent" invoices past their due date.
+
     Args:
         from_date: Start date (ISO format, defaults to start of current year)
         to_date: End date (ISO format, defaults to today)
         group_by: How to group breakdown - "month", "quarter", or "year"
-
-    Returns:
-        Total invoiced, paid, outstanding, overdue (per currency), and a period
-        breakdown. Outstanding/overdue are point-in-time across all invoices;
-        overdue counts "sent" invoices past their due date.
     """
     if group_by not in ("month", "quarter", "year"):
         raise ValueError('group_by must be "month", "quarter", or "year"')
@@ -61,15 +55,11 @@ async def get_client_lifetime_value(
     limit: int = 20,
 ) -> list:
     """
-    Get lifetime value for clients.
+    Get lifetime value for clients, in each client's dominant currency.
 
     Args:
         client_id: Specific client ID (returns single client if provided)
         limit: Maximum clients to return (default 20, sorted by total paid)
-
-    Returns:
-        List of clients with total invoiced/paid in their dominant currency,
-        a per-currency breakdown, and invoice counts.
     """
     async with get_session() as session:
         return await analytics_service.client_lifetime_values(
@@ -83,24 +73,14 @@ async def get_client_invoice_context(
     limit: int = 3,
 ) -> dict:
     """
-    Get context for drafting a new invoice for a client.
-
-    This provides recent invoice history to help draft invoices that match
-    previous patterns (rates, descriptions, payment terms).
-
-    Args:
-        client_id: The client ID
-        limit: Number of recent invoices to include (default 3)
-
-    Returns:
-        Client details, recent invoices with line items, and statistics
+    Get recent invoice history for a client, to draft new invoices matching
+    their previous rates, descriptions, and payment terms.
     """
     async with get_session() as session:
         client = await ClientService.get_client(session, client_id)
         if not client:
             return {"error": "Client not found"}
 
-        # Get recent invoices
         invoices = await InvoiceService.list_invoices(
             session,
             client_id=client_id,
@@ -194,9 +174,6 @@ async def get_consolidated_summary(
     Args:
         from_date: Start date (ISO format, optional)
         to_date: End date (ISO format, optional)
-
-    Returns:
-        {currency, invoiced, paid, outstanding, coverage: {...}}
     """
     async with get_session() as session:
         return await analytics_service.consolidated_summary(

@@ -30,7 +30,6 @@
   let saving = $state(false);
   let showDiscardModal = $state(false);
 
-  // Form data
   let issueDate = $state('');
   let dueDate = $state('');
   let paymentTermsDays = $state(30);
@@ -44,12 +43,10 @@
   /** @type {InvoiceItemDraft[]} */
   let items = $state([]);
 
-  // Notes handling
   let useDefaultNotes = $state(false);
   let originalNotes = $state('');
   let defaultNotesInitialized = $state(false);
 
-  // Tax settings
   let taxEnabled = $state(false);
   let taxRate = $state('');
   let taxName = $state('Tax');
@@ -87,7 +84,6 @@
     }
   });
 
-  // Default notes from profile
   let defaultNotesText = $derived(profile?.default_notes || '');
 
   onMount(async () => {
@@ -102,7 +98,6 @@
     }
   }
 
-  // Parse payment methods from profile
   /** @type {PaymentMethod[]} */
   let availablePaymentMethods = $derived(parseJsonArray(profile?.payment_methods));
 
@@ -112,7 +107,6 @@
       const data = await invoicesApi.get(invoiceId);
       invoice = data;
 
-      // Populate form
       issueDate = data.issue_date || '';
       dueDate = data.due_date || '';
       paymentTermsDays = data.payment_terms_days || 30;
@@ -134,15 +128,12 @@
         items = [{ description: '', quantity: 1, unit_price: '', unit_type: 'qty' }];
       }
 
-      // Load tax settings
       taxEnabled = data.tax_enabled || false;
       taxRate = data.tax_rate && parseFloat(data.tax_rate) > 0 ? data.tax_rate : '';
       taxName = data.tax_name || 'Tax';
 
-      // Track original notes and check if using default
       originalNotes = data.notes || '';
 
-      // Snapshot the clean form state for the unsaved-changes guard.
       initialSnapshot = formState();
     } catch (error) {
       toast.error('Failed to load invoice');
@@ -153,7 +144,6 @@
     }
   }
 
-  // Effective notes (use default if toggled on)
   let effectiveNotes = $derived(useDefaultNotes && defaultNotesText ? defaultNotesText : notes);
   run(() => {
     if (!defaultNotesInitialized && profile && invoice) {
@@ -171,7 +161,6 @@
 
     saving = true;
     try {
-      // Update invoice details
       await invoicesApi.update(invoiceId, {
         issue_date: issueDate || undefined,
         due_date: dueDate || undefined,
@@ -187,7 +176,6 @@
         tax_name: taxName || 'Tax',
       });
 
-      // Delete removed items
       const originalItemIds = new Set((invoice?.items || []).map((item) => item.id));
       const currentItemIds = new Set(items.filter((item) => item.id).map((item) => item.id));
 
@@ -197,7 +185,6 @@
         }
       }
 
-      // Update existing items and add new ones
       for (let i = 0; i < validItems.length; i++) {
         const item = validItems[i];
         if (item.id) {
@@ -296,7 +283,6 @@
 
       <InvoiceNotesCard bind:useDefaultNotes {defaultNotesText} bind:notes />
 
-      <!-- Actions -->
       <div class="form-actions">
         <button
           type="button"
@@ -354,7 +340,6 @@
     gap: var(--space-3);
   }
 
-  /* Responsive - Large screens */
   @media (min-width: 1400px) {
     .page-content {
       max-width: 1100px;
@@ -367,7 +352,6 @@
     }
   }
 
-  /* Responsive - Small screens */
   @media (max-width: 480px) {
     .page-content {
       padding: var(--space-3);

@@ -1,9 +1,4 @@
-"""Background scheduler-job tests.
-
-The lifespan jobs in app_runtime were untested, yet two of the 2026-06-09 audit
-bugs lived here (the encrypted-S3-credential backup and the recurring-rollback
-crash). These run the job functions against a temp DB and assert their effects.
-"""
+"""Run the app_runtime lifespan jobs against a temp DB and assert their effects."""
 
 import json
 from datetime import timedelta
@@ -115,14 +110,12 @@ async def test_scheduled_backup_job_noops_when_disabled(scheduler_db):
         profile.backup_enabled = 0
         await session.commit()
 
-    # Must return cleanly without touching the filesystem.
     await app_runtime._scheduled_backup_job()
 
 
 @pytest.mark.asyncio
 async def test_backup_service_builder_decrypts_s3_credentials(scheduler_db):
-    """Regression for the nightly-backup bug: the shared builder must decrypt the
-    stored (Fernet-encrypted) S3 credentials, not pass them through raw."""
+    """The shared builder must decrypt the stored (Fernet-encrypted) S3 credentials."""
     from invoice_machine.api.backup import get_backup_service
     from invoice_machine.crypto import encrypt_credential
     from invoice_machine.database import BusinessProfile

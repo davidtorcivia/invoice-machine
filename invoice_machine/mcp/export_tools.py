@@ -36,9 +36,6 @@ async def export_csv(
         include_deleted: Include trashed records
         document_type: Restrict to "invoice" or "quote" (invoices/line_items only)
         max_rows: Maximum data rows to return (capped at 500)
-
-    Returns:
-        {kind, csv, truncated} — or an error dict for an unknown kind
     """
     if kind not in EXPORT_KINDS:
         return {"error": f"Unknown export kind '{kind}'. Available: {list(EXPORT_KINDS)}"}

@@ -1,11 +1,7 @@
 """Test fixtures and configuration."""
 
-# IMPORTANT: pin the runtime environment BEFORE importing anything from
-# invoice_machine. database.py calls get_settings() at import time, and
-# pydantic-settings would otherwise read the developer's real production .env
-# (e.g. production CORS_ORIGINS / SECURE_COOKIES), making tests depend on local
-# machine config. OS env vars take precedence over the .env file, so these
-# setdefaults give the suite a deterministic configuration on any machine.
+# Pinned before any invoice_machine import: database.py calls get_settings() at
+# import time and would otherwise read the developer's real production .env.
 import os
 
 os.environ.setdefault("ENVIRONMENT", "development")
@@ -25,10 +21,8 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from invoice_machine.database import Base, BusinessProfile, Client, Invoice, InvoiceItem
 from invoice_machine.rate_limit import limiter as _limiter
 
-# Disable rate limiting for the test suite. The slowapi limiter is a module-level
-# singleton whose in-memory counters accumulate across tests in a run (all
-# requests share one client key), so per-endpoint limits like "30/hour" would
-# otherwise produce spurious 429s once enough tests hit the same route.
+# The slowapi limiter is a module-level singleton whose counters accumulate
+# across a run, so per-endpoint limits would produce spurious 429s.
 _limiter.enabled = False
 
 
@@ -39,19 +33,8 @@ def temp_db_path():
         path = f.name
     yield path
 
-    # Cleanup. Two portability details, both invisible on POSIX:
-    #
-    # 1. register_sqlite_pragmas puts the database in WAL mode, which creates
-    #    "-wal" and "-shm" sidecars next to the file. Unlinking only the .db
-    #    leaks two files per test into the temp directory.
-    # 2. Windows refuses to unlink a file while any handle is open. aiosqlite
-    #    drives sqlite on a worker thread, so engine.dispose() returning does
-    #    not guarantee the OS handle is closed yet -- a test whose body raised
-    #    (e.g. an IntegrityError left mid-transaction) can still be holding it
-    #    when this runs, turning cleanup into a teardown ERROR.
-    #
-    # Failing to delete a scratch file in the OS temp directory is not a test
-    # result, so cleanup is best-effort.
+    # WAL mode leaves "-wal"/"-shm" sidecars, and Windows refuses to unlink a
+    # file whose handle aiosqlite's worker thread may still hold.
     for target in (Path(path), Path(f"{path}-wal"), Path(f"{path}-shm")):
         try:
             target.unlink(missing_ok=True)
@@ -68,13 +51,11 @@ async def engine(temp_db_path):
     # Match production connection behavior (FK enforcement, WAL, busy_timeout).
     register_sqlite_pragmas(engine)
 
-    # Create tables
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
     yield engine
 
-    # Cleanup
     await engine.dispose()
 
 
@@ -95,14 +76,9 @@ async def db_session(session_maker):
 async def mcp_db():
     """Point the MCP tools at a fresh temp database and skip schema bootstrap.
 
-    The MCP tools resolve their session from the module-level maker at call
-    time rather than taking one as an argument, so pointing them at a test
-    database means swapping that module global and putting it back afterwards.
-
-    The imports stay inside the function on purpose: this module sets
-    ENVIRONMENT and friends before anything from invoice_machine is imported
-    (see the header), and hoisting these to module scope would import
-    database.py -- and therefore call get_settings() -- during collection.
+    The tools resolve their session from the module-level maker at call time, so
+    this swaps that global. Imports stay local so collection does not import
+    database.py before the environment above is pinned.
     """
     from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
@@ -215,7 +191,6 @@ async def invoice_with_items(db_session: AsyncSession, test_client: Client) -> I
     await db_session.commit()
     await db_session.refresh(invoice)
 
-    # Add line items
     items = [
         InvoiceItem(
             invoice_id=invoice.id,

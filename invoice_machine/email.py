@@ -21,7 +21,6 @@ from invoice_machine.utils import confined_file, refuse_disallowed_host, sanitiz
 settings = get_settings()
 
 
-# Email validation regex (RFC 5322 simplified)
 EMAIL_REGEX = re.compile(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$")
 
 
@@ -30,29 +29,15 @@ def _validate_smtp_target(host: str, port: int) -> None:
 
 
 def _sanitize_email(email: str) -> str:
-    """
-    Validate and sanitize email address to prevent header injection.
-
-    Args:
-        email: Email address to validate
-
-    Returns:
-        Sanitized email address
-
-    Raises:
-        ValueError: If email is invalid or contains injection attempts
-    """
+    """Validate an address and reject anything that could inject a header."""
     if not email:
         raise ValueError("Email address is required")
 
-    # Remove any whitespace
     email = email.strip()
 
-    # Check for header injection attempts (newlines, carriage returns)
     if "\n" in email or "\r" in email:
         raise ValueError("Invalid email address: contains newline characters")
 
-    # Validate email format
     if not EMAIL_REGEX.match(email):
         raise ValueError(f"Invalid email address format: {email}")
 
@@ -60,33 +45,18 @@ def _sanitize_email(email: str) -> str:
 
 
 def _sanitize_header(value: str, field_name: str = "Header") -> str:
-    """
-    Sanitize header value to prevent header injection.
-
-    Args:
-        value: Header value to sanitize
-        field_name: Name of the field for error messages
-
-    Returns:
-        Sanitized header value
-
-    Raises:
-        ValueError: If value contains injection attempts
-    """
+    """Strip control characters from a header value and reject newlines."""
     if not value:
         return ""
 
-    # Check for header injection attempts
     if "\n" in value or "\r" in value:
         raise ValueError(f"Invalid {field_name}: contains newline characters")
 
-    # Remove any control characters
     sanitized = "".join(c for c in value if ord(c) >= 32 or c == "\t")
 
     return sanitized
 
 
-# Default email templates
 DEFAULT_SUBJECT_TEMPLATE = "{document_type} {invoice_number}"
 DEFAULT_BODY_TEMPLATE = """Dear {client_name},
 
@@ -102,40 +72,14 @@ Best regards,
 
 
 def expand_template(template: str, invoice: "Invoice", profile: "BusinessProfile") -> str:
-    """
-    Expand template placeholders with invoice and profile data.
-
-    Supported placeholders:
-    - {invoice_number}, {quote_number} - Document number
-    - {document_type} - "Invoice" or "Quote"
-    - {document_type_lower} - "invoice" or "quote"
-    - {client_name} - Client contact name
-    - {client_business_name} - Client business name
-    - {client_email} - Client email
-    - {total}, {amount} - Formatted total amount
-    - {subtotal} - Formatted subtotal
-    - {due_date} - Formatted due date
-    - {issue_date} - Formatted issue date
-    - {your_name} - Business profile name
-    - {business_name} - Business name from profile
-    - {line_items} - Comma-separated list of line item descriptions
-
-    Args:
-        template: Template string with placeholders
-        invoice: Invoice object with data
-        profile: BusinessProfile object with data
-
-    Returns:
-        Template with placeholders replaced by actual values
-    """
+    """Expand template placeholders with invoice and profile data."""
     doc_type = "Quote" if getattr(invoice, "document_type", "invoice") == "quote" else "Invoice"
     total_formatted = format_currency(invoice.total, invoice.currency_code)
     subtotal_formatted = format_currency(invoice.subtotal, invoice.currency_code)
     due_date_str = invoice.due_date.strftime("%B %d, %Y") if invoice.due_date else "Upon receipt"
     issue_date_str = invoice.issue_date.strftime("%B %d, %Y") if invoice.issue_date else ""
 
-    # Format line items as comma-separated descriptions
-    # Handle cases where items relationship isn't loaded (lazy load may fail in async)
+    # The items relationship may not be loaded; a lazy load can fail under async.
     try:
         items = invoice.items or []
         if items:
@@ -196,12 +140,6 @@ class EmailService:
     """Service for sending invoice emails via SMTP."""
 
     def __init__(self, profile: BusinessProfile):
-        """
-        Initialize with business profile containing SMTP settings.
-
-        Args:
-            profile: BusinessProfile with SMTP configuration
-        """
         self.profile = profile
 
     def _get_smtp_password(self) -> str | None:
@@ -236,36 +174,21 @@ class EmailService:
         attachment_path: Path | None = None,
         attachment_filename: str | None = None,
     ) -> bool:
-        """
-        Synchronous email sending (runs in thread pool).
-
-        Args:
-            to_email: Recipient email address
-            subject: Email subject
-            body: Email body text
-            attachment_path: Path to file to attach (optional)
-            attachment_filename: Filename for attachment (optional)
-
-        Returns:
-            True if email sent successfully
-        """
+        """Send one message synchronously; call it off the event loop."""
         self._validate_config()
 
-        # Sanitize inputs to prevent header injection
         to_email = _sanitize_email(to_email)
         subject = _sanitize_header(subject, "Subject")
 
-        # Create message
         msg = MIMEMultipart()
         from_name = _sanitize_header(self.profile.smtp_from_name or "", "From name")
         from_email = _sanitize_email(self.profile.smtp_from_email)
-        # formataddr quotes/escapes the display name. Assembling "name <addr>" by
-        # hand let a display name containing <> or a comma forge extra addresses.
+        # formataddr quotes/escapes the display name: an unescaped name containing
+        # <> or a comma can forge extra addresses.
         msg["From"] = formataddr((from_name, from_email)) if from_name else from_email
         msg["To"] = to_email
         msg["Subject"] = subject
 
-        # Add body
         msg.attach(MIMEText(body, "plain"))
 
         if attachment_path and attachment_path.exists():
@@ -280,18 +203,15 @@ class EmailService:
                 )
                 msg.attach(part)
 
-        # Connect and send
         use_tls = bool(self.profile.smtp_use_tls)
         port = self.profile.smtp_port or 587
 
         # SSRF guard before any outbound connection.
         _validate_smtp_target(self.profile.smtp_host, port)
 
-        # Decrypt password for authentication
         smtp_password = self._get_smtp_password()
 
         if use_tls and port == 465:
-            # SSL connection (port 465)
             context = ssl.create_default_context()
             with smtplib.SMTP_SSL(self.profile.smtp_host, port, context=context) as server:
                 if self.profile.smtp_username and smtp_password:
@@ -316,19 +236,7 @@ class EmailService:
         subject: str | None = None,
         body: str | None = None,
     ) -> dict:
-        """
-        Send invoice PDF via email.
-
-        Args:
-            invoice: Invoice to send
-            recipient_email: Override recipient (defaults to client email)
-            subject: Override subject (defaults to "Invoice {number}")
-            body: Override body (defaults to friendly message with details)
-
-        Returns:
-            Dict with success status and details
-        """
-        # Determine recipient
+        """Send the invoice PDF by email, returning a success/error dict."""
         to_email = recipient_email or invoice.client_email
         if not to_email:
             return {
@@ -336,21 +244,18 @@ class EmailService:
                 "error": "No recipient email. Provide recipient_email or set client email.",
             }
 
-        # Determine subject - use explicit override, profile template, or default
         if subject:
             email_subject = subject
         else:
             subject_template = self.profile.email_subject_template or DEFAULT_SUBJECT_TEMPLATE
             email_subject = expand_template(subject_template, invoice, self.profile)
 
-        # Determine body - use explicit override, profile template, or default
         if body:
             email_body = body
         else:
             body_template = self.profile.email_body_template or DEFAULT_BODY_TEMPLATE
             email_body = expand_template(body_template, invoice, self.profile)
 
-        # Get PDF path
         if not invoice.pdf_path:
             return {
                 "success": False,
@@ -364,7 +269,6 @@ class EmailService:
                 "error": "Invoice PDF not found.",
             }
 
-        # Send email in thread pool
         try:
             safe_invoice_number = sanitize_filename_component(
                 invoice.invoice_number, f"invoice-{invoice.id}"
@@ -390,16 +294,10 @@ class EmailService:
             }
 
     async def test_connection(self) -> dict:
-        """
-        Test SMTP connection without sending an email.
-
-        Returns:
-            Dict with success status and details
-        """
+        """Test the SMTP connection without sending an email."""
         try:
             self._validate_config()
 
-            # Decrypt password outside of nested function to use self
             smtp_password = self._get_smtp_password()
 
             def _test_sync():
