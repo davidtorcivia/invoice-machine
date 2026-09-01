@@ -38,6 +38,10 @@ Notable changes to Invoice Machine. Format based on
 
 ### Fixed
 
+- Builds are reproducible: the Docker image and CI install exactly `uv.lock`
+  (`uv sync --frozen`) instead of resolving `pyproject.toml` floors afresh, and
+  CI fails when the lockfile is stale. The dependency audit checks the locked
+  tree.
 - A failed line-item search index rebuild dropped the old index first and left
   search on the slow LIKE fallback until the next rebuild. The new index is now
   built and populated before the old one is replaced.
