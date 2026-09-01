@@ -6,6 +6,16 @@ Notable changes to Invoice Machine. Format based on
 
 ## [Unreleased]
 
+### Added
+
+- Request ids: every response carries `X-Request-ID`, every log line for that
+  request is stamped with it, and the app logs one access line per request.
+  Background jobs log under their own id.
+- `GET /api/system/status` reports version, uptime, scheduler ownership, and the
+  last outcome of every background job; `GET /health` reports whether the
+  process holds the scheduler.
+- `SENTRY_DSN` enables error reporting to Sentry, tagged with the request id.
+
 ### Changed
 
 - Multiple MCP and bot API keys, each labeled and rotated or revoked on its own,

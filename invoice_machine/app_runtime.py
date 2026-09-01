@@ -14,6 +14,7 @@ from fastapi import FastAPI
 from invoice_machine.api.mcp import streamable_http_lifespan
 from invoice_machine.config import get_settings
 from invoice_machine.database import close_db
+from invoice_machine.observability import run_job
 from invoice_machine.runtime_schema import ensure_database_schema
 from invoice_machine.utils import utc_now
 
@@ -52,7 +53,7 @@ async def _run_hourly_task(app: FastAPI, name: str, job) -> None:
         await asyncio.sleep(_seconds_until_next_hour())
         await _wait_out_restore(app)
         try:
-            await job()
+            await run_job(app.state.jobs, name, job)
         except Exception as exc:
             logger.error("%s failed: %s", name, exc, exc_info=True)
 
@@ -64,7 +65,7 @@ async def _run_daily_task(app: FastAPI, hour_utc: int, name: str, job) -> None:
         await asyncio.sleep(_seconds_until_hour(hour_utc))
         await _wait_out_restore(app)
         try:
-            await job()
+            await run_job(app.state.jobs, name, job)
         except Exception as exc:
             logger.error("%s failed: %s", name, exc, exc_info=True)
 
@@ -235,6 +236,7 @@ async def lifespan(app: FastAPI):
             "run in this worker (expected with multiple workers)."
         )
     else:
+        app.state.scheduler_active = True
         # Catch-up jobs run once at startup so a restart doesn't skip a day, and
         # only under the lock: a second worker would double-generate recurring
         # invoices. Both are idempotent within one holder.
@@ -244,7 +246,7 @@ async def lifespan(app: FastAPI):
             ("Payment reminders", _payment_reminder_job),
         ):
             try:
-                await job()
+                await run_job(app.state.jobs, name, job)
             except Exception as exc:
                 logger.warning("%s at startup failed (non-fatal): %s", name, exc, exc_info=True)
 

@@ -20,6 +20,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 from invoice_machine.api.auth import SESSION_COOKIE_NAME, get_session_data
 from invoice_machine.config import get_settings
+from invoice_machine.observability import RequestIdMiddleware
 from invoice_machine.rate_limit import bearer_auth_throttle, get_client_ip, limiter
 
 settings = get_settings()
@@ -304,3 +305,6 @@ def configure_http_middleware(app: FastAPI) -> None:
             return await call_next(request)
         finally:
             app_state.active_requests = max(0, getattr(app_state, "active_requests", 0) - 1)
+
+    # Outermost so the id covers auth rejections and the restore guard too.
+    app.add_middleware(RequestIdMiddleware)

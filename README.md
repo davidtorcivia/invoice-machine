@@ -67,6 +67,7 @@ Set these in a `.env` file or as environment variables. See `.env.example` for a
 | `INVOICE_MACHINE_ENCRYPTION_KEY` | Encrypts stored credentials. Required in production. | none |
 | `SECURE_COOKIES` | Enable secure cookies (requires HTTPS) | `false` |
 | `TRUST_PROXY_HEADERS` | Trust `CF-Connecting-IP` / `X-Forwarded-For` | `false` |
+| `SENTRY_DSN` | Report unhandled errors to Sentry (no PII) | none |
 | `CORS_ORIGINS` | Allowed origins, comma-separated | `http://localhost:3000,http://localhost:8080` |
 
 ### Invoice defaults
@@ -355,6 +356,22 @@ The `data/` directory holds everything: database, PDFs, logos, and backups. Copy
 6. Put an access layer in front of it (Cloudflare Access, Tailscale, or a VPN)
 7. Use a Stripe restricted key rather than a secret key
 8. Pull new images regularly
+
+## Observability
+
+Every request gets an id, returned as `X-Request-ID` (a caller-supplied one is
+echoed when it is short and log-safe) and stamped on every log line for that
+request as `[id]`. Background jobs log under a `job-` id. The app writes one
+access line per request, so run uvicorn with `--no-access-log` as the Docker
+image does.
+
+`GET /health` (unauthenticated) reports `status` and whether this process holds
+the scheduler (`active`) or is standing by. `GET /api/system/status`
+(authenticated) adds version, environment, uptime, and for every background job
+its run and failure counts, last start, last success, last error, and duration.
+
+Set `SENTRY_DSN` to report unhandled exceptions to Sentry. Events are tagged
+with the request id and never include personal data.
 
 ## Deployment
 
