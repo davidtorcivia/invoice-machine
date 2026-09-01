@@ -760,3 +760,40 @@ class TestSearchFallbackRobustness:
         assert any("FTS unavailable" in r.message for r in caplog.records), (
             "falling back to a LIKE scan should be logged"
         )
+
+
+class TestFtsRebuildAtomicity:
+    """A failed rebuild must leave the previous invoice_items_fts queryable."""
+
+    @pytest.mark.asyncio
+    async def test_failed_item_rebuild_keeps_previous_index(
+        self, db_session, monkeypatch, business_profile
+    ):
+        from sqlalchemy import text
+
+        from invoice_machine.service import search as search_module
+
+        await InvoiceService.create_invoice(
+            db_session,
+            items=[{"description": "Widget polishing", "quantity": 1, "unit_price": 5}],
+        )
+        assert (await SearchService.reindex_fts(db_session, force=True))["rebuilt"] is True
+
+        async def matches():
+            rows = await db_session.execute(
+                text("SELECT rowid FROM invoice_items_fts WHERE invoice_items_fts MATCH 'polish*'")
+            )
+            return rows.fetchall()
+
+        assert len(await matches()) == 1
+
+        monkeypatch.setattr(
+            search_module,
+            "_ITEMS_FTS_POPULATE",
+            "INSERT INTO invoice_items_fts_new(rowid, description) "
+            "SELECT id, no_such_column FROM invoice_items",
+        )
+        result = await SearchService.reindex_fts(db_session, force=True)
+        assert "error" in result
+        assert result["rebuilt"] is False
+        assert len(await matches()) == 1
