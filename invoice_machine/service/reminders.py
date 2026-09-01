@@ -152,6 +152,7 @@ async def send_due_reminders(session: AsyncSession, today: date | None = None) -
     "Today" is the date in the business's own timezone. Using the UTC date would
     misjudge how overdue an invoice is by a day for anyone far enough from UTC.
     """
+    from invoice_machine.service.common import run_per_row
     from invoice_machine.service.email import send_invoice_email
 
     profile = await BusinessProfile.get(session)
@@ -181,19 +182,17 @@ async def send_due_reminders(session: AsyncSession, today: date | None = None) -
     )
 
     results: list[dict] = []
-    # Re-fetch by id each iteration: a rollback in the except expires every
-    # loaded instance, and reading an expired attribute here would raise
-    # MissingGreenlet and abort the rest of the sweep.
-    for invoice_id in [invoice.id for invoice in candidates]:
-        invoice = await session.get(Invoice, invoice_id)
-        if invoice is None or invoice.amount_due <= 0:
-            continue
-        if not (invoice.client_email or "").strip():
-            continue
+    # Set before the risky part so the error path can report which reminder failed.
+    pending: dict = {}
+
+    async def send_one(invoice: Invoice) -> None:
+        pending.clear()
+        if invoice.amount_due <= 0 or not (invoice.client_email or "").strip():
+            return
 
         due_offsets = due_offsets_for(invoice, offsets, today)
         if not due_offsets:
-            continue
+            return
 
         # Send only the most recent offset; the earlier ones have been overtaken
         # and are recorded as sent so they cannot fire on later days.
@@ -201,25 +200,10 @@ async def send_due_reminders(session: AsyncSession, today: date | None = None) -
         superseded = due_offsets[:-1]
         days_relative = (today - invoice.due_date).days
         invoice_id = invoice.id
-        invoice_number = invoice.invoice_number
+        pending.update(invoice_number=invoice.invoice_number, offset=offset)
 
-        try:
-            subject, body = build_reminder_content(invoice, profile, days_relative)
-            result = await send_invoice_email(session, invoice_id, subject=subject, body=body)
-        except Exception as exc:
-            await session.rollback()
-            profile = await BusinessProfile.get(session)
-            logger.error("Reminder for invoice %s failed: %s", invoice_number, exc, exc_info=True)
-            results.append(
-                {
-                    "invoice_id": invoice_id,
-                    "invoice_number": invoice_number,
-                    "offset": offset,
-                    "success": False,
-                    "error": str(exc),
-                }
-            )
-            continue
+        subject, body = build_reminder_content(invoice, profile, days_relative)
+        result = await send_invoice_email(session, invoice_id, subject=subject, body=body)
 
         if result.get("success"):
             # Record the offsets only on a confirmed send, so a transient SMTP
@@ -242,7 +226,7 @@ async def send_due_reminders(session: AsyncSession, today: date | None = None) -
         results.append(
             {
                 "invoice_id": invoice_id,
-                "invoice_number": invoice_number,
+                "invoice_number": pending["invoice_number"],
                 "offset": offset,
                 "superseded_offsets": superseded,
                 "days_relative": days_relative,
@@ -251,5 +235,26 @@ async def send_due_reminders(session: AsyncSession, today: date | None = None) -
                 **({"error": result["error"]} if result.get("error") else {}),
             }
         )
+
+    async def record_failure(invoice_id: int, exc: Exception) -> None:
+        nonlocal profile
+        # The rollback expired the profile loaded above; the next reminder needs it.
+        profile = await BusinessProfile.get(session)
+        logger.error(
+            "Reminder for invoice %s failed: %s", pending.get("invoice_number"), exc, exc_info=True
+        )
+        results.append(
+            {
+                "invoice_id": invoice_id,
+                "invoice_number": pending.get("invoice_number"),
+                "offset": pending.get("offset"),
+                "success": False,
+                "error": str(exc),
+            }
+        )
+
+    await run_per_row(
+        session, Invoice, [invoice.id for invoice in candidates], send_one, record_failure
+    )
 
     return results

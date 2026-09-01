@@ -308,3 +308,15 @@ async def test_schema_bootstrap_runs_once(monkeypatch):
     await context.ensure_mcp_schema_initialized()
     await context.ensure_mcp_schema_initialized()
     assert calls == [True]
+
+
+def test_main_runs_the_stdio_transport(monkeypatch):
+    from unittest.mock import MagicMock
+
+    from invoice_machine.mcp import server
+
+    run = MagicMock()
+    monkeypatch.setattr(server.mcp, "run", run)
+    server.main()
+
+    assert run.called

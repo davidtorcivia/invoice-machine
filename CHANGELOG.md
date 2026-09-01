@@ -25,6 +25,14 @@ Notable changes to Invoice Machine. Format based on
   same error type.
 - Reusing a payment `idempotency_key` against a different invoice is an error
   instead of silently returning the other invoice's payment.
+- A database created before Alembic (application tables but no
+  `alembic_version`) is refused at startup with instructions to migrate it by
+  hand (`alembic stamp 001_initial`, then `alembic upgrade head`). It was
+  previously given a few missing columns and stamped current, which marked a
+  database still missing every table added since as up to date.
+- The startup catch-up jobs (overdue check, recurring invoices, payment
+  reminders) run only in the worker holding the scheduler lock, so a second
+  worker cannot generate the same recurring invoices at boot.
 - Minimum versions: `python-multipart` 0.0.31, `weasyprint` 68, `cryptography`
   48.0.1. CI tests on Python 3.11 and 3.14, the version the image ships.
 

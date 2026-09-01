@@ -58,7 +58,7 @@ def main():
     mcp.run()
 
 
-def run_http_server(host: str = "0.0.0.0", port: int = 8081):
+def run_http_server(host: str = "0.0.0.0", port: int = 8081):  # pragma: no cover - binds uvicorn
     """
     Run a standalone MCP server over Streamable HTTP for remote access.
 
