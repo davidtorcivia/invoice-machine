@@ -1,8 +1,7 @@
 """Tests for MCP resources and prompts.
 
-Resources are the read-only, addressable half of the server: a client should be
-able to fetch invoice://20250115-1 without going through a tool. These drive a
-real client so URI templating, parameter parsing, and error handling all run.
+These drive a real client so URI templating, parameter parsing, and error
+handling all run.
 """
 
 import json
@@ -40,7 +39,6 @@ async def test_invoice_is_addressable_by_its_number(mcp_db):
     payload = json.loads(_text(result))
     assert payload["invoice_number"] == number
     assert payload["total"] == "250.00"
-    # Reading an invoice should include what is on it.
     assert payload["items"], "expected line items in the invoice resource"
 
 

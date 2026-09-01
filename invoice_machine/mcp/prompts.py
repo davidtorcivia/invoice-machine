@@ -1,13 +1,7 @@
-"""MCP prompts: the handful of jobs this app actually gets used for.
+"""MCP prompts: user-invoked starting points for the common jobs.
 
-A prompt is a user-invoked starting point - the slash commands a client shows in
-its picker. These are deliberately few. A prompt earns its place only if it
-encodes something a user would otherwise have to remember to say: which tool to
-reach for, what to check first, what not to do.
-
-Each one is written to leave the irreversible step to the user. "Draft", "list",
-"propose" - none of them tell the model to send anything on its own initiative,
-because sending is the one action here that cannot be taken back.
+Each one leaves the irreversible step to the user: none tell the model to send
+anything on its own initiative, because sending cannot be taken back.
 """
 
 from __future__ import annotations

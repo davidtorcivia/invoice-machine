@@ -15,20 +15,7 @@ settings = get_settings()
 
 @mcp.tool(annotations=ADDITIVE_IDEMPOTENT)
 async def generate_pdf(invoice_id: int) -> dict:
-    """
-    Generate or regenerate PDF for an invoice.
-
-    Args:
-        invoice_id: The invoice's ID
-
-    Returns:
-        {
-            "invoice_id": 123,
-            "invoice_number": "20250115-1",
-            "pdf_url": "http://localhost:8080/api/invoices/123/pdf",
-            "generated_at": "2025-01-15T10:30:00Z"
-        }
-    """
+    """Generate or regenerate the PDF for an invoice."""
     from invoice_machine.pdf.generator import store_invoice_pdf
 
     async with get_session() as session:
@@ -47,19 +34,9 @@ async def generate_pdf(invoice_id: int) -> dict:
         }
 
 
-# ============================================================================
-# Trash Management
-# ============================================================================
-
-
 @mcp.tool(annotations=READ_ONLY)
 async def list_trash() -> list:
-    """
-    List all trashed invoices and clients.
-
-    Returns:
-        List of trashed items with days until auto-purge
-    """
+    """List trashed invoices and clients, with days until auto-purge."""
     async with get_session() as session:
         from sqlalchemy import select
 

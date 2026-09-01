@@ -97,19 +97,15 @@ class BusinessProfile(Base):
     # JSON array: [{id, name, instructions}]
     payment_methods: Mapped[str | None] = mapped_column(Text, nullable=True)
     theme_preference: Mapped[str] = mapped_column(String(20), default="system")
-    # App base URL for links and MCP configuration
     app_base_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
-    # Backup settings
     backup_enabled: Mapped[int] = mapped_column(Integer, default=1)  # Daily auto-backup
     backup_retention_days: Mapped[int] = mapped_column(Integer, default=30)
     backup_s3_enabled: Mapped[int] = mapped_column(Integer, default=0)
     # JSON: {endpoint_url, access_key_id, secret_access_key, bucket, region, prefix}
     backup_s3_config: Mapped[str | None] = mapped_column(Text, nullable=True)
-    # Tax settings (optional - disabled by default)
     default_tax_enabled: Mapped[int] = mapped_column(Integer, default=0)
     default_tax_rate: Mapped[Decimal] = mapped_column(DECIMAL(5, 2), default=Decimal("0.00"))
     default_tax_name: Mapped[str] = mapped_column(String(50), default="Tax")
-    # SMTP settings (optional - user must configure to enable email)
     smtp_enabled: Mapped[int] = mapped_column(Integer, default=0)
     smtp_host: Mapped[str | None] = mapped_column(String(255), nullable=True)
     smtp_port: Mapped[int] = mapped_column(Integer, default=587)
@@ -119,13 +115,11 @@ class BusinessProfile(Base):
     smtp_from_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
     smtp_from_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     smtp_use_tls: Mapped[int] = mapped_column(Integer, default=1)
-    # Email template settings (optional - defaults used if not set)
     email_subject_template: Mapped[str | None] = mapped_column(String(500), nullable=True)
     email_body_template: Mapped[str | None] = mapped_column(Text, nullable=True)
     # IANA timezone the business operates in. Reminder timing and "days until
     # due" are computed against this, not UTC.
     business_timezone: Mapped[str] = mapped_column(String(64), default="UTC", server_default="UTC")
-    # Automated payment reminders
     reminders_enabled: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     # Local hour (0-23) at which the daily reminder sweep runs.
     reminder_send_hour: Mapped[int] = mapped_column(Integer, default=9, server_default="9")
@@ -133,7 +127,6 @@ class BusinessProfile(Base):
     reminder_offsets: Mapped[str | None] = mapped_column(Text, nullable=True)
     reminder_subject_template: Mapped[str | None] = mapped_column(String(500), nullable=True)
     reminder_body_template: Mapped[str | None] = mapped_column(Text, nullable=True)
-    # Hosted payment links
     payments_enabled: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     payments_provider: Mapped[str | None] = mapped_column(String(20), nullable=True)
     # Both encrypted at rest (enc: prefix) via invoice_machine.crypto.
@@ -269,11 +262,8 @@ class Client(Base):
         back_populates="client",
         foreign_keys="Invoice.client_id",
         # No code reads client.invoices; the back-reference exists only for the
-        # Invoice.client side. "selectin" here made every client query eagerly
-        # load all of that client's invoices (and, via Invoice.items, their line
-        # items) — a hidden full-table load on hot dropdown/list endpoints.
-        # "raise" keeps the mapping but turns any accidental access into a loud
-        # error instead of a silent N+1.
+        # Invoice.client side. "raise" turns an accidental eager full-table load
+        # into a loud error instead of a silent N+1.
         lazy="raise",
     )
 
@@ -331,7 +321,7 @@ class Invoice(Base):
     payment_terms_days: Mapped[int] = mapped_column(Integer, default=30)
     currency_code: Mapped[str] = mapped_column(String(3), default="USD")
     subtotal: Mapped[Decimal] = mapped_column(DECIMAL(10, 2), default=0)
-    # Tax fields (optional - snapshot at invoice creation time)
+    # Snapshot of the applicable tax settings at invoice creation time.
     tax_enabled: Mapped[int] = mapped_column(Integer, default=0)
     tax_rate: Mapped[Decimal] = mapped_column(DECIMAL(5, 2), default=Decimal("0.00"))
     tax_name: Mapped[str] = mapped_column(String(50), default="Tax")
@@ -388,10 +378,9 @@ class Invoice(Base):
         back_populates="invoice",
         cascade="all, delete-orphan",
         order_by="Payment.payment_date",
-        # "raise", not "selectin": the balance lives in the denormalized
-        # amount_paid, and PaymentService queries the table directly, so eager
-        # loading only added a second query to every invoice list. Any accidental
-        # access is a loud error rather than a silent extra round trip.
+        # The balance lives in the denormalized amount_paid and PaymentService
+        # queries this table directly, so "raise" keeps eager loading from adding
+        # a second query to every invoice list.
         lazy="raise",
     )
 
@@ -400,7 +389,6 @@ class Invoice(Base):
         Index("idx_invoices_status", "status"),
         Index("idx_invoices_client", "client_id"),
         Index("idx_invoices_deleted", "deleted_at"),
-        # Composite indexes for common query patterns
         Index("idx_invoices_status_deleted", "status", "deleted_at"),
         Index("idx_invoices_client_status", "client_id", "status"),
         Index("idx_invoices_date_status", "issue_date", "status"),
@@ -534,12 +522,9 @@ class Payment(Base):
         Index("idx_payments_date", "payment_date"),
         # Webhook idempotency: one provider event can only ever land once.
         Index("idx_payments_provider_external", "provider", "external_id", unique=True),
-        # Caller idempotency, on the key alone rather than scoped by provider.
-        # Manually recorded payments leave provider NULL, and a unique index
-        # treats NULLs as distinct - so a (provider, idempotency_key) index
-        # would let two NULL-provider rows share a key and enforce nothing.
-        # Keys are only ever set on the manual path, so they need no scoping.
-        # NULL keys still do not collide, leaving unkeyed payments unconstrained.
+        # Caller idempotency, on the key alone: keys are only set on the manual
+        # path (provider NULL), and a unique index treats NULLs as distinct, so a
+        # (provider, idempotency_key) index would enforce nothing.
         Index("uq_payments_idempotency_key", "idempotency_key", unique=True),
     )
 
@@ -555,13 +540,7 @@ def _looks_like_session_digest(token: str) -> bool:
 
 
 class Session(Base):
-    """Database-backed user session for secure session management.
-
-    Replaces in-memory session storage for:
-    - Persistence across server restarts
-    - Multi-instance scalability
-    - Session audit trail
-    """
+    """Database-backed user session."""
 
     __tablename__ = "sessions"
 
@@ -571,9 +550,7 @@ class Session(Base):
     user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False)
     expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
-    # CSRF token for form protection
     csrf_token: Mapped[str] = mapped_column(String(64), nullable=False)
-    # Optional: track session metadata for security auditing
     user_agent: Mapped[str | None] = mapped_column(String(500), nullable=True)
     ip_address: Mapped[str | None] = mapped_column(String(45), nullable=True)  # IPv6 max length
 
@@ -695,7 +672,6 @@ class RecurringSchedule(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     client_id: Mapped[int] = mapped_column(Integer, ForeignKey("clients.id"), nullable=False)
-    # Schedule name/description
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     # Frequency: daily, weekly, monthly, quarterly, yearly
     frequency: Mapped[str] = mapped_column(String(20), nullable=False)
@@ -705,7 +681,6 @@ class RecurringSchedule(Base):
     schedule_month: Mapped[int | None] = mapped_column(Integer, nullable=True)
     # Which month within each quarter (1-3) for quarterly schedules.
     quarter_month: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
-    # Invoice template fields
     currency_code: Mapped[str] = mapped_column(String(3), default="USD")
     payment_terms_days: Mapped[int] = mapped_column(Integer, default=30)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -726,13 +701,11 @@ class RecurringSchedule(Base):
     tax_enabled: Mapped[int | None] = mapped_column(Integer, nullable=True)
     tax_rate: Mapped[Decimal | None] = mapped_column(DECIMAL(5, 2), nullable=True)
     tax_name: Mapped[str | None] = mapped_column(String(50), nullable=True)
-    # Schedule status
     is_active: Mapped[int] = mapped_column(Integer, default=1)
     next_invoice_date: Mapped[date] = mapped_column(Date, nullable=False)
     last_invoice_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("invoices.id"), nullable=True
     )
-    # Timestamps
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now, onupdate=utc_now)
 
@@ -745,7 +718,6 @@ class RecurringSchedule(Base):
         Index("idx_recurring_client", "client_id"),
         Index("idx_recurring_next_date", "next_invoice_date"),
         Index("idx_recurring_active", "is_active"),
-        # Composite index for processing due schedules
         Index("idx_recurring_active_next_date", "is_active", "next_invoice_date"),
     )
 
@@ -776,10 +748,8 @@ class RecurringSchedule(Base):
             return []
 
 
-# Engine and session management
 settings = get_settings()
 
-# Ensure database URL uses async driver
 db_url = settings.database_url
 if db_url.startswith("sqlite://"):
     db_url = db_url.replace("sqlite://", "sqlite+aiosqlite://", 1)
@@ -818,7 +788,6 @@ def register_sqlite_pragmas(target_engine) -> None:
 engine = create_async_engine(
     db_url,
     echo=False,
-    # SQLite connection pool configuration
     pool_pre_ping=True,  # Verify connections before use
     connect_args={"check_same_thread": False},  # Allow multi-threaded access
 )

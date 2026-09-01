@@ -1,15 +1,11 @@
-"""Regression tests for the 2026-07 validation/robustness audit fixes."""
+"""Regression tests for input validation and robustness at the API boundary."""
 
 import pytest
 
 
 @pytest.mark.asyncio
 async def test_non_numeric_default_tax_rate_is_rejected(test_client):
-    """A non-numeric tax rate must 422 at the schema, not 500 in the DB driver.
-
-    default_tax_rate was typed as a free-form string, so "abc" reached the DECIMAL
-    column and raised a StatementError.
-    """
+    """A non-numeric tax rate must 422 at the schema, not 500 in the DB driver."""
     response = await test_client.put("/api/profile", json={"default_tax_rate": "abc"})
     assert response.status_code == 422
 
@@ -28,7 +24,7 @@ async def test_out_of_range_default_tax_rate_is_rejected(test_client):
 
 @pytest.mark.asyncio
 async def test_malformed_payment_methods_json_is_rejected(test_client):
-    """Unparseable payment_methods used to be stored, then silently read as []."""
+    """Unparseable payment_methods must be rejected, not stored and read back as []."""
     response = await test_client.put("/api/profile", json={"payment_methods": "{not json at all"})
     assert response.status_code == 422
 
@@ -66,11 +62,7 @@ async def test_duplicate_custom_invoice_number_returns_400(test_client):
 
 @pytest.mark.asyncio
 async def test_pdf_endpoint_does_not_rerender_a_fresh_pdf(test_client, monkeypatch):
-    """Fetching a PDF twice must render once.
-
-    updated_at's onupdate default always landed after pdf_generated_at, so every
-    invoice looked stale forever and each fetch re-ran WeasyPrint.
-    """
+    """Fetching a PDF twice must render once."""
     renders = []
 
     async def fake_generate(session, invoice):
@@ -171,9 +163,8 @@ async def test_recurring_schedule_rejects_unknown_client(test_client):
 async def test_invoice_response_exposes_payment_and_link_fields(test_client):
     """The REST response model must not silently strip new invoice fields.
 
-    response_model=InvoiceSchema filters the serialized dict, so a field added to
-    the model and serializer but not to the schema disappears from every invoice
-    response and the frontend never sees it.
+    response_model=InvoiceSchema filters the serialized dict, so a field missing
+    from the schema disappears from every invoice response.
     """
     created = await test_client.post(
         "/api/invoices",

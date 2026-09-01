@@ -1,12 +1,8 @@
 """Keep the frontend's API typedefs honest about what the API actually returns.
 
-`frontend/src/lib/types.js` describes the shapes the SPA consumes. Nothing makes
-the browser check those against reality, so a field added to a serializer and
-not to the typedef (or removed from one side only) would go unnoticed until
-something rendered `undefined`.
-
-This parses the typedefs and compares them field-by-field with what the
-serializers in `invoice_machine/presenters.py` emit.
+Parses the @typedef blocks in `frontend/src/lib/types.js` and compares them
+field-by-field with what the serializers in `invoice_machine/presenters.py`
+emit; nothing else checks the SPA's shapes against reality.
 """
 
 import datetime
@@ -33,7 +29,6 @@ def _typedef_fields(source: str, name: str) -> set[str]:
     match = re.search(rf"@typedef \{{Object\}} {name}\b(.*?)(?=\n \*/)", source, re.S)
     if not match:
         raise AssertionError(f"types.js has no @typedef for {name}")
-    # @property {type} name  /  @property {type} [name] for optional
     return {
         field.strip("[]")
         for field in re.findall(r"@property \{[^}]*\}\s+(\[?[A-Za-z_][\w]*\]?)", match.group(1))

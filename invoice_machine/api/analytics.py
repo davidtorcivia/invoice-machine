@@ -18,7 +18,6 @@ from invoice_machine.utils import utc_now
 
 router = APIRouter(prefix="/api/analytics", tags=["analytics"])
 
-# Reasonable limits to prevent excessive queries
 MAX_CLIENT_LIMIT = 100
 
 
@@ -64,8 +63,7 @@ async def get_consolidated_summary(
 ) -> dict:
     """Opt-in single-currency roll-up using each invoice's captured FX rate.
 
-    Reports how many invoices could not be converted instead of silently
-    dropping or mis-summing them.
+    Invoices with no recorded rate are excluded and counted in ``uncovered``.
     """
     return await analytics_service.consolidated_summary(
         session,

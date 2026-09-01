@@ -13,10 +13,8 @@
 
   let { children }: Props = $props();
 
-  // Auth-free routes
   const publicRoutes = ['/login', '/setup'];
 
-  // Page titles based on route
   const pageTitles = {
     '/': 'Dashboard',
     '/dashboard': 'Dashboard',
@@ -33,12 +31,9 @@
   };
 
   function getPageTitle(pathname) {
-    // Check exact match first
     if (pageTitles[pathname]) return pageTitles[pathname];
-    // Check for invoice detail/edit
     if (pathname.match(/^\/invoices\/\d+\/edit$/)) return 'Edit Invoice';
     if (pathname.match(/^\/invoices\/\d+$/)) return 'Invoice Details';
-    // Check for client detail/edit
     if (pathname.match(/^\/clients\/\d+\/edit$/)) return 'Edit Client';
     if (pathname.match(/^\/clients\/\d+$/)) return 'Client Details';
     return 'Invoice Machine';

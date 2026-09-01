@@ -41,7 +41,6 @@ async def test_custom_number_preserved_on_date_change(db_session, test_client):
     )
     assert inv.invoice_number == "INV-ACME-007"
 
-    # Changing the date must NOT clobber a manually-assigned number.
     updated = await InvoiceService.update_invoice(db_session, inv.id, issue_date=date(2026, 3, 3))
     assert updated.invoice_number == "INV-ACME-007"
 
@@ -81,7 +80,6 @@ async def test_update_kwargs_cannot_set_computed_totals(db_session, test_client)
     inv = await InvoiceService.create_invoice(db_session, client_id=test_client.id, items=_items())
     assert inv.total == Decimal("100.00")
 
-    # Attempt to inject a bogus total via kwargs — must be ignored.
     updated = await InvoiceService.update_invoice(db_session, inv.id, total=Decimal("99999.00"))
     assert updated.total == Decimal("100.00")
 
@@ -118,7 +116,7 @@ async def test_recurring_catches_up_missed_periods(db_session, test_client, monk
     await db_session.refresh(schedule)
     assert schedule.next_invoice_date == date(2026, 5, 1)
 
-    # Running again generates nothing new (idempotent once caught up).
+    # Catching up is idempotent: a second sweep generates nothing.
     again = await RecurringService.process_due_schedules(db_session)
     assert [r for r in again if r.get("success")] == []
 
@@ -127,12 +125,9 @@ async def test_recurring_catches_up_missed_periods(db_session, test_client, monk
 async def test_trigger_consumes_business_due_date_so_sweep_cannot_double_bill(
     db_session, business_profile, test_client, monkeypatch
 ):
-    """Generate-now on the local due morning must advance the schedule.
-
-    2026-08-17 23:00 UTC is 2026-08-18 08:00 in Asia/Tokyo. If trigger still
-    used UTC today, it would date the invoice 2026-08-17 and leave next_invoice_date
-    at 2026-08-18, so the next sweep would bill again.
-    """
+    """Generate-now on the local due morning must advance the schedule."""
+    # 23:00 UTC is 08:00 next day in Asia/Tokyo; dating the invoice off UTC today
+    # would leave next_invoice_date untouched and let the next sweep bill again.
     frozen = datetime(2026, 8, 17, 23, 0, tzinfo=UTC)
 
     def _now():

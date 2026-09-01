@@ -84,7 +84,6 @@ async def list_trash(
             )
         )
 
-    # Sort by deletion date, newest first
     items.sort(key=lambda x: x.deleted_at, reverse=True)
     return items
 

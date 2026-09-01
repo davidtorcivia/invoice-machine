@@ -1,15 +1,4 @@
-"""Tests for email templates feature.
-
-This test module covers:
-- Template expansion function (expand_template)
-- Email templates API endpoints (GET/PUT /api/settings/email-templates, POST /api/invoices/{id}/email-preview)
-- MCP tools (get_email_templates, update_email_templates, preview_invoice_email)
-- Security (authentication, validation, input handling)
-
-Note: API endpoint, MCP tool, and some security tests require Python 3.10+ due to
-the codebase's use of union type syntax (e.g., `Decimal | str`). These tests are
-marked with @pytest.mark.skipif for Python 3.9 compatibility.
-"""
+"""Tests for email templates feature."""
 
 from datetime import date, timedelta
 from decimal import Decimal
@@ -25,17 +14,12 @@ from invoice_machine.email import (
     expand_template,
 )
 
-# ============================================================================
-# Template Expansion Tests
-# ============================================================================
-
 
 class TestTemplateExpansion:
     """Tests for expand_template() function."""
 
     @pytest.mark.asyncio
     async def test_expand_invoice_number(self, business_profile, invoice_with_client):
-        """Invoice number placeholder is expanded."""
         template = "Invoice: {invoice_number}"
         result = expand_template(template, invoice_with_client, business_profile)
         assert result == "Invoice: 20250120-1"
@@ -49,49 +33,42 @@ class TestTemplateExpansion:
 
     @pytest.mark.asyncio
     async def test_expand_document_type_invoice(self, business_profile, invoice_with_client):
-        """Document type shows 'Invoice' for invoices."""
         template = "Type: {document_type}"
         result = expand_template(template, invoice_with_client, business_profile)
         assert result == "Type: Invoice"
 
     @pytest.mark.asyncio
     async def test_expand_document_type_quote(self, business_profile, quote_with_client):
-        """Document type shows 'Quote' for quotes."""
         template = "Type: {document_type}"
         result = expand_template(template, quote_with_client, business_profile)
         assert result == "Type: Quote"
 
     @pytest.mark.asyncio
     async def test_expand_document_type_lower(self, business_profile, invoice_with_client):
-        """Document type lower shows lowercase version."""
         template = "attached {document_type_lower}"
         result = expand_template(template, invoice_with_client, business_profile)
         assert result == "attached invoice"
 
     @pytest.mark.asyncio
     async def test_expand_client_name(self, business_profile, invoice_with_client):
-        """Client name placeholder is expanded."""
         template = "Dear {client_name},"
         result = expand_template(template, invoice_with_client, business_profile)
         assert result == "Dear John Doe,"
 
     @pytest.mark.asyncio
     async def test_expand_client_business_name(self, business_profile, invoice_with_client):
-        """Client business name placeholder is expanded."""
         template = "For: {client_business_name}"
         result = expand_template(template, invoice_with_client, business_profile)
         assert result == "For: Acme Corp"
 
     @pytest.mark.asyncio
     async def test_expand_client_email(self, business_profile, invoice_with_client):
-        """Client email placeholder is expanded."""
         template = "Email: {client_email}"
         result = expand_template(template, invoice_with_client, business_profile)
         assert result == "Email: john@acme.com"
 
     @pytest.mark.asyncio
     async def test_expand_total_formatting(self, business_profile, invoice_with_client):
-        """Total is formatted with currency."""
         template = "Amount: {total}"
         result = expand_template(template, invoice_with_client, business_profile)
         assert "$100.00" in result
@@ -105,7 +82,6 @@ class TestTemplateExpansion:
 
     @pytest.mark.asyncio
     async def test_expand_subtotal(self, business_profile, invoice_with_client):
-        """Subtotal is formatted with currency."""
         template = "Subtotal: {subtotal}"
         result = expand_template(template, invoice_with_client, business_profile)
         assert "$100.00" in result
@@ -115,8 +91,7 @@ class TestTemplateExpansion:
         """Due date is formatted as 'Month DD, YYYY'."""
         template = "Due: {due_date}"
         result = expand_template(template, invoice_with_client, business_profile)
-        # Should contain month name and year
-        assert "20" in result  # Year
+        assert "20" in result
         assert "Due:" in result
 
     @pytest.mark.asyncio
@@ -124,18 +99,16 @@ class TestTemplateExpansion:
         """Issue date is formatted as 'Month DD, YYYY'."""
         template = "Issued: {issue_date}"
         result = expand_template(template, invoice_with_client, business_profile)
-        assert "20" in result  # Year
+        assert "20" in result
 
     @pytest.mark.asyncio
     async def test_expand_your_name(self, business_profile, invoice_with_client):
-        """Your name from profile is expanded."""
         template = "Regards, {your_name}"
         result = expand_template(template, invoice_with_client, business_profile)
         assert result == "Regards, Test User"
 
     @pytest.mark.asyncio
     async def test_expand_business_name(self, business_profile, invoice_with_client):
-        """Business name from profile is expanded."""
         template = "From: {business_name}"
         result = expand_template(template, invoice_with_client, business_profile)
         assert result == "From: Test Business LLC"
@@ -153,8 +126,6 @@ class TestTemplateExpansion:
         template = "For: {line_items}"
         result = expand_template(template, invoice_with_client, business_profile)
         assert result == "For: services rendered"
-
-    # Edge cases
 
     @pytest.mark.asyncio
     async def test_expand_missing_client_name_uses_default(self, db_session, business_profile):
@@ -219,14 +190,12 @@ class TestTemplateExpansion:
     async def test_expand_unknown_placeholder_unchanged(
         self, business_profile, invoice_with_client
     ):
-        """Unknown placeholders are left unchanged."""
         template = "Value: {unknown_placeholder}"
         result = expand_template(template, invoice_with_client, business_profile)
         assert result == "Value: {unknown_placeholder}"
 
     @pytest.mark.asyncio
     async def test_expand_empty_template(self, business_profile, invoice_with_client):
-        """Empty template returns empty string."""
         result = expand_template("", invoice_with_client, business_profile)
         assert result == ""
 
@@ -234,53 +203,42 @@ class TestTemplateExpansion:
     async def test_expand_template_with_no_placeholders(
         self, business_profile, invoice_with_client
     ):
-        """Template with no placeholders is returned unchanged."""
         template = "This is a plain message with no variables."
         result = expand_template(template, invoice_with_client, business_profile)
         assert result == template
 
     @pytest.mark.asyncio
     async def test_expand_multiple_same_placeholder(self, business_profile, invoice_with_client):
-        """Multiple instances of same placeholder are all expanded."""
         template = "{invoice_number} - {invoice_number}"
         result = expand_template(template, invoice_with_client, business_profile)
         assert result == "20250120-1 - 20250120-1"
 
     @pytest.mark.asyncio
     async def test_default_subject_template_expands(self, business_profile, invoice_with_client):
-        """Default subject template expands correctly."""
         result = expand_template(DEFAULT_SUBJECT_TEMPLATE, invoice_with_client, business_profile)
         assert "Invoice" in result
         assert "20250120-1" in result
 
     @pytest.mark.asyncio
     async def test_default_body_template_expands(self, business_profile, invoice_with_client):
-        """Default body template expands correctly."""
         result = expand_template(DEFAULT_BODY_TEMPLATE, invoice_with_client, business_profile)
         assert "John Doe" in result
         assert "20250120-1" in result
         assert "$100.00" in result
         assert "Test User" in result
-        assert "services rendered" in result  # Default when no line items
+        assert "services rendered" in result
 
     @pytest.mark.asyncio
     async def test_default_body_template_expands_line_items(
         self, business_profile, invoice_with_items
     ):
-        """Default body template expands line items correctly."""
         result = expand_template(DEFAULT_BODY_TEMPLATE, invoice_with_items, business_profile)
         assert "Website Development, Logo Design" in result
-
-
-# ============================================================================
-# API Endpoint Tests
-# ============================================================================
 
 
 @pytest_asyncio.fixture(scope="function")
 async def api_client():
     """Test client for HTTP requests with authentication."""
-    # Import app lazily to avoid Python version issues at module level
     from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
     from invoice_machine.api.auth import SESSION_COOKIE_NAME, create_session
@@ -290,7 +248,6 @@ async def api_client():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
-    # Create session maker with test engine
     import invoice_machine.database
 
     original_maker = invoice_machine.database.async_session_maker
@@ -298,7 +255,6 @@ async def api_client():
         engine, expire_on_commit=False
     )
 
-    # Create business profile and test user
     async with invoice_machine.database.async_session_maker() as session:
         from invoice_machine.database import User
 
@@ -310,7 +266,6 @@ async def api_client():
         )
         session.add(profile)
 
-        # Create test user
         user = User(
             id=1,
             username="testuser",
@@ -319,13 +274,11 @@ async def api_client():
         session.add(user)
         await session.commit()
 
-    # Create session token with CSRF
     async with invoice_machine.database.async_session_maker() as session:
         user_session = await create_session(session, user_id=1)
         session_token = user_session.cookie_token
         csrf_token = user_session.csrf_token
 
-    # Create client with session cookie
     client = AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
     client.cookies.set(SESSION_COOKIE_NAME, session_token)
     client.headers.update({"X-CSRF-Token": csrf_token})
@@ -333,7 +286,6 @@ async def api_client():
     yield client
     await client.aclose()
 
-    # Restore original
     invoice_machine.database.async_session_maker = original_maker
     await engine.dispose()
 
@@ -344,7 +296,6 @@ async def api_client_with_invoice(api_client):
     import invoice_machine.database
 
     async with invoice_machine.database.async_session_maker() as session:
-        # Create a client first
         client = Client(
             name="API Test Client",
             business_name="API Test Corp",
@@ -354,7 +305,6 @@ async def api_client_with_invoice(api_client):
         await session.commit()
         await session.refresh(client)
 
-        # Create invoice
         invoice = Invoice(
             invoice_number="20250120-API",
             document_type="invoice",
@@ -379,11 +329,8 @@ async def api_client_with_invoice(api_client):
 class TestEmailTemplatesEndpoints:
     """Tests for email templates API endpoints."""
 
-    # GET /api/settings/email-templates
-
     @pytest.mark.asyncio
     async def test_get_templates_returns_defaults_when_not_set(self, api_client):
-        """Returns default templates when none are set."""
         response = await api_client.get("/api/settings/email-templates")
         assert response.status_code == 200
 
@@ -395,7 +342,6 @@ class TestEmailTemplatesEndpoints:
 
     @pytest.mark.asyncio
     async def test_get_templates_includes_available_placeholders(self, api_client):
-        """Returns list of available placeholders."""
         response = await api_client.get("/api/settings/email-templates")
         assert response.status_code == 200
 
@@ -410,18 +356,14 @@ class TestEmailTemplatesEndpoints:
 
     @pytest.mark.asyncio
     async def test_get_templates_requires_authentication(self):
-        """Endpoint requires authentication."""
         from invoice_machine.main import app
 
         client = AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
         response = await client.get("/api/settings/email-templates")
         assert response.status_code == 401
 
-    # PUT /api/settings/email-templates
-
     @pytest.mark.asyncio
     async def test_update_subject_template(self, api_client):
-        """Can update subject template."""
         response = await api_client.put(
             "/api/settings/email-templates",
             json={"email_subject_template": "Custom Subject: {invoice_number}"},
@@ -433,7 +375,6 @@ class TestEmailTemplatesEndpoints:
 
     @pytest.mark.asyncio
     async def test_update_body_template(self, api_client):
-        """Can update body template."""
         custom_body = "Hello {client_name},\n\nYour total is {total}."
         response = await api_client.put(
             "/api/settings/email-templates",
@@ -446,7 +387,6 @@ class TestEmailTemplatesEndpoints:
 
     @pytest.mark.asyncio
     async def test_update_both_templates(self, api_client):
-        """Can update both templates at once."""
         response = await api_client.put(
             "/api/settings/email-templates",
             json={
@@ -463,13 +403,11 @@ class TestEmailTemplatesEndpoints:
     @pytest.mark.asyncio
     async def test_clear_template_with_empty_string(self, api_client):
         """Empty string clears template (uses default)."""
-        # First set a template
         await api_client.put(
             "/api/settings/email-templates",
             json={"email_subject_template": "Custom Subject"},
         )
 
-        # Then clear it
         response = await api_client.put(
             "/api/settings/email-templates",
             json={"email_subject_template": ""},
@@ -481,8 +419,6 @@ class TestEmailTemplatesEndpoints:
 
     @pytest.mark.asyncio
     async def test_get_templates_returns_saved_templates(self, api_client):
-        """Get returns previously saved templates."""
-        # Save templates
         await api_client.put(
             "/api/settings/email-templates",
             json={
@@ -491,7 +427,6 @@ class TestEmailTemplatesEndpoints:
             },
         )
 
-        # Get them back
         response = await api_client.get("/api/settings/email-templates")
         assert response.status_code == 200
 
@@ -501,7 +436,6 @@ class TestEmailTemplatesEndpoints:
 
     @pytest.mark.asyncio
     async def test_update_requires_authentication(self):
-        """Update endpoint requires authentication."""
         from invoice_machine.main import app
 
         client = AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
@@ -511,11 +445,8 @@ class TestEmailTemplatesEndpoints:
         )
         assert response.status_code == 401
 
-    # POST /api/invoices/{id}/email-preview
-
     @pytest.mark.asyncio
     async def test_preview_with_default_templates(self, api_client_with_invoice):
-        """Preview uses default templates when none saved."""
         client, invoice_id = api_client_with_invoice
 
         response = await client.post(f"/api/invoices/{invoice_id}/email-preview", json={})
@@ -529,7 +460,6 @@ class TestEmailTemplatesEndpoints:
 
     @pytest.mark.asyncio
     async def test_preview_with_custom_templates(self, api_client_with_invoice):
-        """Preview uses provided custom templates."""
         client, invoice_id = api_client_with_invoice
 
         response = await client.post(
@@ -547,10 +477,8 @@ class TestEmailTemplatesEndpoints:
 
     @pytest.mark.asyncio
     async def test_preview_with_saved_templates(self, api_client_with_invoice):
-        """Preview uses saved templates when no overrides provided."""
         client, invoice_id = api_client_with_invoice
 
-        # Save templates
         await client.put(
             "/api/settings/email-templates",
             json={
@@ -559,7 +487,6 @@ class TestEmailTemplatesEndpoints:
             },
         )
 
-        # Preview without overrides should use saved
         response = await client.post(f"/api/invoices/{invoice_id}/email-preview", json={})
         assert response.status_code == 200
 
@@ -569,7 +496,6 @@ class TestEmailTemplatesEndpoints:
 
     @pytest.mark.asyncio
     async def test_preview_returns_invoice_info(self, api_client_with_invoice):
-        """Preview returns invoice number and recipient email."""
         client, invoice_id = api_client_with_invoice
 
         response = await client.post(f"/api/invoices/{invoice_id}/email-preview", json={})
@@ -581,23 +507,16 @@ class TestEmailTemplatesEndpoints:
 
     @pytest.mark.asyncio
     async def test_preview_invalid_invoice_returns_404(self, api_client):
-        """Preview returns 404 for invalid invoice ID."""
         response = await api_client.post("/api/invoices/99999/email-preview", json={})
         assert response.status_code == 404
 
     @pytest.mark.asyncio
     async def test_preview_requires_authentication(self):
-        """Preview endpoint requires authentication."""
         from invoice_machine.main import app
 
         client = AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
         response = await client.post("/api/invoices/1/email-preview", json={})
         assert response.status_code == 401
-
-
-# ============================================================================
-# MCP Tool Tests (using direct function calls)
-# ============================================================================
 
 
 class TestEmailTemplateMCPTools:
@@ -611,9 +530,8 @@ class TestEmailTemplateMCPTools:
 
         original_maker = invoice_machine.database.async_session_maker
         invoice_machine.database.async_session_maker = session_maker
-        # Schema already built via create_all; mark initialized so get_session()
-        # doesn't run real migrations (and open a never-closed connection)
-        # against the production database. The flag lives in mcp.context.
+        # Schema is already built via create_all; the mcp.context flag stops
+        # get_session() running real migrations against the production database.
         original_initialized = mcp_context._schema_initialized
         mcp_context._schema_initialized = True
         try:
@@ -624,7 +542,6 @@ class TestEmailTemplateMCPTools:
 
     @pytest.mark.asyncio
     async def test_mcp_get_templates_structure(self, db_session, business_profile):
-        """get_email_templates returns correct structure."""
         from invoice_machine.mcp.email_tools import get_email_templates
 
         result = await get_email_templates()
@@ -637,7 +554,6 @@ class TestEmailTemplateMCPTools:
 
     @pytest.mark.asyncio
     async def test_mcp_get_templates_returns_defaults(self, db_session, business_profile):
-        """get_email_templates returns None when no templates set."""
         from invoice_machine.mcp.email_tools import get_email_templates
 
         result = await get_email_templates()
@@ -648,7 +564,6 @@ class TestEmailTemplateMCPTools:
 
     @pytest.mark.asyncio
     async def test_mcp_update_subject_template(self, db_session, business_profile):
-        """update_email_templates updates subject."""
         from invoice_machine.mcp.email_tools import get_email_templates, update_email_templates
 
         result = await update_email_templates(
@@ -657,13 +572,11 @@ class TestEmailTemplateMCPTools:
 
         assert result["email_subject_template"] == "MCP Subject: {invoice_number}"
 
-        # Verify persisted
         get_result = await get_email_templates()
         assert get_result["email_subject_template"] == "MCP Subject: {invoice_number}"
 
     @pytest.mark.asyncio
     async def test_mcp_update_body_template(self, db_session, business_profile):
-        """update_email_templates updates body."""
         from invoice_machine.mcp.email_tools import update_email_templates
 
         result = await update_email_templates(email_body_template="MCP Body for {client_name}")
@@ -675,10 +588,8 @@ class TestEmailTemplateMCPTools:
         """update_email_templates clears templates with empty string."""
         from invoice_machine.mcp.email_tools import update_email_templates
 
-        # Set a template
         await update_email_templates(email_subject_template="Temporary")
 
-        # Clear it
         result = await update_email_templates(email_subject_template="")
 
         assert result["email_subject_template"] is None
@@ -687,7 +598,6 @@ class TestEmailTemplateMCPTools:
     async def test_mcp_preview_with_defaults(
         self, db_session, business_profile, invoice_with_client
     ):
-        """preview_invoice_email uses default templates."""
         from invoice_machine.mcp.email_tools import preview_invoice_email
 
         result = await preview_invoice_email(invoice_id=invoice_with_client.id)
@@ -701,7 +611,6 @@ class TestEmailTemplateMCPTools:
     async def test_mcp_preview_with_overrides(
         self, db_session, business_profile, invoice_with_client
     ):
-        """preview_invoice_email uses provided templates."""
         from invoice_machine.mcp.email_tools import preview_invoice_email
 
         result = await preview_invoice_email(
@@ -715,7 +624,6 @@ class TestEmailTemplateMCPTools:
 
     @pytest.mark.asyncio
     async def test_mcp_preview_invalid_invoice(self, db_session, business_profile):
-        """preview_invoice_email returns error for invalid invoice."""
         from invoice_machine.mcp.email_tools import preview_invoice_email
 
         result = await preview_invoice_email(invoice_id=99999)
@@ -724,17 +632,11 @@ class TestEmailTemplateMCPTools:
         assert "not found" in result["error"].lower()
 
 
-# ============================================================================
-# Security Tests
-# ============================================================================
-
-
 class TestEmailTemplateSecurity:
     """Security tests for email templates."""
 
     @pytest.mark.asyncio
     async def test_template_expansion_handles_special_chars(self, db_session, business_profile):
-        """Template expansion handles special characters in data."""
         invoice = Invoice(
             invoice_number="20250120-SEC",
             document_type="invoice",
@@ -753,7 +655,7 @@ class TestEmailTemplateSecurity:
 
         # Should contain the raw string (emails are plain text, not HTML)
         assert "O'Reilly & Sons" in result
-        assert "<script>" in result  # Plain text email preserves this
+        assert "<script>" in result
 
     @pytest.mark.asyncio
     async def test_template_api_requires_auth(self):
@@ -762,24 +664,20 @@ class TestEmailTemplateSecurity:
 
         client = AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
 
-        # GET
         response = await client.get("/api/settings/email-templates")
         assert response.status_code == 401
 
-        # PUT
         response = await client.put(
             "/api/settings/email-templates",
             json={"email_subject_template": "test"},
         )
         assert response.status_code == 401
 
-        # Preview
         response = await client.post("/api/invoices/1/email-preview", json={})
         assert response.status_code == 401
 
     @pytest.mark.asyncio
     async def test_template_max_length_validation(self, api_client):
-        """Template length is validated."""
         # Subject max is 500
         long_subject = "x" * 501
         response = await api_client.put(
@@ -790,7 +688,6 @@ class TestEmailTemplateSecurity:
 
     @pytest.mark.asyncio
     async def test_body_template_max_length_validation(self, api_client):
-        """Body template length is validated."""
         # Body max is 10000
         long_body = "x" * 10001
         response = await api_client.put(
@@ -801,7 +698,6 @@ class TestEmailTemplateSecurity:
 
     @pytest.mark.asyncio
     async def test_preview_respects_max_length(self, api_client_with_invoice):
-        """Preview endpoint validates template length."""
         client, invoice_id = api_client_with_invoice
 
         response = await client.post(

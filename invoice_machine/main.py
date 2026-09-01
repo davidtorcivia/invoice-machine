@@ -126,7 +126,6 @@ async def skill_manifest(request: Request):
 @app.get("/{path:path}")
 async def serve_spa(path: str):
     """Serve static files or fall back to index.html for SPA routing."""
-    # Try to serve the exact file
     if path:
         file_path = (STATIC_DIR / path).resolve()
         try:
@@ -137,7 +136,6 @@ async def serve_spa(path: str):
         if file_path.is_file():
             return FileResponse(file_path)
 
-    # Fall back to index.html for SPA routes
     index_path = STATIC_DIR / "index.html"
     if index_path.is_file():
         return FileResponse(index_path)

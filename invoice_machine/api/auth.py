@@ -1,11 +1,4 @@
-"""Authentication API endpoints.
-
-Implements secure session management with:
-- Database-backed sessions (persistent, scalable)
-- CSRF protection via double-submit cookie pattern
-- Password complexity requirements
-- Rate limiting on auth endpoints
-"""
+"""Authentication API endpoints."""
 
 import hashlib
 import re
@@ -47,11 +40,7 @@ _DUMMY_PASSWORD_HASH = ("ff" * 32) + "$600000$" + ("00" * 32)
 
 
 def validate_password_complexity(password: str) -> str | None:
-    """
-    Validate password meets complexity requirements.
-
-    Returns error message if invalid, None if valid.
-    """
+    """Validate password complexity; returns an error message, or None if valid."""
     if len(password) < PASSWORD_MIN_LENGTH:
         return f"Password must be at least {PASSWORD_MIN_LENGTH} characters"
 
@@ -68,7 +57,6 @@ def hash_password(password: str) -> str:
     Uses 600,000 iterations per OWASP recommendations for PBKDF2-HMAC-SHA256.
     """
     salt = secrets.token_bytes(32)
-    # PBKDF2 with SHA-256, 600k iterations (OWASP recommended)
     hash_bytes = hashlib.pbkdf2_hmac(
         "sha256", password.encode("utf-8"), salt, iterations=600_000, dklen=32
     )
@@ -86,7 +74,6 @@ def verify_password(password: str, password_hash: str) -> bool:
     try:
         parts = password_hash.split("$")
 
-        # Support both old SHA-256 format and new PBKDF2 format
         if len(parts) == 2:
             # Legacy SHA-256 format: salt$hash
             salt, stored_hash = parts
@@ -113,23 +100,13 @@ async def create_session(
     user_id: int,
     request: Request | None = None,
 ) -> DbSession:
-    """Create a new database-backed session with CSRF token.
-
-    Args:
-        db_session: Database session
-        user_id: User ID to create session for
-        request: Optional request for extracting user agent and IP
-
-    Returns:
-        Created Session object with token and csrf_token
-    """
+    """Create a new database-backed session with CSRF token."""
     expires_at = utc_now() + timedelta(days=SESSION_DURATION_DAYS)
 
     user_agent = None
     ip_address = None
     if request:
         user_agent = request.headers.get("user-agent", "")[:500]  # Truncate to fit
-        # Resolve the real client IP via the shared proxy-aware helper.
         from invoice_machine.rate_limit import get_client_ip
 
         ip_address = get_client_ip(request)
@@ -159,17 +136,10 @@ async def cleanup_expired_sessions(db_session: AsyncSession) -> int:
 
 
 async def get_session_user_id(token: str) -> int | None:
-    """
-    Validate a session token and return the user_id if valid.
+    """Validate a session token and return the user_id if valid.
 
-    This is a convenience wrapper that manages its own database session,
-    suitable for use in middleware where no session context exists.
-
-    Args:
-        token: The session token to validate
-
-    Returns:
-        The user_id if session is valid, None otherwise
+    Manages its own database session, for use in middleware where no session
+    context exists.
     """
     async with db.async_session_maker() as db_session:
         session = await get_session_data(db_session, token)
@@ -179,14 +149,7 @@ async def get_session_user_id(token: str) -> int | None:
 
 
 async def run_session_cleanup() -> int:
-    """
-    Run session cleanup with its own database session.
-
-    This is a convenience wrapper for use in background tasks.
-
-    Returns:
-        Number of sessions deleted
-    """
+    """Run session cleanup with its own database session."""
     async with db.async_session_maker() as db_session:
         count = await cleanup_expired_sessions(db_session)
         await db_session.commit()
@@ -233,7 +196,6 @@ def _set_session_cookies(response: Response, session: DbSession) -> None:
         samesite="strict" if settings.secure_cookies else "lax",
         max_age=SESSION_DURATION_DAYS * 24 * 60 * 60,
     )
-    # CSRF token cookie - readable by JavaScript for header submission
     response.set_cookie(
         CSRF_COOKIE_NAME,
         session.csrf_token,
@@ -249,11 +211,10 @@ async def verify_csrf_token(
     session_token: str,
     csrf_header: str | None,
 ) -> bool:
-    """
-    Verify CSRF token matches the session's token.
+    """Verify CSRF token matches the session's token.
 
-    Uses double-submit cookie pattern: client must send CSRF token
-    in X-CSRF-Token header that matches the session's csrf_token.
+    Double-submit cookie pattern: the client must send the CSRF token in an
+    X-CSRF-Token header matching the session's csrf_token.
     """
     if not csrf_header:
         return False
@@ -282,12 +243,10 @@ async def auth_status(
     if not session_token:
         return AuthStatus(authenticated=False, needs_setup=False)
 
-    # Get session from database
     user_session = await get_session_data(db_session, session_token)
     if not user_session:
         return AuthStatus(authenticated=False, needs_setup=False)
 
-    # Get username from the session's user relationship
     user = user_session.user
     if not user:
         return AuthStatus(authenticated=False, needs_setup=False)
@@ -301,7 +260,7 @@ async def auth_status(
 
 
 @router.post("/setup")
-@limiter.limit("3/minute")  # Reduced from 5/min for security
+@limiter.limit("3/minute")
 async def setup(
     request: Request,
     data: SetupRequest,
@@ -313,18 +272,16 @@ async def setup(
     if user_count > 0:
         raise HTTPException(status_code=400, detail="Setup already completed")
 
-    # Normalize username to lowercase
     username = data.username.strip().lower()
 
     if len(username) < 3:
         raise HTTPException(status_code=400, detail="Username must be at least 3 characters")
 
-    # Validate password complexity
     password_error = validate_password_complexity(data.password)
     if password_error:
         raise HTTPException(status_code=400, detail=password_error)
 
-    # Create user. PBKDF2 (600k iterations) is ~hundreds of ms of pure CPU; run it
+    # PBKDF2 (600k iterations) is ~hundreds of ms of pure CPU; run it
     # off the event loop so it can't stall other in-flight requests.
     user = User(
         username=username,
@@ -338,7 +295,6 @@ async def setup(
         raise HTTPException(status_code=400, detail="Setup already completed")
     await db_session.refresh(user)
 
-    # Create database-backed session with CSRF token
     user_session = await create_session(db_session, user.id, request)
     _set_session_cookies(response, user_session)
 
@@ -346,7 +302,7 @@ async def setup(
 
 
 @router.post("/login")
-@limiter.limit("3/minute")  # Reduced from 5/min for security
+@limiter.limit("3/minute")
 async def login(
     request: Request,
     data: LoginRequest,
@@ -371,7 +327,6 @@ async def login(
         user.password_hash = await run_in_threadpool(hash_password, data.password)
         await db_session.commit()
 
-    # Create database-backed session with CSRF token
     user_session = await create_session(db_session, user.id, request)
     _set_session_cookies(response, user_session)
 

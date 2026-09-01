@@ -1,8 +1,7 @@
-"""HTTP-level tests for recording payments, focused on retry safety.
+"""HTTP-level tests for recording payments.
 
-The service layer is covered in tests/test_payments.py. These exercise the one
-thing only the endpoint owns: the optional ``Idempotency-Key`` header, which is
-what stops a double-submitted form from recording a payment twice.
+The service layer is covered in tests/test_payments.py; these exercise the one
+thing only the endpoint owns: the optional ``Idempotency-Key`` header.
 """
 
 import pytest
@@ -25,9 +24,8 @@ async def _sent_invoice(test_client, unit_price="100.00"):
 async def test_payment_api_honours_idempotency_key(test_client):
     """A double-submitted form must not record the payment twice.
 
-    Uses a partial payment on purpose: a repeated *full* payment was already
-    rejected by the outstanding-balance check, so it would pass regardless of
-    whether the key works.
+    Uses a partial payment on purpose: a repeated full payment is already
+    rejected by the outstanding-balance check.
     """
     invoice_id = await _sent_invoice(test_client)
 

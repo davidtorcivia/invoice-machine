@@ -18,7 +18,6 @@ from invoice_machine.utils import confined_file, sanitize_filename_component, ut
 
 settings = get_settings()
 
-# Set up Jinja2 environment
 template_dir = Path(__file__).parent
 env = Environment(
     loader=FileSystemLoader(template_dir),
@@ -26,7 +25,6 @@ env = Environment(
 )
 
 
-# Register custom filters
 def strftime_filter(date_obj, format_str="%m/%d/%y"):
     """Format a date object as a string."""
     if date_obj is None:
@@ -91,10 +89,8 @@ def _pdf_url_fetcher(url: str):
 
 
 def _generate_pdf_sync(html: str, pdf_path: Path) -> None:
-    """
-    Synchronous PDF generation using WeasyPrint.
+    """Render the PDF synchronously; call it off the event loop.
 
-    This is called in a thread pool to avoid blocking the async event loop.
     The render goes to a temp file in the same directory and is then moved into
     place with os.replace, so a concurrent reader (or a render that fails
     halfway) can never observe a truncated PDF at the destination path.
@@ -144,11 +140,7 @@ def _read_logo_bytes(business: BusinessProfile) -> bytes | None:
 
 
 def get_logo_data_uri(business: BusinessProfile) -> str | None:
-    """Get the logo as a complete ``data:`` URI with a content-derived MIME type.
-
-    The template previously hardcoded ``image/png`` for every logo, even though
-    JPEG/GIF/WebP uploads are allowed.
-    """
+    """Get the logo as a complete ``data:`` URI with a content-derived MIME type."""
     data = _read_logo_bytes(business)
     if data is None:
         return None
@@ -157,15 +149,9 @@ def get_logo_data_uri(business: BusinessProfile) -> str | None:
 
 
 async def generate_pdf(session: AsyncSession, invoice: Invoice) -> str:
-    """
-    Generate PDF for an invoice.
-
-    Returns the relative path to the generated PDF file.
-    """
-    # Get business profile
+    """Render the invoice PDF and return its path relative to the data directory."""
     business = await BusinessProfile.get_or_create(session)
 
-    # Get invoice items (sorted)
     from sqlalchemy import select
 
     result = await session.execute(
@@ -175,19 +161,15 @@ async def generate_pdf(session: AsyncSession, invoice: Invoice) -> str:
     )
     items = result.scalars().all()
 
-    # Determine if any items use hours
     has_hours = any(getattr(item, "unit_type", "qty") == "hours" for item in items)
 
-    # Get payment instructions from selected payment methods
     show_payment_instructions = bool(getattr(invoice, "show_payment_instructions", True))
     payment_instructions = None
     selected_payment_methods = getattr(invoice, "selected_payment_methods_list", [])
 
-    # Build payment instructions from selected methods
     if selected_payment_methods:
         available_methods = getattr(business, "payment_methods_list", [])
 
-        # Filter to selected methods and build instructions
         if available_methods:
             selected_methods_list = []
             for method in available_methods:
@@ -196,11 +178,9 @@ async def generate_pdf(session: AsyncSession, invoice: Invoice) -> str:
 
             if selected_methods_list:
                 if len(selected_methods_list) == 1:
-                    # Single method - just show instructions
                     method = selected_methods_list[0]
                     payment_instructions = method.get("instructions", "")
                 else:
-                    # Multiple methods - show name and instructions for each
                     instructions_parts = []
                     for method in selected_methods_list:
                         name = method.get("name", "")
@@ -211,23 +191,17 @@ async def generate_pdf(session: AsyncSession, invoice: Invoice) -> str:
                             instructions_parts.append(instructions)
                     payment_instructions = "\n\n".join(instructions_parts)
 
-    # Fall back to default payment instructions if no methods selected but show is enabled
     if show_payment_instructions and not payment_instructions:
         payment_instructions = getattr(business, "default_payment_instructions", None)
 
-    # Load template
     template = env.get_template("template.html")
 
-    # Get logo as a self-describing data: URI (MIME type derived from content)
     logo_data_uri = get_logo_data_uri(business)
 
-    # Determine if we should show payment section
-    # Show if we have payment instructions (from selected methods or default)
     show_payment_section = bool(
         payment_instructions and (selected_payment_methods or show_payment_instructions)
     )
 
-    # Render HTML
     html = template.render(
         business=business,
         invoice=invoice,
@@ -246,10 +220,8 @@ async def generate_pdf(session: AsyncSession, invoice: Invoice) -> str:
     pdf_filename = invoice_pdf_filename(invoice)
     pdf_path = settings.pdf_dir / pdf_filename
 
-    # Generate PDF using WeasyPrint in a thread pool to avoid blocking
     await run_in_threadpool(_generate_pdf_sync, html, pdf_path)
 
-    # Return relative path for storage
     return f"pdfs/{pdf_filename}"
 
 

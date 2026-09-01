@@ -1,35 +1,13 @@
-"""Confirmation prompts for tools whose effects leave the building.
-
-Most tools here are recoverable: a soft-deleted invoice sits in the trash, a
-wrong field can be updated again. A handful are not. Once an invoice email
-reaches a client's inbox there is no unsend, and a refund moves real money.
-Those tools ask first.
+"""Confirmation prompts for tools whose effects cannot be undone.
 
 The question is asked through the SDK's resolver mechanism: a parameter
 annotated `Annotated[T, Resolve(fn)]` is filled by running `fn` before the tool
-body, and `fn` returns an `Elicit(...)` marker to have the framework ask the
-client. Resolved parameters are stripped from the tool's input schema, so the
-model never sees - or supplies - them.
+body, and resolved parameters are stripped from the tool's input schema, so the
+model never sees - or supplies - them. Declining aborts the call.
 
-Two properties of that mechanism are why this is worth doing statelessly:
-
-- The transport is chosen from the negotiated protocol version. On 2026-07-28
-  the question rides an `InputRequiredResult` and the client retries the call
-  with its answer; on older revisions the SDK falls back to a standalone
-  server-to-client request. We write it once.
-- Answers travel in `request_state`, and only questions actually asked are
-  recorded, so a retried call does not re-ask something already answered.
-
-Declining aborts the call: with an unwrapped `Annotated[T, Resolve(fn)]`
-consumer, the framework raises rather than running the tool body.
-
-**Graceful degradation matters here.** If a resolver returns `Elicit` to a
-client that never declared the elicitation capability, the SDK fails the call
-with `MISSING_REQUIRED_CLIENT_CAPABILITY`. Silently breaking `send_invoice_email`
-for every client that cannot be asked would be worse than not asking, so each
-resolver checks first and proceeds unasked when the client cannot answer. Those
-clients still have the tool annotations (`openWorldHint`, non-idempotent) to
-drive their own approval UI.
+Returning `Elicit` to a client that never declared the elicitation capability
+fails the call with `MISSING_REQUIRED_CLIENT_CAPABILITY`, so every resolver
+checks first and proceeds unasked when the client cannot answer.
 """
 
 from __future__ import annotations
@@ -70,9 +48,8 @@ def confirmed(ctx: Context, message: str) -> Confirmation | Elicit[Confirmation]
 def ensure_confirmed(answer: Confirmation, action: str) -> None:
     """Reject an accepted-but-negative answer.
 
-    Declining is already handled upstream - the framework aborts the call - but
-    a client can accept the elicitation and still return `confirm: false`, and
-    for these tools that has to mean stop.
+    Declining aborts the call upstream, but a client can accept the elicitation
+    and still return `confirm: false`, which for these tools has to mean stop.
     """
     if not answer.confirm:
         raise ValueError(f"{action} was not confirmed.")

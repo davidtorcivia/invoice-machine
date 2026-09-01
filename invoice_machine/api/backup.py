@@ -89,8 +89,7 @@ def _decrypt_s3_config(s3_config: dict) -> dict:
 
     A credential that cannot be decrypted (wrong key) or that is stored in the
     clear (rejected outright in production) leaves that field unset rather than
-    raising: otherwise a single legacy value made every backup endpoint 500 and
-    locked the user out of the backups page entirely.
+    raising, so one bad value cannot 500 every backup endpoint.
     """
     if not s3_config:
         return s3_config
@@ -186,7 +185,6 @@ async def update_backup_settings(
     if updates.backup_s3_enabled is not None:
         profile.backup_s3_enabled = 1 if updates.backup_s3_enabled else 0
 
-    # Handle S3 config updates
     s3_config = {}
     if profile.backup_s3_config:
         try:
@@ -197,13 +195,11 @@ async def update_backup_settings(
     if updates.backup_s3_endpoint_url is not None:
         s3_config["endpoint_url"] = updates.backup_s3_endpoint_url or None
     if updates.backup_s3_access_key_id is not None:
-        # Encrypt access key ID before storage
         if updates.backup_s3_access_key_id:
             s3_config["access_key_id"] = encrypt_credential(updates.backup_s3_access_key_id)
         else:
             s3_config["access_key_id"] = None
     if updates.backup_s3_secret_access_key is not None:
-        # Encrypt secret access key before storage
         if updates.backup_s3_secret_access_key:
             s3_config["secret_access_key"] = encrypt_credential(updates.backup_s3_secret_access_key)
         else:
@@ -242,8 +238,8 @@ async def list_backups(
     """List all available backups."""
     backup_service = await get_backup_service(session)
 
-    # Get local backups. Filesystem stat + (for S3) a network round-trip are
-    # blocking; run them off the event loop.
+    # Filesystem stat and (for S3) a network round-trip are blocking; run them
+    # off the event loop.
     backups = []
     for b in await asyncio.to_thread(backup_service.list_backups):
         backups.append(
@@ -256,10 +252,8 @@ async def list_backups(
             )
         )
 
-    # Get S3 backups if requested
     if include_s3:
         for b in await asyncio.to_thread(backup_service.list_s3_backups):
-            # Check if already in local list
             if not any(lb.filename == b["filename"] for lb in backups):
                 backups.append(
                     BackupSchema(
@@ -271,7 +265,6 @@ async def list_backups(
                     )
                 )
 
-    # Sort by date
     backups.sort(key=lambda x: x.created_at, reverse=True)
     return backups
 
@@ -305,13 +298,7 @@ async def restore_backup(
     download_from_s3: bool = Query(False, description="Download from S3 first"),
     session: AsyncSession = Depends(get_session),
 ) -> RestoreResult:
-    """
-    Restore database from a backup.
-
-    Warning: This will overwrite the current database!
-    A pre-restore backup is created automatically.
-    The application should be restarted after restore.
-    """
+    """Overwrite the current database with a backup (a pre-restore backup is taken first)."""
     backup_service = await get_backup_service(session)
     restore_state = request.app.state
 
@@ -336,7 +323,6 @@ async def restore_backup(
             await session.close()
             await close_db()
 
-            # Download from S3 if requested
             if download_from_s3:
                 await asyncio.to_thread(backup_service.download_from_s3, filename)
 
@@ -347,7 +333,6 @@ async def restore_backup(
         except ValueError as e:
             # ValueError contains user-facing validation messages (e.g., path traversal)
             error_msg = str(e)
-            # Only expose safe validation messages
             if "Invalid backup filename" in error_msg or "Invalid SQLite database" in error_msg:
                 raise HTTPException(status_code=400, detail=error_msg)
             raise HTTPException(status_code=400, detail="Invalid backup file")
@@ -443,7 +428,6 @@ async def test_s3_connection(
 
     try:
         s3_config = json.loads(profile.backup_s3_config)
-        # Decrypt credentials for use
         s3_config = _decrypt_s3_config(s3_config)
     except json.JSONDecodeError:
         raise HTTPException(status_code=400, detail="Invalid S3 configuration")
@@ -465,7 +449,6 @@ async def test_s3_connection(
             config=Config(signature_version="s3v4"),
         )
 
-        # Test by listing bucket (will fail if credentials are wrong)
         bucket = s3_config.get("bucket")
         await asyncio.to_thread(s3_client.head_bucket, Bucket=bucket)
 

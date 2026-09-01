@@ -21,9 +21,7 @@ class LineItemCreate(BaseModel):
         """Accept numeric or string input; reject non-numeric/negative values.
 
         Stored as a string so the service layer's ``Decimal(str(...))`` round-trips
-        exactly. Without this, garbage like ``"abc"`` reached the service and raised
-        an uncaught ``decimal.InvalidOperation`` (HTTP 500), or a negative price was
-        persisted into a recurring schedule's stored line items.
+        exactly.
         """
         try:
             amount = Decimal(str(v))

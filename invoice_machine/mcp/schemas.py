@@ -1,35 +1,20 @@
 """Output models describing what the MCP tools return.
 
-Declaring these as tool return types gives every tool an `outputSchema`, so a
-client knows the shape of a result before it calls and gets `structuredContent`
-alongside the human-readable text instead of having to parse JSON out of a
-string.
-
 Two rules govern everything in this file, both about not corrupting data:
 
-1. **Field types mirror exactly what `presenters.py` emits.** The SDK does not
-   merely publish the schema - it runs `output_model.model_validate(result)`
-   and re-dumps the validated model as the structured content. So a type that
-   disagrees with reality does not fail loudly, it silently rewrites the
-   payload. Money is the case that matters: the presenters emit amounts as
-   strings (`"100.00"`) to preserve exact decimal values, and declaring those
-   fields `float` would have Pydantic coerce them to `100.0` and reintroduce
-   binary floating-point into invoice totals. Amounts are `str` here, always.
+1. **Field types mirror exactly what `presenters.py` emits.** The SDK runs
+   `output_model.model_validate(result)` and re-dumps the validated model as
+   the structured content, so a type that disagrees with reality silently
+   rewrites the payload rather than failing. Money is the case that matters:
+   amounts are emitted as strings to preserve exact decimals, and declaring
+   them `float` would reintroduce binary floating-point into invoice totals.
 
 2. **Every model allows extras.** `serialize_invoice` grows optional keys
-   depending on its flags (`items`, `line_items_preview`, `total_formatted`),
-   and callers add their own. `extra="allow"` keeps unmodelled keys flowing
-   through to the client rather than silently dropping them, and means adding a
-   field to a presenter cannot break a tool.
+   depending on its flags, so `extra="allow"` keeps unmodelled keys flowing
+   through instead of silently dropping them.
 
 All MCP tools serialize with `json_ready=True`, so dates arrive as ISO strings
 and are typed `str` here rather than `date`/`datetime`.
-
-One shape note for anyone reading results on the client side: a tool returning
-a bare model (`-> ClientOut`) puts that model's fields at the top level of
-`structuredContent`, but a tool returning `-> ClientOut | None` or
-`-> list[ClientOut]` cannot, since neither is a JSON object. The SDK nests
-those under a single `"result"` key.
 """
 
 from __future__ import annotations

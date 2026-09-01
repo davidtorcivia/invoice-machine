@@ -77,8 +77,7 @@ async def _session_cleanup_job() -> None:
 async def _scheduled_backup_job() -> None:
     """Create scheduled backups and prune old ones."""
     # Reuse the API's builder so the scheduler decrypts S3 credentials the same
-    # way the manual-backup endpoint does — building s3_config inline here skipped
-    # decryption, so every nightly S3 upload failed with bad credentials.
+    # way the manual-backup endpoint does.
     from invoice_machine.api.backup import get_backup_service
     from invoice_machine.database import BusinessProfile, async_session_maker
 

@@ -86,9 +86,8 @@ class BusinessProfileUpdate(BaseModel):
     payment_methods: str | None = Field(None, max_length=10000)  # JSON string
     theme_preference: str | None = Field(None, pattern="^(system|light|dark)$")
     app_base_url: str | None = Field(None, max_length=500)
-    # Tax settings. Decimal with bounds, not a free-form string: "abc" used to
-    # reach the DECIMAL column and 500, and "999" was accepted verbatim as a
-    # 999% default rate applied to every subsequently created invoice.
+    # Bounded Decimal, not a free-form string: the rate reaches a DECIMAL column
+    # and is applied to every subsequently created invoice.
     default_tax_enabled: bool | None = None
     default_tax_rate: Decimal | None = Field(None, ge=0, le=100)
     default_tax_name: str | None = Field(None, max_length=50)
@@ -98,8 +97,8 @@ class BusinessProfileUpdate(BaseModel):
     def validate_payment_methods(cls, value: str | None) -> str | None:
         """Reject payment_methods that isn't a JSON array of {id, name, instructions}.
 
-        Unparseable JSON was stored happily and then silently degraded to an empty
-        list everywhere it was read, so a user's payment methods just disappeared.
+        Readers silently degrade unparseable JSON to an empty list, so an invalid
+        value here would make a user's payment methods disappear.
         """
         if value is None or value == "":
             return value
@@ -145,9 +144,7 @@ NULLABLE_PROFILE_FIELDS = frozenset(
 
 def sanitize_filename(filename: str) -> str:
     """Sanitize filename to prevent path traversal."""
-    # Remove any directory components
     name = os.path.basename(filename)
-    # Remove any non-alphanumeric chars except dots, dashes, underscores
     name = "".join(c for c in name if c.isalnum() or c in "._-")
     return name
 
@@ -168,8 +165,7 @@ def _delete_logo_file(logo_filename: str | None) -> None:
         logger.warning("Could not delete logo file %s: %s", safe_name, exc)
 
 
-# Image magic bytes for validation
-# Note: SVG is excluded due to XSS security risks (can contain embedded JavaScript)
+# SVG is excluded due to XSS security risks (can contain embedded JavaScript)
 # WebP is intentionally absent here: a bare ``RIFF`` prefix also matches AVI/WAV
 # containers, so it is validated separately by its full RIFF....WEBP signature.
 IMAGE_SIGNATURES = {
@@ -202,12 +198,7 @@ def detect_image_extension(content: bytes) -> str | None:
 
 
 def validate_image_content(content: bytes) -> bool:
-    """
-    Validate that file content appears to be an image.
-
-    Checks magic bytes to verify file is actually an image,
-    not just a renamed malicious file.
-    """
+    """Validate that file content appears to be an image, not a renamed file."""
     return detect_image_extension(content) is not None
 
 
@@ -234,7 +225,7 @@ async def update_profile(
 
     update_data = updates.model_dump(exclude_unset=True)
 
-    # Convert boolean to int for SQLite
+    # SQLite stores booleans as ints.
     if "default_tax_enabled" in update_data and update_data["default_tax_enabled"] is not None:
         update_data["default_tax_enabled"] = int(update_data["default_tax_enabled"])
 
@@ -262,11 +253,9 @@ async def upload_logo(
     """Upload business logo."""
     from pathlib import Path
 
-    # Check file was provided
     if not file or not file.filename:
         raise HTTPException(status_code=400, detail="No file provided")
 
-    # Validate file extension
     filename = sanitize_filename(file.filename)
     ext = Path(filename).suffix.lower()
 
@@ -276,7 +265,6 @@ async def upload_logo(
             detail=f"Invalid file type. Allowed: {', '.join(settings.allowed_logo_extensions)}",
         )
 
-    # Validate file type (content-type header check + basic validation)
     if not file.content_type or not file.content_type.startswith("image/"):
         raise HTTPException(status_code=400, detail="File must be an image")
 
@@ -292,29 +280,25 @@ async def upload_logo(
             )
     contents = bytes(buffer)
 
-    # Validate file size is not zero
     if len(contents) == 0:
         raise HTTPException(status_code=400, detail="Uploaded file is empty")
 
-    # Validate file content is actually an image (magic bytes check) and take the
-    # extension from the content rather than the client-supplied filename.
+    # The extension comes from the content's magic bytes, never from the
+    # client-supplied filename.
     detected_ext = detect_image_extension(contents)
     if detected_ext is None:
         raise HTTPException(status_code=400, detail="File does not appear to be a valid image")
 
     unique_filename = f"logo-{uuid.uuid4().hex}{detected_ext}"
 
-    # Ensure logo directory exists
     settings.logo_dir.mkdir(parents=True, exist_ok=True)
 
     path = confined_file(settings.logo_dir, unique_filename)
     if path is None:
         raise HTTPException(status_code=400, detail="Invalid file path")
 
-    # Save file
     path.write_bytes(contents)
 
-    # Update profile
     profile = await BusinessProfile.get_or_create(session)
     previous_logo = profile.logo_path
     profile.logo_path = unique_filename
@@ -352,10 +336,8 @@ async def delete_logo(
 @limiter.limit("120/minute")
 async def get_logo(request: Request, filename: str):
     """Serve uploaded logo."""
-    # Sanitize filename to prevent path traversal
     safe_filename = sanitize_filename(filename)
 
-    # Ensure logo directory exists
     settings.logo_dir.mkdir(parents=True, exist_ok=True)
 
     resolved_path = confined_file(settings.logo_dir, safe_filename)

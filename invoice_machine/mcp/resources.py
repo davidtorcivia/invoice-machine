@@ -1,20 +1,8 @@
-"""MCP resources: addressable views of invoices, clients, and the business.
-
-Tools are verbs; resources are nouns. A client that wants to *look at* invoice
-20250115-1 should not have to call a tool and hope the model passes the right
-integer ID - it can read `invoice://20250115-1` directly, attach it to a
-conversation, or let a user browse to it.
-
-Resources also cost less than tool calls. Under spec 2026-07-28 `resources/read`
-carries `ttlMs`/`cacheScope`, so a client can cache what it has already read
-instead of re-fetching on every turn.
+"""MCP resources: addressable, read-only views of invoices and clients.
 
 URIs use the human-facing identifier where one exists: invoices are addressed by
-their number (`20250115-1`), which is what appears on the document and what a
-person will type, not their database ID. Clients have no such identifier, so
-they are addressed by ID.
-
-Everything here is read-only by construction - these functions only ever select.
+their number (`20250115-1`), not their database ID. Clients have no such
+identifier, so they are addressed by ID.
 """
 
 from __future__ import annotations
@@ -100,12 +88,7 @@ async def client_resource(client_id: str) -> str:
     mime_type=_JSON,
 )
 async def outstanding_invoices_resource() -> str:
-    """List the invoices that are still owed.
-
-    Deliberately a fixed URI rather than a template: "what am I owed" is a
-    question with one answer, and making it addressable means a client can
-    attach it without first deciding which filters to pass a tool.
-    """
+    """List the invoices that are still owed."""
     async with get_session() as session:
         invoices = []
         for status in ("sent", "overdue", "partially_paid"):
@@ -144,8 +127,6 @@ async def business_profile_resource() -> str:
     """Read the business profile. Secrets are never included."""
     async with get_session() as session:
         profile = await BusinessProfile.get_or_create(session)
-        # serialize_business_profile reports only whether keys and passwords
-        # are configured, never their values.
         return _dump(
             serialize_business_profile(profile, json_ready=True, payment_methods_as_list=True)
         )

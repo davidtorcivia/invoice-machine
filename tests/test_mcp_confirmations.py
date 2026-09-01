@@ -1,15 +1,9 @@
 """Tests for the confirmation prompts on irreversible MCP tools.
 
-These drive a real in-memory MCP client against the server so the whole
-resolver path runs: the framework asks, the client answers, and the answer is
-injected into the tool. Calling the tool functions directly (as
-test_mcp_tools.py does) would skip exactly the machinery under test.
-
-The three cases that matter:
-  - the client answers yes  -> the tool runs
-  - the client answers no   -> the tool does not run
-  - the client cannot be asked at all -> the tool still runs, because failing
-    closed here would break every client without elicitation support
+These drive a real in-memory MCP client so the whole resolver path runs;
+calling the tool functions directly would skip the machinery under test. A
+client that cannot be asked still proceeds -- failing closed there would break
+every client without elicitation support.
 """
 
 import pytest
@@ -61,8 +55,8 @@ async def test_send_email_asks_before_sending(invoice):
     # has to appear in the question.
     assert "ap@acme.test" in seen[0]
     assert invoice["invoice_number"] in seen[0]
-    # SMTP is not configured in this fixture, so the send itself fails - but it
-    # got past the confirmation, which is what this test is about.
+    # SMTP is unconfigured here, so the send itself fails; getting past the
+    # confirmation is the point.
     assert result is not None
 
 
@@ -111,13 +105,7 @@ async def test_accepting_but_answering_no_stops_the_send(invoice, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_client_without_elicitation_is_not_blocked(invoice, monkeypatch):
-    """A client that cannot be asked still gets to send.
-
-    This is the regression guard for the graceful-degradation branch: if the
-    resolver returned an Elicit marker unconditionally, the SDK would fail the
-    call with MISSING_REQUIRED_CLIENT_CAPABILITY and break every client that
-    does not implement elicitation.
-    """
+    """A client that cannot be asked still gets to send."""
     sent = []
 
     async def fake_send(session, invoice_id, **kwargs):

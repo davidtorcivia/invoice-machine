@@ -1,10 +1,4 @@
-/**
- * List of currencies for dropdown selection
- * Common currencies are listed first for convenience
- * Format: { code: 'XXX', name: 'Currency Name', symbol: '$' }
- */
 export const currencies = [
-  // Common currencies first
   { code: 'USD', name: 'US Dollar', symbol: '$' },
   { code: 'EUR', name: 'Euro', symbol: '\u20AC' },
   { code: 'GBP', name: 'British Pound', symbol: '\u00A3' },
@@ -25,9 +19,7 @@ export const currencies = [
   { code: 'DKK', name: 'Danish Krone', symbol: 'kr' },
   { code: 'ZAR', name: 'South African Rand', symbol: 'R' },
   { code: 'RUB', name: 'Russian Ruble', symbol: '\u20BD' },
-  // Separator
   { code: '---', name: '\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500', symbol: '', disabled: true },
-  // All other currencies alphabetically
   { code: 'AED', name: 'UAE Dirham', symbol: '\u062F.\u0625' },
   { code: 'AFN', name: 'Afghan Afghani', symbol: '\u060B' },
   { code: 'ALL', name: 'Albanian Lek', symbol: 'L' },
@@ -164,11 +156,5 @@ export const currencies = [
   { code: 'ZMW', name: 'Zambian Kwacha', symbol: 'ZK' },
   { code: 'ZWL', name: 'Zimbabwean Dollar', symbol: '$' },
 ];
-
-// Simple list of currency codes for quick lookups
-
-// Get currency by code
-
-// Format currency value
 
 export default currencies;

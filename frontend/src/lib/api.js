@@ -1,7 +1,3 @@
-/**
- * API client for Invoice Machine backend
- */
-
 import { browser } from '$app/environment';
 
 const API_BASE = '/api';
@@ -100,8 +96,7 @@ function createCrudApi(basePath, buildListParams) {
 
 /**
  * FastAPI returns ``detail`` as a string for HTTPException and as an array of
- * ``{loc, msg, type}`` objects for validation errors. Stringifying the array
- * produced "[object Object]" in toasts.
+ * ``{loc, msg, type}`` objects for validation errors.
  *
  * @param {{ detail?: unknown, message?: string } | null} data
  * @param {Response} response
@@ -148,8 +143,6 @@ function buildQuery(params = {}) {
 }
 
 /**
- * Make an API request
- *
  * @param {string} endpoint
  * @param {ApiRequestOptions} [options={}]
  */
@@ -180,14 +173,12 @@ export async function request(endpoint, options = {}) {
   /** @type {RequestInit} */
   const fetchConfig = {
     ...config,
-    // Always send cookies (session + CSRF), even if the API is ever served
-    // from a different origin than the SPA.
+    // Cookies travel same-origin only; the API serves the SPA itself.
     credentials: config.credentials ?? 'same-origin',
     body: config.body ?? undefined,
   };
   const response = await fetch(url, fetchConfig);
 
-  // Handle 204 No Content
   if (response.status === 204) {
     return null;
   }
@@ -196,7 +187,6 @@ export async function request(endpoint, options = {}) {
   const data = contentType.includes('application/json') ? await response.json() : null;
 
   if (!response.ok) {
-    // Session expired / not authenticated -> bounce to login.
     if (response.status === 401) {
       handleUnauthorized(endpoint);
     }
@@ -207,8 +197,6 @@ export async function request(endpoint, options = {}) {
 }
 
 /**
- * GET request
- *
  * @param {string} endpoint
  */
 function get(endpoint) {
@@ -216,8 +204,6 @@ function get(endpoint) {
 }
 
 /**
- * POST request
- *
  * @param {string} endpoint
  * @param {BodyInit | Record<string, unknown> | null} [body]
  */
@@ -226,8 +212,6 @@ function post(endpoint, body) {
 }
 
 /**
- * PUT request
- *
  * @param {string} endpoint
  * @param {BodyInit | Record<string, unknown> | null} [body]
  */
@@ -236,8 +220,6 @@ function put(endpoint, body) {
 }
 
 /**
- * DELETE request
- *
  * @param {string} endpoint
  */
 function del(endpoint) {
@@ -497,7 +479,6 @@ export const emailApi = {
   /** @param {number | string} invoiceId @param {Record<string, unknown>} [data={}] */
   sendInvoice: (invoiceId, data = {}) => post(`/invoices/${invoiceId}/send-email`, data),
 
-  // Email templates
   getTemplates: () => get('/settings/email-templates'),
 
   /** @param {Record<string, unknown>} data */

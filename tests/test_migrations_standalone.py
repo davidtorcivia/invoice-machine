@@ -2,12 +2,6 @@
 """Standalone tests for database migration logic.
 
 Run with: python tests/test_migrations_standalone.py
-
-These tests verify that:
-1. Idempotent migrations work correctly on existing databases
-2. The fallback migration adds all required columns
-3. The alembic_version detection works correctly
-4. Data is preserved through migration scenarios
 """
 
 import sqlite3
@@ -16,16 +10,13 @@ import tempfile
 import traceback
 from pathlib import Path
 
-# Add parent to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 
 def test_fallback_adds_preferred_currency():
-    """Verify preferred_currency is added to clients table."""
     with tempfile.TemporaryDirectory() as tmp_dir:
         db_path = Path(tmp_dir) / "test.db"
 
-        # Create a database with clients table missing preferred_currency
         conn = sqlite3.connect(str(db_path))
         cursor = conn.cursor()
         cursor.execute("""
@@ -39,26 +30,22 @@ def test_fallback_adds_preferred_currency():
                 tax_name VARCHAR(50)
             )
         """)
-        # Insert test data
         cursor.execute(
             "INSERT INTO clients (id, name, email) VALUES (1, 'Test Client', 'test@example.com')"
         )
         conn.commit()
         conn.close()
 
-        # Run the fallback migration
         from invoice_machine.migrations.add_new_fields import migrate
 
         migrate(db_path)
 
-        # Verify the column was added
         conn = sqlite3.connect(str(db_path))
         cursor = conn.cursor()
         cursor.execute("PRAGMA table_info(clients)")
         columns = [row[1] for row in cursor.fetchall()]
         assert "preferred_currency" in columns, f"preferred_currency not in columns: {columns}"
 
-        # Verify data is preserved
         cursor.execute("SELECT name, email FROM clients WHERE id = 1")
         row = cursor.fetchone()
         assert row == ("Test Client", "test@example.com"), f"Data not preserved: {row}"
@@ -68,11 +55,9 @@ def test_fallback_adds_preferred_currency():
 
 
 def test_fallback_skips_existing_columns():
-    """Verify migration doesn't fail when columns already exist."""
     with tempfile.TemporaryDirectory() as tmp_dir:
         db_path = Path(tmp_dir) / "test.db"
 
-        # Create a database with all columns already present
         conn = sqlite3.connect(str(db_path))
         cursor = conn.cursor()
         cursor.execute("""
@@ -139,7 +124,6 @@ def test_fallback_skips_existing_columns():
 
         migrate(db_path)
 
-        # Verify no errors and columns still exist
         conn = sqlite3.connect(str(db_path))
         cursor = conn.cursor()
         cursor.execute("PRAGMA table_info(clients)")
@@ -151,18 +135,15 @@ def test_fallback_skips_existing_columns():
 
 
 def test_alembic_version_detection_empty():
-    """Verify detection of empty alembic_version table."""
     with tempfile.TemporaryDirectory() as tmp_dir:
         db_path = Path(tmp_dir) / "test.db"
 
-        # Create database with empty alembic_version table
         conn = sqlite3.connect(str(db_path))
         cursor = conn.cursor()
         cursor.execute("CREATE TABLE alembic_version (version_num VARCHAR(32))")
         cursor.execute("CREATE TABLE users (id INTEGER PRIMARY KEY, username VARCHAR(100))")
         conn.commit()
 
-        # Check detection logic
         cursor.execute(
             "SELECT name FROM sqlite_master WHERE type='table' AND name='alembic_version'"
         )
@@ -186,11 +167,9 @@ def test_alembic_version_detection_empty():
 
 
 def test_alembic_version_detection_valid():
-    """Verify detection of populated alembic_version table."""
     with tempfile.TemporaryDirectory() as tmp_dir:
         db_path = Path(tmp_dir) / "test.db"
 
-        # Create database with valid alembic_version
         conn = sqlite3.connect(str(db_path))
         cursor = conn.cursor()
         cursor.execute("CREATE TABLE alembic_version (version_num VARCHAR(32))")
@@ -198,7 +177,6 @@ def test_alembic_version_detection_valid():
         cursor.execute("CREATE TABLE users (id INTEGER PRIMARY KEY)")
         conn.commit()
 
-        # Check detection
         cursor.execute("SELECT version_num FROM alembic_version LIMIT 1")
         has_valid_version = cursor.fetchone() is not None
         assert has_valid_version is True, "Should detect valid alembic version"
@@ -209,7 +187,6 @@ def test_alembic_version_detection_valid():
 
 
 def test_data_preservation():
-    """Test complete migration scenario with existing data."""
     with tempfile.TemporaryDirectory() as tmp_dir:
         db_path = Path(tmp_dir) / "test.db"
 
@@ -217,7 +194,6 @@ def test_data_preservation():
         conn = sqlite3.connect(str(db_path))
         cursor = conn.cursor()
 
-        # Create tables without newer columns
         cursor.execute("""
             CREATE TABLE users (
                 id INTEGER PRIMARY KEY,
@@ -267,7 +243,6 @@ def test_data_preservation():
         # Create empty alembic_version table (simulating failed migration)
         cursor.execute("CREATE TABLE alembic_version (version_num VARCHAR(32))")
 
-        # Insert test data
         cursor.execute(
             "INSERT INTO users (id, username, password_hash) VALUES (1, 'admin', 'hashed')"
         )
@@ -288,12 +263,10 @@ def test_data_preservation():
         conn.commit()
         conn.close()
 
-        # Run the fallback migration
         from invoice_machine.migrations.add_new_fields import migrate
 
         migrate(db_path)
 
-        # Verify all data is preserved
         conn = sqlite3.connect(str(db_path))
         cursor = conn.cursor()
 
@@ -309,7 +282,6 @@ def test_data_preservation():
         cursor.execute("SELECT COUNT(*) FROM invoice_items")
         assert cursor.fetchone()[0] == 1, "Invoice items count should be 1"
 
-        # Verify specific data
         cursor.execute("SELECT username FROM users WHERE id = 1")
         assert cursor.fetchone()[0] == "admin", "User data should be preserved"
 
@@ -319,7 +291,6 @@ def test_data_preservation():
         cursor.execute("SELECT total FROM invoices WHERE invoice_number = 'INV-001'")
         assert float(cursor.fetchone()[0]) == 1000.00, "Invoice data should be preserved"
 
-        # Verify new columns were added
         cursor.execute("PRAGMA table_info(clients)")
         columns = [row[1] for row in cursor.fetchall()]
         assert "preferred_currency" in columns, "preferred_currency should be added"
@@ -335,11 +306,9 @@ def test_data_preservation():
 
 
 def test_migration_001_table_check():
-    """Verify 001 migration table existence check logic."""
     with tempfile.TemporaryDirectory() as tmp_dir:
         db_path = Path(tmp_dir) / "test.db"
 
-        # Create database with users table
         conn = sqlite3.connect(str(db_path))
         cursor = conn.cursor()
         cursor.execute("""
@@ -359,10 +328,8 @@ def test_migration_001_table_check():
         cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
         existing_tables = {row[0] for row in cursor.fetchall()}
 
-        # Verify logic would skip users table
         assert "users" in existing_tables, "users table should exist"
 
-        # Verify data would be preserved
         cursor.execute("SELECT username FROM users WHERE id = 1")
         assert cursor.fetchone()[0] == "admin", "User data should be preserved"
         conn.close()

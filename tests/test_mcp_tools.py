@@ -1,9 +1,7 @@
 """MCP tool-layer tests.
 
-The MCP tools are the lower-trust automation surface and were almost entirely
-untested. These call the decorated tool functions directly against a temp DB
-(the tools resolve their session from the module-level maker at call time), so
-they exercise the same code paths Claude Desktop / the bot would.
+These call the decorated tool functions directly against a temp DB, exercising
+the same code paths Claude Desktop / the bot would.
 """
 
 import pytest
@@ -44,7 +42,6 @@ async def test_invoice_create_and_fractional_item(mcp_db):
     invoice_id = invoice["id"]
     assert invoice["total"] == "100.00"
 
-    # Fractional quantity must work through the MCP add-item tool.
     item = await invoice_tools.add_invoice_item(
         invoice_id, "Consulting", quantity=1.5, unit_price=100, unit_type="hours"
     )
@@ -57,7 +54,6 @@ async def test_invoice_create_and_fractional_item(mcp_db):
 
 @pytest.mark.asyncio
 async def test_invoice_create_inherits_business_tax_default(mcp_db):
-    # MCP create_invoice with tax_enabled=None must inherit the business default.
     await profile_tools.update_business_profile(default_tax_enabled=True, default_tax_rate=10)
     client = await client_tools.create_client(name="Taxed")
     invoice = await invoice_tools.create_invoice(
@@ -71,7 +67,6 @@ async def test_invoice_create_inherits_business_tax_default(mcp_db):
 
 @pytest.mark.asyncio
 async def test_update_business_profile_rejects_bad_accent_color(mcp_db):
-    # Regression: the MCP path now validates accent_color (CSS-injection guard).
     with pytest.raises(ValueError):
         await profile_tools.update_business_profile(accent_color="red}*{x:url(file:///etc/passwd)}")
 
@@ -117,8 +112,8 @@ async def test_recurring_schedule_validates_items(mcp_db):
         schedule_day=15,
         items=[{"description": "Retainer", "quantity": 1, "unit_price": 500}],
     )
-    # Calling the tool function directly bypasses the MCP layer that would
-    # normally resolve the confirmation by asking the client, so supply it.
+    # Calling the tool directly bypasses the MCP layer that would resolve the
+    # confirmation by asking the client, so supply it.
     triggered = await recurring_tools.trigger_recurring_schedule(
         good["id"], Confirmation(confirm=True)
     )
@@ -141,7 +136,6 @@ async def test_client_invoice_context_excludes_quotes_and_scopes_currency(mcp_db
     )
 
     ctx = await analytics_tools.get_client_invoice_context(client["id"])
-    # total_billed counts the sent invoice only, not the quote.
     assert ctx["statistics"]["total_billed"] == "300.00"
 
 

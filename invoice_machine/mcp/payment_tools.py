@@ -14,16 +14,7 @@ from .schemas import PaymentLedgerOut
 
 @mcp.tool(annotations=READ_ONLY)
 async def list_payments(invoice_id: int) -> PaymentLedgerOut | None:
-    """
-    List payments recorded against an invoice, with the resulting balance.
-
-    Args:
-        invoice_id: The invoice ID
-
-    Returns:
-        {invoice_id, currency_code, total, amount_paid, amount_due, payments: [...]}
-        or null if the invoice is not found
-    """
+    """List payments recorded against an invoice, with the resulting balance."""
     async with get_session() as session:
         invoice = await InvoiceService.get_invoice(session, invoice_id)
         if not invoice:
@@ -60,7 +51,6 @@ async def record_payment(
     total; until then the remaining balance is reported as amount_due.
 
     Args:
-        invoice_id: The invoice ID
         amount: Payment amount in the invoice's currency (must be > 0)
         idempotency_key: A unique string identifying this payment. Replaying the
             same key returns the payment already recorded instead of adding a
@@ -69,11 +59,7 @@ async def record_payment(
         payment_date: Payment date (ISO format, defaults to today UTC)
         method: How it was paid, e.g. "bank_transfer", "card", "cash", "cheque"
         reference: Bank reference / cheque number / transaction ID
-        notes: Free-form notes
         allow_overpayment: Permit an amount larger than the outstanding balance
-
-    Returns:
-        The updated balance and the recorded payment, or an error dict
     """
     async with get_session() as session:
         try:
@@ -111,12 +97,6 @@ async def delete_payment(payment_id: int) -> bool:
     Delete a recorded payment and resync the invoice balance.
 
     If this leaves a previously-paid invoice short, it reverts to sent/overdue.
-
-    Args:
-        payment_id: The payment ID
-
-    Returns:
-        True if deleted, False if not found
     """
     async with get_session() as session:
         return await PaymentService.delete_payment(session, payment_id)
@@ -133,9 +113,6 @@ async def get_aging_report(as_of: str | None = None) -> dict:
 
     Args:
         as_of: Report date (ISO format, defaults to today UTC)
-
-    Returns:
-        {as_of, buckets, by_currency: {...}, invoices: [...]}
     """
     async with get_session() as session:
         return await PaymentService.aging_report(

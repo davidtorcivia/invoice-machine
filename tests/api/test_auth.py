@@ -1,8 +1,7 @@
 """Auth endpoint flow tests: setup, login, CSRF, logout.
 
-These exercise the real middleware + endpoint paths (password hashing, session
-cookies, CSRF enforcement) against a fresh empty database — the prior suite
-synthesized sessions directly and never covered these flows.
+These exercise the real middleware and endpoint paths (password hashing,
+session cookies, CSRF enforcement) against a fresh empty database.
 """
 
 import pytest
@@ -59,7 +58,6 @@ async def test_setup_creates_first_user_and_authenticates(unauth_client):
     response = await _setup(unauth_client)
     assert response.status_code == 200
     assert response.json()["username"] == "admin"
-    # Setup logs the user in: a subsequent status check is authenticated.
     status = await unauth_client.get("/api/auth/status")
     assert status.json()["authenticated"] is True
 
@@ -186,11 +184,9 @@ async def test_unsafe_method_requires_csrf_token(unauth_client):
     csrf = unauth_client.cookies.get(CSRF_COOKIE_NAME)
     assert csrf
 
-    # Cookie present but no X-CSRF-Token header -> rejected.
     missing = await unauth_client.post("/api/clients", json={"name": "Acme"})
     assert missing.status_code == 403
 
-    # Correct token -> accepted.
     ok = await unauth_client.post(
         "/api/clients", json={"name": "Acme"}, headers={"X-CSRF-Token": csrf}
     )
@@ -209,7 +205,6 @@ async def test_change_password_updates_hash_and_keeps_this_session(unauth_client
     )
     assert response.status_code == 200
 
-    # Current session still works.
     status = await unauth_client.get("/api/auth/status")
     assert status.json()["authenticated"] is True
 
@@ -278,7 +273,6 @@ async def test_login_upgrades_legacy_sha256_hash(unauth_client):
         assert user.password_hash.count("$") == 2
         assert verify_password(GOOD_PASSWORD, user.password_hash)
         assert user.password_hash != legacy
-        # And the upgraded form is the current PBKDF2 hasher.
         assert hash_password("x").count("$") == 2
 
 
@@ -290,6 +284,5 @@ async def test_logout_invalidates_session(unauth_client):
     logout = await unauth_client.post("/api/auth/logout", headers={"X-CSRF-Token": csrf})
     assert logout.status_code == 200
 
-    # The session no longer authenticates protected routes.
     after = await unauth_client.get("/api/clients")
     assert after.status_code == 401

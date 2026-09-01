@@ -27,10 +27,7 @@ async def export_kind_csv(
     ),
     session: AsyncSession = Depends(get_session),
 ):
-    """Stream a CSV export.
-
-    ``kind`` is one of invoices, line_items, payments, clients.
-    """
+    """Stream a CSV export of invoices, line_items, payments, or clients."""
     if kind not in EXPORT_KINDS:
         raise HTTPException(
             status_code=404,

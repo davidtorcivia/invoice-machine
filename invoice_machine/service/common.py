@@ -319,12 +319,7 @@ def validate_recurring_schedule(
 
 
 def delete_invoice_pdf_files(pdf_paths: list[str]) -> int:
-    """Best-effort removal of generated PDFs for permanently deleted invoices.
-
-    Purging an invoice used to leave its rendered PDF behind forever, so the
-    pdfs/ directory grew without bound and kept documents on disk for records the
-    user had explicitly destroyed.
-    """
+    """Best-effort removal of generated PDFs for permanently deleted invoices."""
     import logging
     import os
 

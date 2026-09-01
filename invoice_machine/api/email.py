@@ -69,7 +69,6 @@ async def update_smtp_settings(
     """Update SMTP settings."""
     profile = await BusinessProfile.get_or_create(session)
 
-    # Update only provided fields
     update_data = data.model_dump(exclude_unset=True)
 
     # Convert booleans to integers for SQLite
@@ -78,7 +77,6 @@ async def update_smtp_settings(
     if "smtp_use_tls" in update_data:
         update_data["smtp_use_tls"] = int(update_data["smtp_use_tls"])
 
-    # Encrypt SMTP password before storage
     if "smtp_password" in update_data and update_data["smtp_password"]:
         update_data["smtp_password"] = encrypt_credential(update_data["smtp_password"])
 

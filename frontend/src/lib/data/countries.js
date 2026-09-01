@@ -1,7 +1,3 @@
-/**
- * List of countries for dropdown selection
- * United States is listed first for convenience
- */
 export const countries = [
   'United States',
   'Canada',

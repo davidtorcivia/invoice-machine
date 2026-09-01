@@ -226,10 +226,9 @@ class RecurringService:
             quarter_month=new_quarter_month,
         )
 
-        # Only recompute the next run when the cadence actually CHANGES. The UI
-        # submits the whole form on every save, so keying off mere presence reset
-        # next_invoice_date on unrelated edits (renaming a schedule, editing line
-        # items) and silently skipped or duplicated a billing period.
+        # Only recompute the next run when the cadence actually CHANGES: the UI
+        # submits the whole form on every save, so keying off mere presence would
+        # reset next_invoice_date on unrelated edits and skip or duplicate a period.
         cadence_changed = (
             new_frequency != schedule.frequency
             or new_schedule_day != schedule.schedule_day
@@ -333,8 +332,7 @@ class RecurringService:
 
         ``quarter_month`` (1-3) selects which month of the quarter a quarterly
         schedule bills in; ``schedule_month`` (1-12) selects the month for a
-        yearly schedule. Both were configurable in the UI but previously ignored,
-        so a "yearly in March" schedule billed in whatever month it was created.
+        yearly schedule.
         """
         if frequency == "daily":
             return current_date + timedelta(days=1)

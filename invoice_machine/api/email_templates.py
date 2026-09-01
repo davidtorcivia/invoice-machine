@@ -12,7 +12,6 @@ from invoice_machine.services import InvoiceService
 router = APIRouter(tags=["email-templates"])
 
 
-# Available template placeholders
 AVAILABLE_PLACEHOLDERS = [
     "{invoice_number}",
     "{quote_number}",
@@ -95,7 +94,7 @@ async def update_email_templates(
     """Update email templates."""
     profile = await BusinessProfile.get_or_create(session)
 
-    # Update fields - empty string clears the template (uses default)
+    # Empty string clears the template, restoring the built-in default.
     if data.email_subject_template is not None:
         profile.email_subject_template = data.email_subject_template or None
     if data.email_body_template is not None:
@@ -125,7 +124,6 @@ async def preview_invoice_email(
 
     profile = await BusinessProfile.get_or_create(session)
 
-    # Use provided templates, fall back to saved templates, then defaults
     subject_template = (
         data.subject_template
         if data.subject_template is not None
@@ -137,7 +135,6 @@ async def preview_invoice_email(
         else (profile.email_body_template or DEFAULT_BODY_TEMPLATE)
     )
 
-    # Expand templates with invoice data
     subject = expand_template(subject_template, invoice, profile)
     body = expand_template(body_template, invoice, profile)
 

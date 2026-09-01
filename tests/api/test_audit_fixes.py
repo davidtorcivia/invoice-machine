@@ -1,12 +1,11 @@
-"""Regression tests for the 2026-06 audit fixes."""
+"""Regression tests for REST invoice creation, line items, and paid_at."""
 
 import pytest
 
 
 @pytest.mark.asyncio
 async def test_create_invoice_without_tax_enabled_inherits_business_default(test_client):
-    """Omitting tax_enabled on REST create must inherit the business default, not
-    force tax off (the schema default used to be 0)."""
+    """Omitting tax_enabled on REST create inherits the business default, not tax off."""
     await test_client.put(
         "/api/profile",
         json={"default_tax_enabled": True, "default_tax_rate": "10"},

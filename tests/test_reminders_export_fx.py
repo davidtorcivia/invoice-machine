@@ -361,7 +361,6 @@ class TestConsolidatedReporting:
     ):
         """A missing rate must never be silently treated as 1:1."""
         await self._invoice(db_session, test_client, "USD", 100)
-        # No rate configured for GBP, and none supplied.
         await self._invoice(db_session, test_client, "GBP", 500)
 
         summary = await analytics_service.consolidated_summary(db_session)
@@ -393,12 +392,7 @@ class TestSupersededReminders:
     async def test_older_offsets_are_marked_sent_not_queued(
         self, db_session, business_profile, test_client
     ):
-        """Enabling reminders on a long-overdue invoice sends exactly one email.
-
-        The earlier offsets are recorded as sent without being delivered — left
-        pending they would have fired on subsequent days, chasing the client with
-        progressively *staler* reminders in reverse order.
-        """
+        """Enabling reminders on a long-overdue invoice sends exactly one email."""
         business_profile.reminders_enabled = 1
         business_profile.smtp_enabled = 1
         business_profile.reminder_offsets = json.dumps([-3, 1, 7, 14])

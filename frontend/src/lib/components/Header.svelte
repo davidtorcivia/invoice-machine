@@ -12,7 +12,6 @@
   let { title = '', subtitle = '' }: Props = $props();
 </script>
 
-<!-- Minimal header - just mobile menu toggle, no visible titles -->
 <header class="header">
   <button
     class="btn btn-ghost btn-icon mobile-menu"
@@ -22,7 +21,6 @@
     <Icon name="menu" size="md" />
   </button>
 
-  <!-- Screen reader only title -->
   <h1 class="sr-only">{title}</h1>
   {#if subtitle}
     <p class="sr-only">{subtitle}</p>
