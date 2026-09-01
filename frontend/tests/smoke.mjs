@@ -190,12 +190,22 @@ const chrome = spawn(
     `--user-data-dir=/tmp/invoice-machine-smoke-${process.pid}`,
     'about:blank',
   ],
-  { stdio: 'ignore' },
+  { stdio: ['ignore', 'ignore', 'pipe'] },
 );
+let chromeStderr = '';
+chrome.stderr.on('data', (chunk) => (chromeStderr += chunk));
+let chromeExit = null;
+chrome.on('exit', (code, signal) => (chromeExit = { code, signal }));
 process.on('exit', () => chrome.kill());
 
+// Cold CI runners can take well over ten seconds to start Chromium.
 async function connect() {
-  for (let i = 0; i < 40; i++) {
+  for (let i = 0; i < 120; i++) {
+    if (chromeExit) {
+      throw new Error(
+        `Chromium exited (${JSON.stringify(chromeExit)}) before exposing a port:\n${chromeStderr}`,
+      );
+    }
     try {
       const res = await fetch(`http://localhost:${DEBUG_PORT}/json/version`);
       return (await res.json()).webSocketDebuggerUrl;
@@ -203,7 +213,7 @@ async function connect() {
       await sleep(250);
     }
   }
-  throw new Error('Chromium did not expose a debugging port');
+  throw new Error(`Chromium did not expose a debugging port in 30s:\n${chromeStderr}`);
 }
 
 const ws = new WebSocket(await connect());
