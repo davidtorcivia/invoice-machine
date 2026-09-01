@@ -7,6 +7,7 @@ from contextlib import asynccontextmanager
 
 from mcp.server import MCPServer
 from mcp.server.caching import CacheHint
+from mcp.server.mcpserver.exceptions import ToolError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import invoice_machine.database as db
@@ -48,4 +49,10 @@ async def get_session() -> AsyncIterator[AsyncSession]:
     """Yield an initialized async database session."""
     await ensure_mcp_schema_initialized()
     async with db.async_session_maker() as session:
-        yield session
+        try:
+            yield session
+        except ValueError as exc:
+            # Service validation errors reach the client as an isError result
+            # with the message intact, instead of a generic execution failure.
+            await session.rollback()
+            raise ToolError(str(exc)) from exc

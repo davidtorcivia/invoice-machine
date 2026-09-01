@@ -5,6 +5,7 @@ the same code paths Claude Desktop / the bot would.
 """
 
 import pytest
+from mcp.server.mcpserver.exceptions import ToolError
 
 from invoice_machine.mcp import (
     analytics_tools,
@@ -67,7 +68,7 @@ async def test_invoice_create_inherits_business_tax_default(mcp_db):
 
 @pytest.mark.asyncio
 async def test_update_business_profile_rejects_bad_accent_color(mcp_db):
-    with pytest.raises(ValueError):
+    with pytest.raises(ToolError):
         await profile_tools.update_business_profile(accent_color="red}*{x:url(file:///etc/passwd)}")
 
     ok = await profile_tools.update_business_profile(accent_color="#0891b2")
@@ -97,7 +98,7 @@ async def test_list_invoices_document_type_filter(mcp_db):
 async def test_recurring_schedule_validates_items(mcp_db):
     client = await client_tools.create_client(name="Retainer")
     # A bad unit_price must be rejected at save time, not at generation time.
-    with pytest.raises(ValueError):
+    with pytest.raises(ToolError):
         await recurring_tools.create_recurring_schedule(
             client_id=client["id"],
             name="Bad",
@@ -149,3 +150,157 @@ async def test_email_templates_roundtrip_and_search(mcp_db):
     assert any(
         "Searchable" in (c.get("business_name") or c.get("name") or "") for c in results["clients"]
     )
+
+
+@pytest.mark.asyncio
+async def test_missing_records_raise_tool_errors(mcp_db):
+    from invoice_machine.mcp import analytics_tools, document_tools, export_tools
+
+    with pytest.raises(ToolError, match="Invoice 99999 not found"):
+        await document_tools.generate_pdf(99999)
+    with pytest.raises(ToolError, match="Client 99999 not found"):
+        await analytics_tools.get_client_invoice_context(99999)
+    with pytest.raises(ToolError, match="Unknown export kind"):
+        await export_tools.export_csv(kind="bogus")
+    with pytest.raises(ToolError, match="Invoice 99999 not found"):
+        await invoice_tools.add_invoice_item(99999, "x", 1, 1)
+
+
+@pytest.mark.asyncio
+async def test_service_validation_errors_reach_the_client_as_tool_errors(mcp_db):
+    from invoice_machine.mcp import payment_tools
+
+    client = await client_tools.create_client(name="Quoted")
+    quote = await invoice_tools.create_invoice(
+        client_id=client["id"],
+        document_type="quote",
+        items=[{"description": "x", "quantity": 1, "unit_price": "10"}],
+    )
+    with pytest.raises(ToolError, match="quote"):
+        await payment_tools.record_payment(quote["id"], amount="10.00", idempotency_key="k-1")
+
+
+@pytest.mark.asyncio
+async def test_recurring_schedule_lifecycle(mcp_db):
+    client = await client_tools.create_client(name="Retainer")
+    created = await recurring_tools.create_recurring_schedule(
+        client_id=client["id"],
+        name="Monthly",
+        frequency="monthly",
+        schedule_day=1,
+        items=[{"description": "Retainer", "quantity": 1, "unit_price": 500}],
+    )
+    sid = created["id"]
+
+    assert [s["id"] for s in await recurring_tools.list_recurring_schedules()] == [sid]
+    assert (await recurring_tools.get_recurring_schedule(sid))["name"] == "Monthly"
+    assert await recurring_tools.get_recurring_schedule(99999) is None
+
+    updated = await recurring_tools.update_recurring_schedule(
+        sid,
+        name="Monthly v2",
+        payment_terms_days=14,
+        notes="n",
+        use_default_notes=False,
+        items=[{"description": "Retainer", "quantity": 2, "unit_price": 250}],
+        next_invoice_date="2030-01-01",
+        show_payment_instructions=True,
+        auto_email_enabled=False,
+        tax_enabled=True,
+        tax_rate=8.5,
+        tax_name="VAT",
+    )
+    assert updated["name"] == "Monthly v2"
+    assert updated["payment_terms_days"] == 14
+    assert updated["next_invoice_date"] == "2030-01-01"
+    assert await recurring_tools.update_recurring_schedule(99999, name="x") is None
+
+    assert await recurring_tools.pause_recurring_schedule(sid) is True
+    assert (await recurring_tools.get_recurring_schedule(sid))["is_active"] in (0, False)
+    assert await recurring_tools.resume_recurring_schedule(sid) is True
+    assert await recurring_tools.delete_recurring_schedule(sid) is True
+    assert await recurring_tools.list_recurring_schedules() == []
+
+
+@pytest.mark.asyncio
+async def test_list_trash_and_generate_pdf(mcp_db, monkeypatch):
+    from invoice_machine.mcp import document_tools
+
+    client = await client_tools.create_client(name="Trashed Co")
+    invoice = await invoice_tools.create_invoice(
+        client_id=client["id"],
+        items=[{"description": "x", "quantity": 1, "unit_price": "10"}],
+    )
+
+    async def fake_render(session, inv):
+        return "fake.pdf"
+
+    monkeypatch.setattr("invoice_machine.pdf.generator.generate_pdf", fake_render)
+    result = await document_tools.generate_pdf(invoice["id"])
+    assert result["invoice_id"] == invoice["id"]
+    assert result["pdf_url"].endswith(f"/api/invoices/{invoice['id']}/pdf")
+    assert result["generated_at"]
+
+    other = await client_tools.create_client(name="Gone Co")
+    assert await invoice_tools.delete_invoice(invoice["id"]) is True
+    assert await client_tools.delete_client(other["id"]) is True
+
+    trash = await document_tools.list_trash()
+    kinds = {(t["type"], t["id"]) for t in trash}
+    assert ("invoice", invoice["id"]) in kinds
+    assert ("client", other["id"]) in kinds
+    assert all("days_until_purge" in t for t in trash)
+
+
+@pytest.mark.asyncio
+async def test_bearer_auth_wrapper(monkeypatch):
+    from invoice_machine.mcp.server import BearerAuth
+
+    seen = []
+
+    async def inner(scope, receive, send):
+        seen.append(scope["type"])
+
+    sent = []
+
+    async def send(message):
+        sent.append(message)
+
+    async def receive():
+        return {"type": "http.request", "body": b""}
+
+    app = BearerAuth(inner)
+    await app({"type": "lifespan"}, receive, send)
+    assert seen == ["lifespan"]
+
+    async def deny(request):
+        return False
+
+    monkeypatch.setattr("invoice_machine.api.mcp.verify_mcp_auth", deny)
+    scope = {"type": "http", "method": "POST", "path": "/mcp", "headers": [], "query_string": b""}
+    await app(scope, receive, send)
+    assert sent[0]["status"] == 401
+    assert seen == ["lifespan"]
+
+    async def allow(request):
+        return True
+
+    monkeypatch.setattr("invoice_machine.api.mcp.verify_mcp_auth", allow)
+    await app(scope, receive, send)
+    assert seen == ["lifespan", "http"]
+
+
+@pytest.mark.asyncio
+async def test_schema_bootstrap_runs_once(monkeypatch):
+    from invoice_machine.mcp import context
+
+    calls = []
+
+    async def fake_ensure(*, apply_migrations):
+        calls.append(apply_migrations)
+
+    monkeypatch.setattr(context, "ensure_database_schema", fake_ensure)
+    monkeypatch.setattr(context, "_schema_initialized", False)
+    await context.ensure_mcp_schema_initialized()
+    await context.ensure_mcp_schema_initialized()
+    assert calls == [True]

@@ -6,6 +6,8 @@ from collections import Counter
 from datetime import date
 from decimal import Decimal
 
+from mcp.server.mcpserver.exceptions import ToolError
+
 from invoice_machine.service import analytics as analytics_service
 from invoice_machine.service.common import BILLED_STATUSES, format_quantity
 from invoice_machine.services import (
@@ -79,7 +81,7 @@ async def get_client_invoice_context(
     async with get_session() as session:
         client = await ClientService.get_client(session, client_id)
         if not client:
-            return {"error": "Client not found"}
+            raise ToolError(f"Client {client_id} not found")
 
         invoices = await InvoiceService.list_invoices(
             session,

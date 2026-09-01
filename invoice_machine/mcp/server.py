@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import logging
 
+from starlette.requests import Request
+from starlette.responses import Response as StarletteResponse
+
 # Imported for their side effect: registering @mcp.tool/resource/prompt objects.
 from . import (  # noqa: F401
     analytics_tools,
@@ -24,6 +27,32 @@ from .context import mcp
 logger = logging.getLogger(__name__)
 
 
+class BearerAuth:
+    """Reject unauthenticated requests before they reach the MCP app.
+
+    Wraps the app rather than mounting it, so /mcp stays the exact path a
+    client posts to - a Mount would answer POST /mcp with a 307 to /mcp/.
+    Non-HTTP scopes (notably lifespan, which starts the session manager)
+    pass straight through.
+    """
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        from invoice_machine.api.mcp import verify_mcp_auth
+
+        if not await verify_mcp_auth(Request(scope, receive, send)):
+            response = StarletteResponse("Unauthorized", status_code=401)
+            await response(scope, receive, send)
+            return
+        await self.app(scope, receive, send)
+
+
 def main():
     """Run the MCP server (stdio transport for local use)."""
     mcp.run()
@@ -40,10 +69,7 @@ def run_http_server(host: str = "0.0.0.0", port: int = 8081):
 
     import uvicorn
     from mcp.server.transport_security import TransportSecuritySettings
-    from starlette.requests import Request
-    from starlette.responses import Response as StarletteResponse
 
-    from invoice_machine.api.mcp import verify_mcp_auth
     from invoice_machine.api_keys import count_api_keys
 
     # Same configuration as the endpoint mounted in the main app: stateless
@@ -54,29 +80,6 @@ def run_http_server(host: str = "0.0.0.0", port: int = 8081):
         stateless_http=True,
         transport_security=TransportSecuritySettings(enable_dns_rebinding_protection=False),
     )
-
-    class BearerAuth:
-        """Reject unauthenticated requests before they reach the MCP app.
-
-        Wraps the app rather than mounting it, so /mcp stays the exact path a
-        client posts to - a Mount would answer POST /mcp with a 307 to /mcp/.
-        Non-HTTP scopes (notably lifespan, which starts the session manager)
-        pass straight through.
-        """
-
-        def __init__(self, app):
-            self.app = app
-
-        async def __call__(self, scope, receive, send):
-            if scope["type"] != "http":
-                await self.app(scope, receive, send)
-                return
-
-            if not await verify_mcp_auth(Request(scope, receive, send)):
-                response = StarletteResponse("Unauthorized", status_code=401)
-                await response(scope, receive, send)
-                return
-            await self.app(scope, receive, send)
 
     app = BearerAuth(mcp_app)
 

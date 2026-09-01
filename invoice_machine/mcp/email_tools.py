@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Annotated
 
 from mcp.server.mcpserver import Context, Elicit, Resolve
+from mcp.server.mcpserver.exceptions import ToolError
 
 from invoice_machine.database import BusinessProfile
 from invoice_machine.services import InvoiceService
@@ -159,7 +160,7 @@ async def preview_invoice_email(
     async with get_session() as session:
         invoice = await InvoiceService.get_invoice(session, invoice_id)
         if not invoice:
-            return {"error": f"Invoice {invoice_id} not found"}
+            raise ToolError(f"Invoice {invoice_id} not found")
 
         profile = await BusinessProfile.get_or_create(session)
 

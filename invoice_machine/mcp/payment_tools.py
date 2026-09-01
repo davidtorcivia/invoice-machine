@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from datetime import date
 
+from mcp.server.mcpserver.exceptions import ToolError
+
 from invoice_machine.presenters import serialize_payment
 from invoice_machine.services import InvoiceService, PaymentService
 
@@ -62,24 +64,19 @@ async def record_payment(
         allow_overpayment: Permit an amount larger than the outstanding balance
     """
     async with get_session() as session:
-        try:
-            payment = await PaymentService.record_payment(
-                session,
-                invoice_id,
-                amount=amount,
-                payment_date=date.fromisoformat(payment_date) if payment_date else None,
-                method=method,
-                reference=reference,
-                notes=notes,
-                allow_overpayment=allow_overpayment,
-                idempotency_key=idempotency_key,
-            )
-        except ValueError as exc:
-            await session.rollback()
-            return {"success": False, "error": str(exc)}
-
+        payment = await PaymentService.record_payment(
+            session,
+            invoice_id,
+            amount=amount,
+            payment_date=date.fromisoformat(payment_date) if payment_date else None,
+            method=method,
+            reference=reference,
+            notes=notes,
+            allow_overpayment=allow_overpayment,
+            idempotency_key=idempotency_key,
+        )
         if payment is None:
-            return {"success": False, "error": f"Invoice {invoice_id} not found"}
+            raise ToolError(f"Invoice {invoice_id} not found")
 
         invoice = await InvoiceService.get_invoice(session, invoice_id)
         return {

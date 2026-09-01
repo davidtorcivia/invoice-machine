@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from datetime import date
 
+from mcp.server.mcpserver.exceptions import ToolError
+
 from invoice_machine.service.export import EXPORT_KINDS, export_csv_text
 
 from .annotations import READ_ONLY
@@ -38,7 +40,7 @@ async def export_csv(
         max_rows: Maximum data rows to return (capped at 500)
     """
     if kind not in EXPORT_KINDS:
-        return {"error": f"Unknown export kind '{kind}'. Available: {list(EXPORT_KINDS)}"}
+        raise ToolError(f"Unknown export kind '{kind}'. Available: {list(EXPORT_KINDS)}")
 
     limit = max(1, min(int(max_rows), _MCP_MAX_ROWS))
 
