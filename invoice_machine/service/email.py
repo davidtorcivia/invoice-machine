@@ -33,16 +33,16 @@ async def send_invoice_email(
     from invoice_machine.pdf.generator import store_invoice_pdf
     from invoice_machine.services import InvoiceService
 
+    invoice = await InvoiceService.get_invoice(session, invoice_id)
+    if not invoice:
+        return {"success": False, "error": f"Invoice {invoice_id} not found", "not_found": True}
+
     profile = await BusinessProfile.get_or_create(session)
     if not profile.smtp_enabled:
         return {
             "success": False,
             "error": "SMTP is not enabled. Configure SMTP settings first.",
         }
-
-    invoice = await InvoiceService.get_invoice(session, invoice_id)
-    if not invoice:
-        return {"success": False, "error": f"Invoice {invoice_id} not found", "not_found": True}
 
     # Never email a stale or missing PDF.
     await store_invoice_pdf(session, invoice)

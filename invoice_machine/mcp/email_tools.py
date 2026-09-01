@@ -56,13 +56,16 @@ async def send_invoice_email(
     ensure_confirmed(confirmation, "Sending this invoice")
 
     async with get_session() as session:
-        return await send_invoice_email_service(
+        result = await send_invoice_email_service(
             session,
             invoice_id,
             recipient_email=recipient_email,
             subject=subject,
             body=body,
         )
+    if result.get("not_found"):
+        raise ToolError(result["error"])
+    return result
 
 
 @mcp.tool(annotations=READ_ONLY_REMOTE)

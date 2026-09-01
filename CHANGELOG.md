@@ -20,9 +20,9 @@ Notable changes to Invoice Machine. Format based on
   unit price times quantity equals the line total.
 - `paid_at` is the latest payment date, not the moment the payment was recorded,
   so "paid this month" reflects when the money arrived.
-- MCP tools report a missing record or a validation failure as an MCP tool
-  error (`isError`) with the reason as the message, instead of a `success: false`
-  dict on some tools and a generic execution failure on others.
+- MCP tools report a missing record as an MCP tool error (`isError`) instead of
+  a `success: false` dict; validation failures roll back the session and use the
+  same error type.
 - Reusing a payment `idempotency_key` against a different invoice is an error
   instead of silently returning the other invoice's payment.
 - Minimum versions: `python-multipart` 0.0.31, `weasyprint` 68, `cryptography`

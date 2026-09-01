@@ -52,7 +52,7 @@ async def get_session() -> AsyncIterator[AsyncSession]:
         try:
             yield session
         except ValueError as exc:
-            # Service validation errors reach the client as an isError result
-            # with the message intact, instead of a generic execution failure.
+            # One rollback and one error type for every service validation
+            # failure, so no tool needs its own try/except.
             await session.rollback()
             raise ToolError(str(exc)) from exc

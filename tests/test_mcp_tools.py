@@ -164,6 +164,10 @@ async def test_missing_records_raise_tool_errors(mcp_db):
         await export_tools.export_csv(kind="bogus")
     with pytest.raises(ToolError, match="Invoice 99999 not found"):
         await invoice_tools.add_invoice_item(99999, "x", 1, 1)
+    with pytest.raises(ToolError, match="Invoice 99999 not found"):
+        await email_tools.send_invoice_email(99999, Confirmation(confirm=True))
+    with pytest.raises(ToolError, match="Schedule 99999 not found"):
+        await recurring_tools.trigger_recurring_schedule(99999, Confirmation(confirm=True))
 
 
 @pytest.mark.asyncio
