@@ -173,8 +173,6 @@
  * @property {string|null} default_payment_instructions
  * @property {string|null} payment_methods    JSON string of [{id, name, instructions}]
  * @property {string} theme_preference
- * @property {boolean} mcp_api_key_configured
- * @property {boolean} bot_api_key_configured
  * @property {string|null} app_base_url
  * @property {boolean} default_tax_enabled
  * @property {string|null} default_tax_rate

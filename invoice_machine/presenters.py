@@ -150,8 +150,6 @@ def serialize_business_profile(
         "default_payment_instructions": profile.default_payment_instructions,
         "payment_methods": payment_methods,
         "theme_preference": profile.theme_preference,
-        "mcp_api_key_configured": profile.mcp_api_key_configured,
-        "bot_api_key_configured": profile.bot_api_key_configured,
         "app_base_url": profile.app_base_url,
         "default_tax_enabled": bool(getattr(profile, "default_tax_enabled", 0)),
         "default_tax_rate": (

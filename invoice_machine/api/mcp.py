@@ -5,39 +5,18 @@ from contextlib import asynccontextmanager
 from starlette.requests import Request
 from starlette.responses import Response as StarletteResponse
 
-import invoice_machine.database as db
-from invoice_machine.crypto import verify_api_key
-from invoice_machine.database import BusinessProfile
+from invoice_machine.api_keys import authenticate_api_key, count_api_keys
 from invoice_machine.rate_limit import bearer_auth_throttle, get_client_ip
 
 
-async def get_mcp_api_key_hash() -> str | None:
-    """Get the MCP API key hash from the database.
-
-    Resolves async_session_maker at call time (not import time) so the test
-    suite's session-maker swap takes effect; an early-bound reference would
-    silently read the real production database from tests.
-    """
-    async with db.async_session_maker() as session:
-        profile = await BusinessProfile.get(session)
-        return profile.mcp_api_key if profile else None
-
-
 async def verify_mcp_auth(request: Request) -> bool:
-    """Verify MCP API key from request using hash comparison.
+    """Verify an MCP API key from the request against the stored key hashes.
 
     Only accepts Bearer token authentication to avoid API key exposure in logs/URLs.
-    The stored key is hashed, so we verify by hashing the provided key.
     """
     # Brute-force/DoS protection per client IP (process-local; single-worker).
     client_ip = get_client_ip(request)
     if bearer_auth_throttle.is_blocked(client_ip):
-        return False
-
-    stored_hash = await get_mcp_api_key_hash()
-
-    # If no API key is configured, MCP is disabled for remote access
-    if not stored_hash:
         return False
 
     # Check Authorization header (only Bearer token, no query params for security)
@@ -45,10 +24,7 @@ async def verify_mcp_auth(request: Request) -> bool:
     if not auth_header.startswith("Bearer "):
         return False
 
-    provided_key = auth_header[7:]
-
-    # Verify using hash comparison (supports both hashed and legacy unhashed keys)
-    result = verify_api_key(provided_key, stored_hash)
+    result = await authenticate_api_key("mcp", auth_header[7:])
     if not result:
         bearer_auth_throttle.record_failure(client_ip)
     return result
@@ -193,10 +169,9 @@ class MCPStatusHandler:
             MODERN_PROTOCOL_VERSIONS,
         )
 
-        api_key_hash = await get_mcp_api_key_hash()
         body = json.dumps(
             {
-                "enabled": bool(api_key_hash),
+                "enabled": await count_api_keys("mcp") > 0,
                 "endpoint": "/mcp",
                 "transport": "streamable-http",
                 "legacy_sse_endpoint": "/mcp/sse",

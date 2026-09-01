@@ -604,3 +604,63 @@ def test_migration_015_backfills_invoices_settled_before_payment_tracking():
             assert "Backfilled" in note, "backfilled rows must be labelled as such"
         finally:
             conn.close()
+
+
+def test_migration_021_moves_legacy_keys_into_api_keys():
+    """A key stored in the old profile column keeps working after the upgrade."""
+    import os
+    import sqlite3
+    import subprocess
+    import sys
+    import tempfile
+    from pathlib import Path
+
+    from invoice_machine.crypto import hash_api_key, verify_api_key
+
+    project_root = Path(__file__).resolve().parent.parent
+    plaintext = "legacy-mcp-key"
+
+    with tempfile.TemporaryDirectory() as tmp:
+        db_file = Path(tmp) / "keys.db"
+        env = dict(os.environ)
+        env["DATABASE_URL"] = f"sqlite+aiosqlite:///{db_file}"
+        env["ENVIRONMENT"] = "development"
+
+        def upgrade(target):
+            step = (
+                "from alembic.config import Config; from alembic import command; "
+                f"command.upgrade(Config('alembic.ini'), '{target}')"
+            )
+            result = subprocess.run(
+                [sys.executable, "-c", step],
+                cwd=str(project_root),
+                env=env,
+                capture_output=True,
+                text=True,
+            )
+            assert result.returncode == 0, result.stderr
+
+        upgrade("020_backfill_marked_paid")
+
+        conn = sqlite3.connect(str(db_file))
+        conn.execute(
+            "INSERT INTO business_profile (id, name, mcp_api_key) VALUES (1, 'Test', ?)",
+            (hash_api_key(plaintext),),
+        )
+        conn.commit()
+        conn.close()
+
+        upgrade("head")
+
+        conn = sqlite3.connect(str(db_file))
+        try:
+            rows = conn.execute("SELECT kind, label, key_hash, prefix FROM api_keys").fetchall()
+            assert len(rows) == 1, "the legacy key should become exactly one row"
+            kind, label, key_hash, prefix = rows[0]
+            assert (kind, label, prefix) == ("mcp", "Migrated MCP key", None)
+            assert verify_api_key(plaintext, key_hash), "the migrated key must still authenticate"
+
+            columns = {row[1] for row in conn.execute("PRAGMA table_info(business_profile)")}
+            assert not columns & {"mcp_api_key", "bot_api_key"}
+        finally:
+            conn.close()

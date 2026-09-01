@@ -260,14 +260,30 @@ export const profileApi = {
   },
 
   deleteLogo: () => del('/profile/logo'),
+};
 
-  generateMcpKey: () => post('/profile/mcp-key'),
+// ===== API Keys =====
 
-  deleteMcpKey: () => del('/profile/mcp-key'),
+export const apiKeysApi = {
+  list: () => get('/api-keys'),
 
-  generateBotKey: () => post('/profile/bot-key'),
+  /**
+   * @param {string} kind
+   * @param {string} label
+   */
+  create: (kind, label) => post('/api-keys', { kind, label }),
 
-  deleteBotKey: () => del('/profile/bot-key'),
+  /**
+   * @param {number} id
+   * @param {string} label
+   */
+  rename: (id, label) => request(`/api-keys/${id}`, { method: 'PATCH', body: { label } }),
+
+  /** @param {number} id */
+  rotate: (id) => post(`/api-keys/${id}/rotate`),
+
+  /** @param {number} id */
+  remove: (id) => del(`/api-keys/${id}`),
 };
 
 // ===== Clients =====

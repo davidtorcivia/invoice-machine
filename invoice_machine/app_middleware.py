@@ -192,14 +192,9 @@ async def _verify_bot_api_key(token: str | None) -> bool:
     if not token:
         return False
 
-    from invoice_machine.crypto import verify_api_key
-    from invoice_machine.database import BusinessProfile, async_session_maker
+    from invoice_machine.api_keys import authenticate_api_key
 
-    async with async_session_maker() as db_session:
-        profile = await BusinessProfile.get(db_session)
-        if not profile or not profile.bot_api_key:
-            return False
-        return verify_api_key(token, profile.bot_api_key)
+    return await authenticate_api_key("bot", token)
 
 
 def configure_http_middleware(app: FastAPI) -> None:
@@ -223,7 +218,7 @@ def configure_http_middleware(app: FastAPI) -> None:
         CORSMiddleware,
         allow_origins=settings.cors_origins_list,
         allow_credentials=True,
-        allow_methods=["GET", "POST", "PUT", "DELETE"],
+        allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
         allow_headers=[
             "Content-Type",
             "Authorization",
@@ -245,7 +240,9 @@ def configure_http_middleware(app: FastAPI) -> None:
         if request.method == "OPTIONS":
             return await call_next(request)
 
-        if not path.startswith("/api/auth/"):
+        # Key management is web-session-only: a bot key must not be able to mint
+        # or revoke keys, so bearer auth is skipped and cookie auth applies.
+        if not path.startswith("/api/auth/") and not path.startswith("/api/api-keys"):
             bearer_token = _extract_bearer_token(request)
             if bearer_token:
                 client_ip = get_client_ip(request)

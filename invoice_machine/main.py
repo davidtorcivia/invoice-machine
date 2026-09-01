@@ -12,6 +12,7 @@ from starlette.routing import Route
 from invoice_machine import __version__
 from invoice_machine.api import (
     analytics,
+    api_keys,
     auth,
     backup,
     clients,
@@ -61,6 +62,7 @@ configure_http_middleware(app)
 
 app.include_router(auth.router)
 app.include_router(profile.router)
+app.include_router(api_keys.router)
 app.include_router(clients.router)
 app.include_router(invoices.router)
 app.include_router(trash.router)

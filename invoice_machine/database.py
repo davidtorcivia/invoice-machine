@@ -97,12 +97,6 @@ class BusinessProfile(Base):
     # JSON array: [{id, name, instructions}]
     payment_methods: Mapped[str | None] = mapped_column(Text, nullable=True)
     theme_preference: Mapped[str] = mapped_column(String(20), default="system")
-    # MCP API key for remote access
-    # Stored as hash:<salt>:<sha256> (~102 chars). 64 was the plaintext-key
-    # width and would truncate the hash on any engine that enforces VARCHAR.
-    mcp_api_key: Mapped[str | None] = mapped_column(String(128), nullable=True)
-    # Bot API key for conventional REST API automation
-    bot_api_key: Mapped[str | None] = mapped_column(String(128), nullable=True)
     # App base URL for links and MCP configuration
     app_base_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     # Backup settings
@@ -170,16 +164,6 @@ class BusinessProfile(Base):
         return profile
 
     @property
-    def mcp_api_key_configured(self) -> bool:
-        """Whether an MCP API key is configured."""
-        return bool(self.mcp_api_key)
-
-    @property
-    def bot_api_key_configured(self) -> bool:
-        """Whether a bot REST API key is configured."""
-        return bool(self.bot_api_key)
-
-    @property
     def payment_methods_list(self) -> list[dict]:
         """Parse configured payment methods from stored JSON."""
         import json
@@ -231,6 +215,25 @@ class BusinessProfile(Base):
             if rate.is_finite() and rate > 0:
                 rates[str(code).upper()] = rate
         return rates
+
+
+class ApiKey(Base):
+    """A labeled, individually revocable API key (kind "mcp" or "bot")."""
+
+    __tablename__ = "api_keys"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    kind: Mapped[str] = mapped_column(String(8), nullable=False)
+    label: Mapped[str] = mapped_column(String(100), nullable=False)
+    # Stored as hash:<salt>:<sha256> (~102 chars); see crypto.hash_api_key.
+    key_hash: Mapped[str] = mapped_column(String(128), nullable=False)
+    # First 12 characters of the plain key, for display. NULL for keys migrated
+    # from the old single-key columns, whose plaintext was never stored.
+    prefix: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now, nullable=False)
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+    __table_args__ = (Index("idx_api_keys_kind", "kind"),)
 
 
 class Client(Base):
