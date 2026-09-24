@@ -6,6 +6,22 @@ Notable changes to Invoice Machine. Format based on
 
 ## [Unreleased]
 
+### Changed
+
+- The database now enforces the NOT NULL constraints the models already
+  declared; migrations had left 44 columns nullable. Migration 023 fills
+  existing NULLs with the model default, except that a NULL flag the app already
+  treated as off stays off (a schedule's active flag, TLS, backups, payment
+  instructions on the PDF) and an undated invoice takes its issue date. Each
+  backfill is logged. It then rebuilds eight tables to add the constraint. It
+  also drops eight indexes that duplicated another index or served no query. The
+  rebuild rewrites most of the database, so take a backup before upgrading; the
+  documented deploy procedure already does. Migrations now run in a single
+  transaction with foreign keys off, so a failed upgrade leaves the database as
+  it was. An upgrade that creates a foreign key violation is rolled back;
+  violations already in the database are logged as a warning and do not block
+  startup.
+
 ### Fixed
 
 - Payment reminders were skipped for the day when the send hour was missed, by
