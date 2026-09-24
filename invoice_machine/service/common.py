@@ -34,8 +34,7 @@ def is_auto_invoice_number(number: str | None) -> bool:
 CENTS = Decimal("0.01")
 
 # Statuses that count as actually billed. Excludes "draft" (not yet issued) and
-# "cancelled" (voided) so neither inflates invoiced/revenue/LTV totals. Shared by
-# the REST analytics service and the MCP client-context tool so they agree.
+# "cancelled" (voided) so neither inflates invoiced/revenue/LTV totals.
 BILLED_STATUSES = ("sent", "paid", "overdue")
 
 
@@ -203,9 +202,8 @@ async def recalculate_invoice_totals(session: AsyncSession, invoice: Invoice):
     invoice.total = quantize_money(subtotal + invoice.tax_amount)
 
 
-async def snapshot_client_info(session: AsyncSession, client: Client, invoice: Invoice):
+def snapshot_client_info(client: Client, invoice: Invoice) -> None:
     """Copy client details onto an invoice so the document remains historically stable."""
-    del session
     invoice.client_name = client.name
     invoice.client_business = client.business_name
     invoice.client_email = client.email
@@ -282,71 +280,6 @@ def format_currency(amount: Decimal | float | str, currency_code: str = "USD") -
     return f"{amount:,.2f} {currency_code}"
 
 
-def is_invoice_document(document: Invoice) -> bool:
-    """Return True when a document should count toward billed totals."""
-    return getattr(document, "document_type", "invoice") == "invoice"
-
-
-VALID_RECURRING_FREQUENCIES = ("daily", "weekly", "monthly", "quarterly", "yearly")
-
-
-def _replace_with_valid_day(target_date: date, schedule_day: int) -> date:
-    """Clamp a schedule day to the last valid day in the target month."""
-    from dateutil.relativedelta import relativedelta
-
-    last_day = ((target_date.replace(day=1) + relativedelta(months=1)) - timedelta(days=1)).day
-    return target_date.replace(day=min(schedule_day, last_day))
-
-
-def _align_to_quarter_month(target_date: date, quarter_month: int, schedule_day: int) -> date:
-    """Move a date to the configured month within its calendar quarter.
-
-    ``quarter_month`` is 1-3 (1st/2nd/3rd month of the quarter), so a quarterly
-    schedule set to the "2nd month" always bills in Feb/May/Aug/Nov regardless of
-    which month the schedule happened to be created in.
-    """
-    offset = min(max(int(quarter_month or 1), 1), 3) - 1
-    quarter_start_month = ((target_date.month - 1) // 3) * 3 + 1
-    aligned = target_date.replace(day=1, month=quarter_start_month + offset)
-    return _replace_with_valid_day(aligned, schedule_day)
-
-
-def _align_to_year_month(target_date: date, schedule_month: int | None, schedule_day: int) -> date:
-    """Move a date to the configured calendar month for a yearly schedule."""
-    if schedule_month is None:
-        return _replace_with_valid_day(target_date, schedule_day)
-    month = min(max(int(schedule_month), 1), 12)
-    aligned = target_date.replace(day=1, month=month)
-    return _replace_with_valid_day(aligned, schedule_day)
-
-
-def validate_recurring_schedule(
-    frequency: str,
-    schedule_day: int,
-    payment_terms_days: int | None = None,
-    tax_rate: Decimal | None = None,
-    schedule_month: int | None = None,
-    quarter_month: int | None = None,
-) -> None:
-    """Validate recurring schedule cadence and financial fields."""
-    if frequency not in VALID_RECURRING_FREQUENCIES:
-        raise ValueError(f"Invalid frequency. Must be one of: {list(VALID_RECURRING_FREQUENCIES)}")
-
-    if frequency == "weekly" and not (0 <= schedule_day <= 6):
-        raise ValueError("For weekly frequency, schedule_day must be 0-6 (Monday-Sunday)")
-
-    if frequency in {"monthly", "quarterly", "yearly"} and not (1 <= schedule_day <= 31):
-        raise ValueError("For monthly/quarterly/yearly frequency, schedule_day must be 1-31")
-
-    if schedule_month is not None and not (1 <= schedule_month <= 12):
-        raise ValueError("schedule_month must be 1-12")
-
-    if quarter_month is not None and not (1 <= quarter_month <= 3):
-        raise ValueError("quarter_month must be 1-3 (which month within the quarter)")
-
-    validate_document_fields(payment_terms_days=payment_terms_days, tax_rate=tax_rate)
-
-
 def delete_invoice_pdf_files(pdf_paths: list[str]) -> int:
     """Best-effort removal of generated PDFs for permanently deleted invoices."""
     import logging
@@ -374,6 +307,49 @@ def delete_invoice_pdf_files(pdf_paths: list[str]) -> int:
         except OSError as exc:
             logger.warning("Could not delete PDF %s: %s", name, exc)
     return removed
+
+
+async def list_trashed(session: AsyncSession) -> list[dict]:
+    """Trashed clients and invoices, newest first, with days left before auto-purge."""
+    from invoice_machine.config import get_settings
+    from invoice_machine.utils import ensure_utc, utc_now
+
+    retention_days = get_settings().trash_retention_days
+    now = utc_now()
+    # Column-only selects: whole Invoice entities would pull in each one's
+    # selectin-loaded line items just to render a name and a date.
+    clients = await session.execute(
+        select(Client.id, Client.name, Client.business_name, Client.deleted_at).where(
+            Client.deleted_at.is_not(None)
+        )
+    )
+    invoices = await session.execute(
+        select(Invoice.id, Invoice.invoice_number, Invoice.deleted_at).where(
+            Invoice.deleted_at.is_not(None)
+        )
+    )
+    rows = [
+        ("client", row.id, row.business_name or row.name or "Unknown Client", row.deleted_at)
+        for row in clients
+    ] + [("invoice", row.id, row.invoice_number, row.deleted_at) for row in invoices]
+
+    items = []
+    for kind, row_id, name, deleted in rows:
+        deleted_at = ensure_utc(deleted)
+        if deleted_at is None:
+            continue
+        items.append(
+            {
+                "type": kind,
+                "id": row_id,
+                "name": name,
+                "deleted_at": deleted_at,
+                "days_until_purge": retention_days
+                - int((now - deleted_at).total_seconds() / 86400),
+            }
+        )
+    items.sort(key=lambda item: item["deleted_at"], reverse=True)
+    return items
 
 
 async def purge_trashed_records(

@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from invoice_machine.database import Client, get_session
 from invoice_machine.rate_limit import limiter
-from invoice_machine.services import ClientService
+from invoice_machine.service.clients import ClientService
 
 router = APIRouter(prefix="/api/clients", tags=["clients"])
 

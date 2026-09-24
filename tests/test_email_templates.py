@@ -12,12 +12,20 @@ from invoice_machine.database import Base, BusinessProfile, Client, Invoice
 from invoice_machine.email import (
     DEFAULT_BODY_TEMPLATE,
     DEFAULT_SUBJECT_TEMPLATE,
+    TEMPLATE_PLACEHOLDERS,
     expand_template,
 )
 
 
 class TestTemplateExpansion:
     """Tests for expand_template() function."""
+
+    @pytest.mark.asyncio
+    async def test_every_listed_placeholder_expands(self, business_profile, invoice_with_client):
+        result = expand_template(
+            " ".join(TEMPLATE_PLACEHOLDERS), invoice_with_client, business_profile
+        )
+        assert "{" not in result
 
     @pytest.mark.asyncio
     async def test_expand_invoice_number(self, business_profile, invoice_with_client):
@@ -583,6 +591,15 @@ class TestEmailTemplateMCPTools:
         result = await update_email_templates(email_body_template="MCP Body for {client_name}")
 
         assert result["email_body_template"] == "MCP Body for {client_name}"
+
+    @pytest.mark.asyncio
+    async def test_mcp_update_applies_rest_length_caps(self, db_session, business_profile):
+        from invoice_machine.mcp.email_tools import preview_invoice_email, update_email_templates
+
+        with pytest.raises(ToolError):
+            await update_email_templates(email_subject_template="x" * 501)
+        with pytest.raises(ToolError):
+            await preview_invoice_email(1, body_template="x" * 10_001)
 
     @pytest.mark.asyncio
     async def test_mcp_clear_templates(self, db_session, business_profile):

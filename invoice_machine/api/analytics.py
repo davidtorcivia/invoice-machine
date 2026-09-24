@@ -35,10 +35,10 @@ async def get_dashboard_summary(
 @limiter.limit("30/minute")
 async def get_revenue_summary(
     request: Request,
-    from_date: str | None = Query(
+    from_date: date | None = Query(
         None, description="Start date (ISO format, defaults to start of current year)"
     ),
-    to_date: str | None = Query(None, description="End date (ISO format, defaults to today)"),
+    to_date: date | None = Query(None, description="End date (ISO format, defaults to today)"),
     group_by: str = Query(
         "month", pattern="^(month|quarter|year)$", description="How to group breakdown"
     ),
@@ -46,10 +46,8 @@ async def get_revenue_summary(
 ) -> dict:
     """Get revenue summary for the specified period (grouped by currency)."""
     today = utc_now().date()
-    from_date_parsed = date.fromisoformat(from_date) if from_date else date(today.year, 1, 1)
-    to_date_parsed = date.fromisoformat(to_date) if to_date else today
     return await analytics_service.revenue_summary(
-        session, from_date_parsed, to_date_parsed, group_by
+        session, from_date or date(today.year, 1, 1), to_date or today, group_by
     )
 
 
@@ -57,8 +55,8 @@ async def get_revenue_summary(
 @limiter.limit("30/minute")
 async def get_consolidated_summary(
     request: Request,
-    from_date: str | None = Query(None, description="Start date (ISO format)"),
-    to_date: str | None = Query(None, description="End date (ISO format)"),
+    from_date: date | None = Query(None, description="Start date (ISO format)"),
+    to_date: date | None = Query(None, description="End date (ISO format)"),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
     """Opt-in single-currency roll-up using each invoice's captured FX rate.
@@ -67,8 +65,8 @@ async def get_consolidated_summary(
     """
     return await analytics_service.consolidated_summary(
         session,
-        from_date_parsed=date.fromisoformat(from_date) if from_date else None,
-        to_date_parsed=date.fromisoformat(to_date) if to_date else None,
+        from_date_parsed=from_date,
+        to_date_parsed=to_date,
     )
 
 

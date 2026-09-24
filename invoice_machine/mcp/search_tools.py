@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from invoice_machine.services import SearchService
+from invoice_machine.service.search import SearchService
 
 from .annotations import READ_ONLY
 from .context import get_session, mcp

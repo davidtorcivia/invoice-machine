@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from invoice_machine.database import BusinessProfile, Invoice, get_session
 from invoice_machine.rate_limit import limiter
-from invoice_machine.services import PaymentService
+from invoice_machine.service.payments import PaymentService
 
 logger = logging.getLogger(__name__)
 

@@ -4,8 +4,10 @@ from __future__ import annotations
 
 from typing import cast
 
+from mcp.server.mcpserver.exceptions import ToolError
+
 from invoice_machine.presenters import serialize_client
-from invoice_machine.services import ClientService
+from invoice_machine.service.clients import ClientService
 
 from .annotations import ADDITIVE, ADDITIVE_IDEMPOTENT, DESTRUCTIVE, READ_ONLY, UPDATE
 from .context import get_session, mcp
@@ -28,12 +30,12 @@ async def list_clients(
 
 
 @mcp.tool(annotations=READ_ONLY)
-async def get_client(client_id: int) -> ClientOut | None:
+async def get_client(client_id: int) -> ClientOut:
     """Get client by ID."""
     async with get_session() as session:
         client = await ClientService.get_client(session, client_id)
         if not client:
-            return None
+            raise ToolError(f"Client {client_id} not found")
         return cast(ClientOut, serialize_client(client, json_ready=True))
 
 
@@ -110,7 +112,7 @@ async def update_client(
     tax_enabled: int | None = None,
     tax_rate: float | None = None,
     tax_name: str | None = None,
-) -> ClientOut | None:
+) -> ClientOut:
     """
     Update client fields. Only provide the fields you want to change.
 
@@ -149,7 +151,7 @@ async def update_client(
         client = await ClientService.update_client(session, client_id, **updates)
 
         if not client:
-            return None
+            raise ToolError(f"Client {client_id} not found")
         return cast(ClientOut, serialize_client(client, json_ready=True))
 
 

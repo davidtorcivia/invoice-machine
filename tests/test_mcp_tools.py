@@ -12,6 +12,7 @@ from invoice_machine.mcp import (
     client_tools,
     email_tools,
     invoice_tools,
+    payment_tools,
     profile_tools,
     recurring_tools,
     search_tools,
@@ -73,6 +74,21 @@ async def test_update_business_profile_rejects_bad_accent_color(mcp_db):
 
     ok = await profile_tools.update_business_profile(accent_color="#0891b2")
     assert ok["accent_color"] == "#0891b2"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "bad",
+    [
+        {"default_payment_terms_days": 10_000},
+        {"smtp_port": 70_000},
+        {"default_tax_rate": 101},
+        {"email_subject_template": "x" * 501},
+    ],
+)
+async def test_update_business_profile_applies_rest_bounds(mcp_db, bad):
+    with pytest.raises(ToolError):
+        await profile_tools.update_business_profile(**bad)
 
 
 @pytest.mark.asyncio
@@ -152,8 +168,12 @@ async def test_client_invoice_context_excludes_quotes_and_scopes_currency(mcp_db
         items=[{"description": "quote", "quantity": 1, "unit_price": 999}],
     )
 
-    ctx = await analytics_tools.get_client_invoice_context(client["id"])
+    ctx = await analytics_tools.get_client_invoice_context(client["id"], limit=1)
     assert ctx["statistics"]["total_billed"] == "300.00"
+    assert ctx["statistics"]["invoice_count"] == 1
+    assert ctx["statistics"]["average_invoice"] == "300.00"
+    # The newest document is the quote; the recent list must still hold the invoice.
+    assert [inv["invoice_number"] for inv in ctx["recent_invoices"]] == [inv["invoice_number"]]
 
 
 @pytest.mark.asyncio
@@ -176,6 +196,18 @@ async def test_missing_records_raise_tool_errors(mcp_db):
         await document_tools.generate_pdf(99999)
     with pytest.raises(ToolError, match="Client 99999 not found"):
         await analytics_tools.get_client_invoice_context(99999)
+    with pytest.raises(ToolError, match="Invoice 99999 not found"):
+        await invoice_tools.get_invoice(99999)
+    with pytest.raises(ToolError, match="Invoice 99999 not found"):
+        await invoice_tools.update_invoice(99999, notes="x")
+    with pytest.raises(ToolError, match="Invoice item 99999 not found"):
+        await invoice_tools.update_invoice_item(99999, description="x")
+    with pytest.raises(ToolError, match="Client 99999 not found"):
+        await client_tools.get_client(99999)
+    with pytest.raises(ToolError, match="Client 99999 not found"):
+        await client_tools.update_client(99999, name="x")
+    with pytest.raises(ToolError, match="Invoice 99999 not found"):
+        await payment_tools.list_payments(99999)
     with pytest.raises(ToolError, match="Unknown export kind"):
         await export_tools.export_csv(kind="bogus")
     with pytest.raises(ToolError, match="Invoice 99999 not found"):
@@ -188,8 +220,6 @@ async def test_missing_records_raise_tool_errors(mcp_db):
 
 @pytest.mark.asyncio
 async def test_service_validation_errors_reach_the_client_as_tool_errors(mcp_db):
-    from invoice_machine.mcp import payment_tools
-
     client = await client_tools.create_client(name="Quoted")
     quote = await invoice_tools.create_invoice(
         client_id=client["id"],
@@ -214,7 +244,8 @@ async def test_recurring_schedule_lifecycle(mcp_db):
 
     assert [s["id"] for s in await recurring_tools.list_recurring_schedules()] == [sid]
     assert (await recurring_tools.get_recurring_schedule(sid))["name"] == "Monthly"
-    assert await recurring_tools.get_recurring_schedule(99999) is None
+    with pytest.raises(ToolError, match="Schedule 99999 not found"):
+        await recurring_tools.get_recurring_schedule(99999)
 
     updated = await recurring_tools.update_recurring_schedule(
         sid,
@@ -233,7 +264,8 @@ async def test_recurring_schedule_lifecycle(mcp_db):
     assert updated["name"] == "Monthly v2"
     assert updated["payment_terms_days"] == 14
     assert updated["next_invoice_date"] == "2030-01-01"
-    assert await recurring_tools.update_recurring_schedule(99999, name="x") is None
+    with pytest.raises(ToolError, match="Schedule 99999 not found"):
+        await recurring_tools.update_recurring_schedule(99999, name="x")
 
     assert await recurring_tools.pause_recurring_schedule(sid) is True
     assert (await recurring_tools.get_recurring_schedule(sid))["is_active"] in (0, False)

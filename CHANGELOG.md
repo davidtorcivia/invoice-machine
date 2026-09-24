@@ -58,7 +58,7 @@ Notable changes to Invoice Machine. Format based on
 - The startup catch-up jobs (overdue check, recurring invoices, payment
   reminders) run only in the worker holding the scheduler lock, so a second
   worker cannot generate the same recurring invoices at boot.
-- Minimum versions: `python-multipart` 0.0.31, `weasyprint` 68, `cryptography`
+- Minimum versions: `python-multipart` 0.0.31, `weasyprint` 70, `cryptography`
   48.0.1. CI tests on Python 3.11 and 3.14, the version the image ships.
 - "Generate Now" on a recurring schedule asks for confirmation first, naming the
   client and whether the invoice will be emailed.
@@ -75,9 +75,30 @@ Notable changes to Invoice Machine. Format based on
   "inherit" the next time it is saved from the UI.
 - The invoice edit form recalculates the due date from the issue date and
   payment terms as either changes, and saves the date it shows.
+- MCP `get_invoice`, `update_invoice`, `update_invoice_item`, `get_client`,
+  `update_client`, `list_payments`, `get_recurring_schedule` and
+  `update_recurring_schedule` report a missing record as a tool error instead of
+  returning null.
+- Updating or deleting a line item through another invoice's URL returns 404
+  instead of 400 (update) or 403 (delete).
+- MCP profile and email-template tools apply the REST limits: templates up to
+  500 (subject) and 10000 (body) characters, payment terms 0-365 days, SMTP port
+  1-65535, and the REST field lengths. MCP `get_email_templates` lists all 18
+  placeholders, and `update_email_templates` returns the same fields.
+- `/api/analytics/clients?client_id=` and MCP `get_client_lifetime_value` report
+  a trashed client asked for by id instead of returning nothing.
+- The S3 connection test reads the saved configuration the way backups do, so
+  unusable credentials report "S3 is not configured" instead of falling back to
+  ambient AWS credentials.
 
 ### Fixed
 
+- `/api/analytics/revenue` and `/api/analytics/consolidated` answer a malformed
+  `from_date` or `to_date` with 422 instead of 500.
+- MCP `get_client_invoice_context` statistics covered at most the 500 newest
+  invoices; they now come from the same SQL aggregates as the REST client
+  analytics, including its dominant-currency rule. Its recent invoices no
+  longer come back short when the client's newest documents are quotes.
 - Creating a payment link again for an unchanged invoice within a day failed
   with a Stripe idempotency error, because a random value was sent with the
   same idempotency key.

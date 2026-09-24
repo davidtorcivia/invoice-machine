@@ -17,8 +17,8 @@ from invoice_machine.crypto import (
 from invoice_machine.database import BusinessProfile, close_db, get_session, init_db
 from invoice_machine.rate_limit import limiter
 from invoice_machine.runtime_schema import ensure_database_schema
-from invoice_machine.services import BackupService
-from invoice_machine.utils import refuse_disallowed_url, utc_now
+from invoice_machine.service.backups import BackupService
+from invoice_machine.utils import utc_now
 
 logger = logging.getLogger(__name__)
 
@@ -422,7 +422,7 @@ async def delete_backup(
     """Delete a backup file."""
     backup_service = await get_backup_service(session)
 
-    if not backup_service.delete_backup(filename):
+    if not await asyncio.to_thread(backup_service.delete_backup, filename):
         raise HTTPException(status_code=404, detail="Backup not found")
 
     return {"success": True, "deleted": filename}
@@ -448,42 +448,15 @@ async def test_s3_connection(
     session: AsyncSession = Depends(get_session),
 ):
     """Test S3 connection with current settings."""
-    profile = await BusinessProfile.get_or_create(session)
-
-    if not profile.backup_s3_enabled or not profile.backup_s3_config:
+    backup_service = await get_backup_service(session)
+    if not backup_service.s3_config:
         raise HTTPException(status_code=400, detail="S3 is not configured")
 
+    bucket = backup_service.s3_config.get("bucket")
     try:
-        s3_config = json.loads(profile.backup_s3_config)
-        s3_config = _decrypt_s3_config(s3_config)
-    except json.JSONDecodeError:
-        raise HTTPException(status_code=400, detail="Invalid S3 configuration")
-
-    try:
-        import boto3
-        from botocore.config import Config
-
-        endpoint = s3_config.get("endpoint_url")
-        if endpoint:
-            refuse_disallowed_url(endpoint, kind="S3 endpoint")
-
-        s3_client = boto3.client(
-            "s3",
-            endpoint_url=endpoint,
-            aws_access_key_id=s3_config.get("access_key_id"),
-            aws_secret_access_key=s3_config.get("secret_access_key"),
-            region_name=s3_config.get("region", "auto"),
-            config=Config(signature_version="s3v4"),
-        )
-
-        bucket = s3_config.get("bucket")
-        await asyncio.to_thread(s3_client.head_bucket, Bucket=bucket)
-
+        # Client construction resolves the endpoint host, so it stays off the loop too.
+        await asyncio.to_thread(lambda: backup_service._s3_client().head_bucket(Bucket=bucket))
         return {"success": True, "message": f"Successfully connected to bucket: {bucket}"}
-    except ImportError:
-        raise HTTPException(
-            status_code=500, detail="boto3 is not installed. Run: pip install boto3"
-        )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as e:

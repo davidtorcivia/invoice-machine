@@ -349,6 +349,19 @@ class TestInvoiceEndpoints:
         assert data["total"] == "150.00"
 
     @pytest.mark.asyncio
+    async def test_item_on_another_invoice_is_not_found(self, test_client):
+        owner = await test_client.post(
+            "/api/invoices",
+            json={"items": [{"description": "Mine", "quantity": 1, "unit_price": 100}]},
+        )
+        other = await test_client.post("/api/invoices", json={})
+        item_id = owner.json()["items"][0]["id"]
+        path = f"/api/invoices/{other.json()['id']}/items/{item_id}"
+
+        assert (await test_client.put(path, json={"description": "x"})).status_code == 404
+        assert (await test_client.delete(path)).status_code == 404
+
+    @pytest.mark.asyncio
     async def test_delete_invoice_item(self, test_client):
         create_response = await test_client.post(
             "/api/invoices",

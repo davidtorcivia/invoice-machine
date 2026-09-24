@@ -5,7 +5,8 @@ from decimal import Decimal
 
 import pytest
 
-from invoice_machine.services import InvoiceService, RecurringService
+from invoice_machine.service.invoices import InvoiceService
+from invoice_machine.service.recurring import RecurringService
 
 
 def _fixed_now(year, month, day):

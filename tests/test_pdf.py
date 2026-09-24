@@ -14,7 +14,6 @@ from invoice_machine.database import BusinessProfile, Invoice, InvoiceItem
 try:
     from invoice_machine.pdf.generator import (
         _generate_pdf_sync,
-        format_money,
         generate_pdf,
         get_logo_data_uri,
         strftime_filter,
@@ -25,31 +24,6 @@ except OSError as e:
         f"WeasyPrint dependencies missing: {e}",
         allow_module_level=True,
     )
-
-
-class TestFormatMoney:
-    """Tests for currency formatting."""
-
-    def test_format_usd(self):
-        assert format_money(100, "USD") == "$100.00"
-        assert format_money(1234.56, "USD") == "$1,234.56"
-        assert format_money("99.99", "USD") == "$99.99"
-
-    def test_format_other_currencies(self):
-        assert format_money(100, "EUR") == "100.00 EUR"
-        assert format_money(1000, "GBP") == "1,000.00 GBP"
-
-    def test_format_decimal(self):
-        assert format_money(Decimal("1234.56"), "USD") == "$1,234.56"
-
-    def test_format_large_amounts(self):
-        assert format_money(1000000, "USD") == "$1,000,000.00"
-
-    def test_format_zero(self):
-        assert format_money(0, "USD") == "$0.00"
-
-    def test_format_negative(self):
-        assert format_money(-100, "USD") == "$-100.00"
 
 
 class TestFilters:
@@ -474,7 +448,7 @@ class TestStoreInvoicePDF:
     ):
         """An item edit that leaves the totals alone still changes the document."""
         from invoice_machine.pdf.generator import store_invoice_pdf
-        from invoice_machine.services import InvoiceService
+        from invoice_machine.service.invoices import InvoiceService
 
         await store_invoice_pdf(db_session, invoice_with_items)
         item_id = invoice_with_items.items[0].id

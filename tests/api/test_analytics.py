@@ -187,6 +187,12 @@ class TestAnalyticsEndpoints:
         assert "totals" in data
 
     @pytest.mark.asyncio
+    async def test_malformed_dates_are_rejected_as_422(self, test_client):
+        for path in ("/api/analytics/revenue", "/api/analytics/consolidated"):
+            response = await test_client.get(f"{path}?from_date=not-a-date")
+            assert response.status_code == 422
+
+    @pytest.mark.asyncio
     async def test_get_revenue_group_by_month(self, test_client):
         response = await test_client.get("/api/analytics/revenue?group_by=month")
         assert response.status_code == 200

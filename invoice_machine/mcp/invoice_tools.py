@@ -9,7 +9,7 @@ from typing import cast
 from mcp.server.mcpserver.exceptions import ToolError
 
 from invoice_machine.presenters import dump_json_list, serialize_invoice, serialize_invoice_item
-from invoice_machine.services import InvoiceService
+from invoice_machine.service.invoices import InvoiceService
 from invoice_machine.utils import utc_now
 
 from .annotations import ADDITIVE, ADDITIVE_IDEMPOTENT, DESTRUCTIVE, READ_ONLY, UPDATE
@@ -67,12 +67,12 @@ async def list_invoices(
 
 
 @mcp.tool(annotations=READ_ONLY)
-async def get_invoice(invoice_id: int) -> InvoiceOut | None:
+async def get_invoice(invoice_id: int) -> InvoiceOut:
     """Get an invoice or quote with its line items."""
     async with get_session() as session:
         invoice = await InvoiceService.get_invoice(session, invoice_id)
         if not invoice:
-            return None
+            raise ToolError(f"Invoice {invoice_id} not found")
         return cast(
             InvoiceOut,
             serialize_invoice(
@@ -169,7 +169,7 @@ async def update_invoice(
     tax_enabled: bool | None = None,
     tax_rate: float | None = None,
     tax_name: str | None = None,
-) -> InvoiceOut | None:
+) -> InvoiceOut:
     """
     Update invoice or quote fields.
 
@@ -220,7 +220,7 @@ async def update_invoice(
         )
 
         if not invoice:
-            return None
+            raise ToolError(f"Invoice {invoice_id} not found")
         return cast(
             InvoiceOut,
             serialize_invoice(
@@ -325,7 +325,7 @@ async def update_invoice_item(
     quantity: float | str | None = None,
     unit_price: float | str | None = None,
     unit_type: str | None = None,
-) -> InvoiceItemOut | None:
+) -> InvoiceItemOut:
     """
     Update a line item.
 
@@ -342,7 +342,7 @@ async def update_invoice_item(
         item = await InvoiceService.update_item(session, item_id, **updates)
 
         if not item:
-            return None
+            raise ToolError(f"Invoice item {item_id} not found")
 
         return cast(InvoiceItemOut, serialize_invoice_item(item))
 

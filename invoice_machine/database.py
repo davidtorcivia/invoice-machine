@@ -141,11 +141,8 @@ class BusinessProfile(Base):
 
     @classmethod
     async def get(cls, session: AsyncSession) -> Optional["BusinessProfile"]:
-        """Get the singleton business profile."""
-        from sqlalchemy import select
-
-        result = await session.execute(select(cls).where(cls.id == 1))
-        return result.scalar_one_or_none()
+        """Get the singleton business profile (served from the identity map when loaded)."""
+        return await session.get(cls, 1)
 
     @classmethod
     async def get_or_create(cls, session: AsyncSession) -> "BusinessProfile":
@@ -259,16 +256,6 @@ class Client(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now, onupdate=utc_now)
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
-    invoices: Mapped[list["Invoice"]] = relationship(
-        "Invoice",
-        back_populates="client",
-        foreign_keys="Invoice.client_id",
-        # No code reads client.invoices; the back-reference exists only for the
-        # Invoice.client side. "raise" turns an accidental eager full-table load
-        # into a loud error instead of a silent N+1.
-        lazy="raise",
-    )
-
     __table_args__ = (
         Index("idx_clients_deleted", "deleted_at"),
         Index("idx_clients_email", "email"),
@@ -362,12 +349,6 @@ class Invoice(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now, onupdate=utc_now)
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
-    client: Mapped[Optional["Client"]] = relationship(
-        "Client",
-        back_populates="invoices",
-        foreign_keys=[client_id],
-        lazy="selectin",
-    )
     items: Mapped[list["InvoiceItem"]] = relationship(
         "InvoiceItem",
         back_populates="invoice",
@@ -484,7 +465,7 @@ class InvoiceItem(Base):
     total: Mapped[Decimal] = mapped_column(DECIMAL(10, 2), nullable=False)
     sort_order: Mapped[int] = mapped_column(Integer, default=0)
 
-    invoice: Mapped["Invoice"] = relationship("Invoice", back_populates="items", lazy="selectin")
+    invoice: Mapped["Invoice"] = relationship("Invoice", back_populates="items", lazy="raise")
 
     __table_args__ = (Index("idx_items_invoice", "invoice_id"),)
 
@@ -557,8 +538,6 @@ class Session(Base):
     csrf_token: Mapped[str] = mapped_column(String(64), nullable=False)
     user_agent: Mapped[str | None] = mapped_column(String(500), nullable=True)
     ip_address: Mapped[str | None] = mapped_column(String(45), nullable=True)  # IPv6 max length
-
-    user: Mapped["User"] = relationship("User", lazy="selectin")
 
     if TYPE_CHECKING:
         # Set by create() to carry the plaintext cookie value to the caller.
@@ -653,17 +632,6 @@ class Session(Base):
         return result.rowcount
 
     @classmethod
-    async def delete_user_sessions(cls, session: "AsyncSession", user_id: int) -> int:
-        """Delete all sessions for a user (logout everywhere)."""
-        from sqlalchemy import delete
-
-        result = cast(
-            CursorResult[Any], await session.execute(delete(cls).where(cls.user_id == user_id))
-        )
-        await session.commit()
-        return result.rowcount
-
-    @classmethod
     async def delete_other_sessions(
         cls, session: "AsyncSession", user_id: int, keep_token: str
     ) -> int:
@@ -729,9 +697,6 @@ class RecurringSchedule(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now, onupdate=utc_now)
 
     client: Mapped["Client"] = relationship("Client", lazy="selectin")
-    last_invoice: Mapped[Optional["Invoice"]] = relationship(
-        "Invoice", foreign_keys=[last_invoice_id], lazy="selectin"
-    )
 
     __table_args__ = (
         Index("idx_recurring_client", "client_id"),

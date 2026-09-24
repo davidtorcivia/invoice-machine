@@ -11,17 +11,72 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from invoice_machine.database import BusinessProfile, Client, RecurringSchedule
 from invoice_machine.service.common import (
-    _align_to_quarter_month,
-    _align_to_year_month,
-    _replace_with_valid_day,
     normalize_line_items,
     run_per_row,
-    validate_recurring_schedule,
+    validate_document_fields,
 )
 from invoice_machine.service.reminders import business_now
 from invoice_machine.utils import utc_now
 
 logger = logging.getLogger(__name__)
+
+VALID_RECURRING_FREQUENCIES = ("daily", "weekly", "monthly", "quarterly", "yearly")
+
+
+def _replace_with_valid_day(target_date: date, schedule_day: int) -> date:
+    """Clamp a schedule day to the last valid day in the target month."""
+    last_day = ((target_date.replace(day=1) + relativedelta(months=1)) - timedelta(days=1)).day
+    return target_date.replace(day=min(schedule_day, last_day))
+
+
+def _align_to_quarter_month(target_date: date, quarter_month: int, schedule_day: int) -> date:
+    """Move a date to the configured month within its calendar quarter.
+
+    ``quarter_month`` is 1-3 (1st/2nd/3rd month of the quarter), so a quarterly
+    schedule set to the "2nd month" always bills in Feb/May/Aug/Nov regardless of
+    which month the schedule happened to be created in.
+    """
+    offset = min(max(int(quarter_month or 1), 1), 3) - 1
+    quarter_start_month = ((target_date.month - 1) // 3) * 3 + 1
+    aligned = target_date.replace(day=1, month=quarter_start_month + offset)
+    return _replace_with_valid_day(aligned, schedule_day)
+
+
+def _align_to_year_month(target_date: date, schedule_month: int | None, schedule_day: int) -> date:
+    """Move a date to the configured calendar month for a yearly schedule."""
+    if schedule_month is None:
+        return _replace_with_valid_day(target_date, schedule_day)
+    month = min(max(int(schedule_month), 1), 12)
+    aligned = target_date.replace(day=1, month=month)
+    return _replace_with_valid_day(aligned, schedule_day)
+
+
+def validate_recurring_schedule(
+    frequency: str,
+    schedule_day: int,
+    payment_terms_days: int | None = None,
+    tax_rate: Decimal | None = None,
+    schedule_month: int | None = None,
+    quarter_month: int | None = None,
+) -> None:
+    """Validate recurring schedule cadence and financial fields."""
+    if frequency not in VALID_RECURRING_FREQUENCIES:
+        raise ValueError(f"Invalid frequency. Must be one of: {list(VALID_RECURRING_FREQUENCIES)}")
+
+    if frequency == "weekly" and not (0 <= schedule_day <= 6):
+        raise ValueError("For weekly frequency, schedule_day must be 0-6 (Monday-Sunday)")
+
+    if frequency in {"monthly", "quarterly", "yearly"} and not (1 <= schedule_day <= 31):
+        raise ValueError("For monthly/quarterly/yearly frequency, schedule_day must be 1-31")
+
+    if schedule_month is not None and not (1 <= schedule_month <= 12):
+        raise ValueError("schedule_month must be 1-12")
+
+    if quarter_month is not None and not (1 <= quarter_month <= 3):
+        raise ValueError("quarter_month must be 1-3 (which month within the quarter)")
+
+    validate_document_fields(payment_terms_days=payment_terms_days, tax_rate=tax_rate)
+
 
 # Cap invoices generated for a single schedule in one catch-up run, so a long
 # outage (or a misconfigured far-past next_invoice_date) can't flood the system.
@@ -441,7 +496,7 @@ class RecurringService:
         """
         today = await _business_today(session)
         result = await session.execute(
-            select(RecurringSchedule)
+            select(RecurringSchedule.id)
             .join(Client, RecurringSchedule.client_id == Client.id)
             .where(
                 RecurringSchedule.is_active == 1,
@@ -449,7 +504,7 @@ class RecurringService:
                 Client.deleted_at.is_(None),
             )
         )
-        due_ids = [schedule.id for schedule in result.scalars().all()]
+        due_ids = list(result.scalars().all())
 
         results = []
         # Set before the risky part so the error path can report the schedule.

@@ -2,7 +2,8 @@
 
 import pytest
 
-from invoice_machine.services import ClientService, InvoiceService
+from invoice_machine.service.clients import ClientService
+from invoice_machine.service.invoices import InvoiceService
 
 
 @pytest.mark.asyncio

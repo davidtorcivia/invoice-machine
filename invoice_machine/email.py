@@ -15,7 +15,7 @@ from starlette.concurrency import run_in_threadpool
 from invoice_machine.config import get_settings
 from invoice_machine.crypto import UnencryptedCredentialError, decrypt_credential
 from invoice_machine.database import BusinessProfile, Invoice
-from invoice_machine.services import format_currency
+from invoice_machine.service.common import format_currency
 from invoice_machine.utils import confined_file, refuse_disallowed_host, sanitize_filename_component
 
 settings = get_settings()
@@ -89,6 +89,28 @@ Thank you for your business!
 
 Best regards,
 {your_name}"""
+
+# Every placeholder expand_template fills; the template settings list them to users.
+TEMPLATE_PLACEHOLDERS = (
+    "{invoice_number}",
+    "{quote_number}",
+    "{document_type}",
+    "{document_type_lower}",
+    "{client_name}",
+    "{client_business_name}",
+    "{client_email}",
+    "{total}",
+    "{amount}",
+    "{subtotal}",
+    "{amount_paid}",
+    "{amount_due}",
+    "{payment_link}",
+    "{due_date}",
+    "{issue_date}",
+    "{your_name}",
+    "{business_name}",
+    "{line_items}",
+)
 
 
 def expand_template(template: str, invoice: "Invoice", profile: "BusinessProfile") -> str:

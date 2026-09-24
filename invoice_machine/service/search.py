@@ -192,22 +192,20 @@ async def _table_counts(session) -> tuple[int, int, int]:
     return counts[0], counts[1], counts[2]
 
 
-async def _fts_up_to_date(session, invoices: int, clients: int, line_items: int) -> bool:
-    """Whether every FTS table's row count already matches its base table."""
+async def _item_fts_up_to_date(session, line_items: int) -> bool:
+    """Whether invoice_items_fts holds one row per line item.
+
+    Only this table has its own storage. invoices_fts and clients_fts are
+    external-content tables whose COUNT(*) reads the base table, so a count
+    comparison there can never detect staleness.
+    """
     from sqlalchemy import text
 
     try:
-        for table, expected in (
-            ("invoices_fts", invoices),
-            ("clients_fts", clients),
-            ("invoice_items_fts", line_items),
-        ):
-            actual = (await session.execute(text(f"SELECT COUNT(*) FROM {table}"))).scalar()
-            if actual != expected:
-                return False
-        return True
+        actual = (await session.execute(text("SELECT COUNT(*) FROM invoice_items_fts"))).scalar()
     except Exception:
         return False
+    return actual == line_items
 
 
 _ALREADY_INDEXED = "FTS indexes already up to date"
@@ -238,7 +236,7 @@ async def _reindex_precheck(session, force: bool) -> tuple[str | None, tuple, se
         not force
         and {"invoices_fts", "clients_fts", "invoice_items_fts"} <= existing_fts_tables
         and item_triggers_present
-        and await _fts_up_to_date(session, *counts)
+        and await _item_fts_up_to_date(session, counts[2])
     ):
         return _ALREADY_INDEXED, counts, existing_fts_tables
     return None, counts, existing_fts_tables

@@ -9,13 +9,14 @@ import pytest
 
 from invoice_machine.service import analytics as analytics_service
 from invoice_machine.service.export import export_csv_text
+from invoice_machine.service.invoices import InvoiceService
+from invoice_machine.service.payments import PaymentService
 from invoice_machine.service.reminders import (
     build_reminder_content,
     due_offsets_for,
     send_due_reminders,
     validate_reminder_offsets,
 )
-from invoice_machine.services import InvoiceService, PaymentService
 from invoice_machine.utils import utc_now
 
 

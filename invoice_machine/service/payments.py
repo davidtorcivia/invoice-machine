@@ -101,11 +101,6 @@ class PaymentService:
         return list(result.scalars().all())
 
     @staticmethod
-    async def get_payment(session: AsyncSession, payment_id: int) -> Payment | None:
-        """Get a payment by ID."""
-        return await session.get(Payment, payment_id)
-
-    @staticmethod
     async def find_by_external_id(
         session: AsyncSession, provider: str, external_id: str
     ) -> Payment | None:

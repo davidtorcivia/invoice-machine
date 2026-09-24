@@ -135,19 +135,6 @@ async def cleanup_expired_sessions(db_session: AsyncSession) -> int:
     return await DbSession.delete_expired(db_session)
 
 
-async def get_session_user_id(token: str) -> int | None:
-    """Validate a session token and return the user_id if valid.
-
-    Manages its own database session, for use in middleware where no session
-    context exists.
-    """
-    async with db.async_session_maker() as db_session:
-        session = await get_session_data(db_session, token)
-        if session and session.user_id:
-            return session.user_id
-        return None
-
-
 async def run_session_cleanup() -> int:
     """Run session cleanup with its own database session."""
     async with db.async_session_maker() as db_session:
@@ -206,26 +193,6 @@ def _set_session_cookies(response: Response, session: DbSession) -> None:
     )
 
 
-async def verify_csrf_token(
-    db_session: AsyncSession,
-    session_token: str,
-    csrf_header: str | None,
-) -> bool:
-    """Verify CSRF token matches the session's token.
-
-    Double-submit cookie pattern: the client must send the CSRF token in an
-    X-CSRF-Token header matching the session's csrf_token.
-    """
-    if not csrf_header:
-        return False
-
-    session = await get_session_data(db_session, session_token)
-    if not session:
-        return False
-
-    return secrets.compare_digest(session.csrf_token, csrf_header)
-
-
 @router.get("/status", response_model=AuthStatus)
 @limiter.limit("120/minute")
 async def auth_status(
@@ -247,7 +214,7 @@ async def auth_status(
     if not user_session:
         return AuthStatus(authenticated=False, needs_setup=False)
 
-    user = user_session.user
+    user = await db_session.get(User, user_session.user_id)
     if not user:
         return AuthStatus(authenticated=False, needs_setup=False)
 
@@ -377,10 +344,10 @@ async def change_password(
         raise HTTPException(status_code=401, detail="Authentication required")
 
     user_session = await get_session_data(db_session, session_token)
-    if not user_session or not user_session.user:
+    user = await db_session.get(User, user_session.user_id) if user_session else None
+    if not user:
         raise HTTPException(status_code=401, detail="Session expired")
 
-    user = user_session.user
     current_ok = await run_in_threadpool(verify_password, data.current_password, user.password_hash)
     if not current_ok:
         raise HTTPException(status_code=401, detail="Current password is incorrect")

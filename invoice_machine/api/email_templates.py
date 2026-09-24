@@ -5,33 +5,11 @@ from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from invoice_machine.database import BusinessProfile, get_session
-from invoice_machine.email import DEFAULT_BODY_TEMPLATE, DEFAULT_SUBJECT_TEMPLATE, expand_template
 from invoice_machine.rate_limit import limiter
-from invoice_machine.services import InvoiceService
+from invoice_machine.service import email as email_service
+from invoice_machine.service.profile import EmailTemplatesUpdate
 
 router = APIRouter(tags=["email-templates"])
-
-
-AVAILABLE_PLACEHOLDERS = [
-    "{invoice_number}",
-    "{quote_number}",
-    "{document_type}",
-    "{document_type_lower}",
-    "{client_name}",
-    "{client_business_name}",
-    "{client_email}",
-    "{total}",
-    "{amount}",
-    "{subtotal}",
-    "{amount_paid}",
-    "{amount_due}",
-    "{payment_link}",
-    "{due_date}",
-    "{issue_date}",
-    "{your_name}",
-    "{business_name}",
-    "{line_items}",
-]
 
 
 class EmailTemplatesSchema(BaseModel):
@@ -39,16 +17,9 @@ class EmailTemplatesSchema(BaseModel):
 
     email_subject_template: str | None = None
     email_body_template: str | None = None
-    available_placeholders: list[str] = AVAILABLE_PLACEHOLDERS
-    default_subject: str = DEFAULT_SUBJECT_TEMPLATE
-    default_body: str = DEFAULT_BODY_TEMPLATE
-
-
-class EmailTemplatesUpdate(BaseModel):
-    """Update email templates request."""
-
-    email_subject_template: str | None = Field(None, max_length=500)
-    email_body_template: str | None = Field(None, max_length=10000)
+    available_placeholders: list[str]
+    default_subject: str
+    default_body: str
 
 
 class EmailPreviewRequest(BaseModel):
@@ -78,10 +49,7 @@ async def get_email_templates(
 ) -> EmailTemplatesSchema:
     """Get email templates and available placeholders."""
     profile = await BusinessProfile.get_or_create(session)
-    return EmailTemplatesSchema(
-        email_subject_template=profile.email_subject_template,
-        email_body_template=profile.email_body_template,
-    )
+    return EmailTemplatesSchema.model_validate(email_service.email_templates(profile))
 
 
 @router.put("/api/settings/email-templates")
@@ -92,21 +60,10 @@ async def update_email_templates(
     session: AsyncSession = Depends(get_session),
 ) -> EmailTemplatesSchema:
     """Update email templates."""
-    profile = await BusinessProfile.get_or_create(session)
-
-    # Empty string clears the template, restoring the built-in default.
-    if data.email_subject_template is not None:
-        profile.email_subject_template = data.email_subject_template or None
-    if data.email_body_template is not None:
-        profile.email_body_template = data.email_body_template or None
-
-    await session.commit()
-    await session.refresh(profile)
-
-    return EmailTemplatesSchema(
-        email_subject_template=profile.email_subject_template,
-        email_body_template=profile.email_body_template,
+    templates = await email_service.update_email_templates(
+        session, data.email_subject_template, data.email_body_template
     )
+    return EmailTemplatesSchema.model_validate(templates)
 
 
 @router.post("/api/invoices/{invoice_id}/email-preview")
@@ -118,32 +75,9 @@ async def preview_invoice_email(
     session: AsyncSession = Depends(get_session),
 ) -> EmailPreviewResponse:
     """Preview email content for an invoice with template expansion."""
-    invoice = await InvoiceService.get_invoice(session, invoice_id)
-    if not invoice:
+    preview = await email_service.preview_invoice_email(
+        session, invoice_id, data.subject_template, data.body_template
+    )
+    if preview is None:
         raise HTTPException(status_code=404, detail="Invoice not found")
-
-    profile = await BusinessProfile.get_or_create(session)
-
-    subject_template = (
-        data.subject_template
-        if data.subject_template is not None
-        else (profile.email_subject_template or DEFAULT_SUBJECT_TEMPLATE)
-    )
-    body_template = (
-        data.body_template
-        if data.body_template is not None
-        else (profile.email_body_template or DEFAULT_BODY_TEMPLATE)
-    )
-
-    subject = expand_template(subject_template, invoice, profile)
-    body = expand_template(body_template, invoice, profile)
-
-    return EmailPreviewResponse(
-        invoice_id=invoice.id,
-        invoice_number=invoice.invoice_number,
-        recipient_email=invoice.client_email,
-        subject=subject,
-        body=body,
-        subject_template_used=subject_template,
-        body_template_used=body_template,
-    )
+    return EmailPreviewResponse.model_validate(preview)

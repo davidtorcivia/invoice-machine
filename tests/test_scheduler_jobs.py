@@ -46,7 +46,7 @@ def test_seconds_until_next_hour_is_at_most_one_hour():
 @pytest.mark.asyncio
 async def test_overdue_job_marks_past_due_sent_invoices(scheduler_db):
     from invoice_machine.database import Client
-    from invoice_machine.services import InvoiceService
+    from invoice_machine.service.invoices import InvoiceService
 
     today = utc_now().date()
     async with scheduler_db() as session:
@@ -75,7 +75,8 @@ async def test_overdue_job_marks_past_due_sent_invoices(scheduler_db):
 @pytest.mark.asyncio
 async def test_recurring_job_generates_due_invoice(scheduler_db):
     from invoice_machine.database import Client
-    from invoice_machine.services import InvoiceService, RecurringService
+    from invoice_machine.service.invoices import InvoiceService
+    from invoice_machine.service.recurring import RecurringService
 
     async with scheduler_db() as session:
         client = Client(name="Retainer Co")
@@ -444,7 +445,8 @@ async def test_rebuild_search_indexes_reports_each_outcome(
     from unittest.mock import AsyncMock
 
     monkeypatch.setattr(
-        "invoice_machine.services.SearchService.reindex_fts", AsyncMock(return_value=reindex_result)
+        "invoice_machine.service.search.SearchService.reindex_fts",
+        AsyncMock(return_value=reindex_result),
     )
 
     with caplog.at_level("INFO"):

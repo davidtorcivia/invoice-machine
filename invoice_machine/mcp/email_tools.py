@@ -8,8 +8,8 @@ from mcp.server.mcpserver import Context, Elicit, Resolve
 from mcp.server.mcpserver.exceptions import ToolError
 
 from invoice_machine.database import BusinessProfile
-from invoice_machine.services import InvoiceService
-from invoice_machine.utils import utc_now
+from invoice_machine.service import email as email_service
+from invoice_machine.service.invoices import InvoiceService
 
 from .annotations import OUTWARD, READ_ONLY, READ_ONLY_REMOTE, UPDATE
 from .confirmations import Confirmation, confirmed, ensure_confirmed
@@ -51,12 +51,10 @@ async def send_invoice_email(
     to confirm before sending, where the client supports it. The recipient
     defaults to the client's email, subject and body to the saved templates.
     """
-    from invoice_machine.service.email import send_invoice_email as send_invoice_email_service
-
     ensure_confirmed(confirmation, "Sending this invoice")
 
     async with get_session() as session:
-        result = await send_invoice_email_service(
+        result = await email_service.send_invoice_email(
             session,
             invoice_id,
             recipient_email=recipient_email,
@@ -82,40 +80,14 @@ async def test_smtp_connection() -> dict:
                 "error": "SMTP is not enabled. Configure SMTP settings first.",
             }
 
-        email_service = EmailService(profile)
-        return await email_service.test_connection()
+        return await EmailService(profile).test_connection()
 
 
 @mcp.tool(annotations=READ_ONLY)
 async def get_email_templates() -> dict:
     """Get the email templates for invoice/quote emails, plus the placeholders."""
-    from invoice_machine.email import DEFAULT_BODY_TEMPLATE, DEFAULT_SUBJECT_TEMPLATE
-
     async with get_session() as session:
-        profile = await BusinessProfile.get_or_create(session)
-
-        return {
-            "email_subject_template": profile.email_subject_template,
-            "email_body_template": profile.email_body_template,
-            "available_placeholders": [
-                "{invoice_number}",
-                "{quote_number}",
-                "{document_type}",
-                "{document_type_lower}",
-                "{client_name}",
-                "{client_business_name}",
-                "{client_email}",
-                "{total}",
-                "{amount}",
-                "{subtotal}",
-                "{due_date}",
-                "{issue_date}",
-                "{your_name}",
-                "{business_name}",
-            ],
-            "default_subject": DEFAULT_SUBJECT_TEMPLATE,
-            "default_body": DEFAULT_BODY_TEMPLATE,
-        }
+        return email_service.email_templates(await BusinessProfile.get_or_create(session))
 
 
 @mcp.tool(annotations=UPDATE)
@@ -130,21 +102,9 @@ async def update_email_templates(
     Set a template to empty string to clear it (will use defaults).
     """
     async with get_session() as session:
-        profile = await BusinessProfile.get_or_create(session)
-
-        if email_subject_template is not None:
-            profile.email_subject_template = email_subject_template or None
-        if email_body_template is not None:
-            profile.email_body_template = email_body_template or None
-
-        profile.updated_at = utc_now()
-        await session.commit()
-        await session.refresh(profile)
-
-        return {
-            "email_subject_template": profile.email_subject_template,
-            "email_body_template": profile.email_body_template,
-        }
+        return await email_service.update_email_templates(
+            session, email_subject_template, email_body_template
+        )
 
 
 @mcp.tool(annotations=READ_ONLY)
@@ -154,39 +114,10 @@ async def preview_invoice_email(
     body_template: str | None = None,
 ) -> dict:
     """Preview an invoice email with its templates expanded."""
-    from invoice_machine.email import (
-        DEFAULT_BODY_TEMPLATE,
-        DEFAULT_SUBJECT_TEMPLATE,
-        expand_template,
-    )
-
     async with get_session() as session:
-        invoice = await InvoiceService.get_invoice(session, invoice_id)
-        if not invoice:
+        preview = await email_service.preview_invoice_email(
+            session, invoice_id, subject_template, body_template
+        )
+        if preview is None:
             raise ToolError(f"Invoice {invoice_id} not found")
-
-        profile = await BusinessProfile.get_or_create(session)
-
-        subj_tmpl = (
-            subject_template
-            if subject_template is not None
-            else (profile.email_subject_template or DEFAULT_SUBJECT_TEMPLATE)
-        )
-        body_tmpl = (
-            body_template
-            if body_template is not None
-            else (profile.email_body_template or DEFAULT_BODY_TEMPLATE)
-        )
-
-        subject = expand_template(subj_tmpl, invoice, profile)
-        body = expand_template(body_tmpl, invoice, profile)
-
-        return {
-            "invoice_id": invoice.id,
-            "invoice_number": invoice.invoice_number,
-            "recipient_email": invoice.client_email,
-            "subject": subject,
-            "body": body,
-            "subject_template_used": subj_tmpl,
-            "body_template_used": body_tmpl,
-        }
+        return preview

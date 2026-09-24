@@ -168,6 +168,8 @@ async def send_due_reminders(session: AsyncSession, today: date | None = None) -
 
     offsets = profile.reminder_offsets_list or list(DEFAULT_REMINDER_OFFSETS)
 
+    # Whole rows, kept referenced: run_per_row's session.get then hits the identity
+    # map instead of issuing two queries per open invoice.
     candidates = (
         (
             await session.execute(

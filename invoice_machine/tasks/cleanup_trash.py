@@ -10,7 +10,7 @@ from datetime import timedelta
 
 import invoice_machine.database as db
 from invoice_machine.config import get_settings
-from invoice_machine.services import purge_trashed_records
+from invoice_machine.service.common import purge_trashed_records
 from invoice_machine.utils import utc_now
 
 logger = logging.getLogger(__name__)

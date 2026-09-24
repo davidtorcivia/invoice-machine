@@ -5,7 +5,7 @@ from decimal import Decimal
 import pytest
 
 from invoice_machine.service.common import format_quantity, line_item_total, quantize_money
-from invoice_machine.services import InvoiceService
+from invoice_machine.service.invoices import InvoiceService
 
 
 def test_format_quantity_strips_trailing_zeros():
@@ -74,7 +74,7 @@ async def test_fractional_hours_quantity(db_session, test_client):
 @pytest.mark.asyncio
 async def test_client_stats_do_not_mix_currencies(db_session, test_client):
     """A client's USD and EUR invoices are reported per-currency, never summed."""
-    from invoice_machine.services import ClientService
+    from invoice_machine.service.clients import ClientService
 
     usd_invoice = await InvoiceService.create_invoice(
         db_session,

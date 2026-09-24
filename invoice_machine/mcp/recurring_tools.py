@@ -10,7 +10,7 @@ from mcp.server.mcpserver import Context, Elicit, Resolve
 from mcp.server.mcpserver.exceptions import ToolError
 
 from invoice_machine.presenters import serialize_recurring_schedule
-from invoice_machine.services import RecurringService
+from invoice_machine.service.recurring import RecurringService
 
 from .annotations import ADDITIVE, DESTRUCTIVE, OUTWARD, READ_ONLY, UPDATE
 from .confirmations import Confirmation, confirmed, ensure_confirmed
@@ -37,12 +37,12 @@ async def list_recurring_schedules(
 
 
 @mcp.tool(annotations=READ_ONLY)
-async def get_recurring_schedule(schedule_id: int) -> RecurringScheduleOut | None:
+async def get_recurring_schedule(schedule_id: int) -> RecurringScheduleOut:
     """Get a recurring schedule by ID."""
     async with get_session() as session:
         schedule = await RecurringService.get_schedule(session, schedule_id)
         if not schedule:
-            return None
+            raise ToolError(f"Schedule {schedule_id} not found")
         return cast(RecurringScheduleOut, serialize_recurring_schedule(schedule, json_ready=True))
 
 
@@ -143,7 +143,7 @@ async def update_recurring_schedule(
     tax_enabled: int | None = None,
     tax_rate: float | None = None,
     tax_name: str | None = None,
-) -> RecurringScheduleOut | None:
+) -> RecurringScheduleOut:
     """
     Update a recurring schedule. Only provide the fields you want to change.
 
@@ -202,7 +202,7 @@ async def update_recurring_schedule(
 
         schedule = await RecurringService.update_schedule(session, schedule_id, **updates)
         if not schedule:
-            return None
+            raise ToolError(f"Schedule {schedule_id} not found")
 
         return cast(RecurringScheduleOut, serialize_recurring_schedule(schedule, json_ready=True))
 

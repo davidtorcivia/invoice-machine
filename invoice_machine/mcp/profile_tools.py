@@ -2,62 +2,21 @@
 
 from __future__ import annotations
 
-import re
-from decimal import Decimal
-
 from invoice_machine.database import BusinessProfile
-from invoice_machine.email import require_password_for_new_smtp_destination
 from invoice_machine.presenters import dump_json_list, serialize_business_profile
+from invoice_machine.service.profile import (
+    BusinessProfileUpdate,
+    EmailTemplatesUpdate,
+    SMTPSettingsUpdate,
+    apply_profile_updates,
+)
 from invoice_machine.utils import utc_now
 
 from .annotations import ADDITIVE, DESTRUCTIVE, READ_ONLY, UPDATE
 from .context import get_session, mcp
 
-
-def _validated_accent_color(value: str) -> str:
-    # accent_color is interpolated into the PDF stylesheet; enforce the same
-    # strict hex pattern the REST endpoint uses so a crafted value can't break
-    # out of the CSS context (the MCP path is otherwise unvalidated).
-    if not re.fullmatch(r"#[0-9a-fA-F]{6}", value):
-        raise ValueError("accent_color must be a hex color like #0891b2")
-    return value
-
-
-def _validated_theme(value: str) -> str:
-    if value not in ("system", "light", "dark"):
-        raise ValueError("theme_preference must be one of: system, light, dark")
-    return value
-
-
-def _validated_tax_rate(value: float) -> Decimal:
-    # Bounded like the REST schema: an out-of-range rate here would be applied
-    # to every subsequently created invoice.
-    rate = Decimal(str(value))
-    if not rate.is_finite() or rate < 0 or rate > 100:
-        raise ValueError("default_tax_rate must be between 0 and 100")
-    return rate
-
-
-def _encrypted_password(value: str) -> str | None:
-    from invoice_machine.crypto import encrypt_credential
-
-    return encrypt_credential(value) if value else None
-
-
-def _bool_flag(value) -> int:
-    return 1 if value else 0
-
-
-# Fields whose stored representation differs from the tool argument.
-_PROFILE_FIELD_COERCIONS = {
-    "accent_color": _validated_accent_color,
-    "theme_preference": _validated_theme,
-    "default_tax_enabled": _bool_flag,
-    "default_tax_rate": _validated_tax_rate,
-    "smtp_enabled": _bool_flag,
-    "smtp_use_tls": _bool_flag,
-    "smtp_password": _encrypted_password,
-}
+# REST validates each of these request bodies; MCP arguments go through the same models.
+_UPDATE_MODELS = (BusinessProfileUpdate, SMTPSettingsUpdate, EmailTemplatesUpdate)
 
 
 @mcp.tool(annotations=READ_ONLY)
@@ -127,18 +86,15 @@ async def update_business_profile(
     async with get_session() as session:
         profile = await BusinessProfile.get_or_create(session)
 
-        # Coerce inside the session: get_session turns a validation ValueError
-        # into a ToolError the client can read.
-        updates = {}
-        for key, value in arguments.items():
-            if value is None:
-                continue
-            coerce = _PROFILE_FIELD_COERCIONS.get(key)
-            updates[key] = coerce(value) if coerce else value
-        require_password_for_new_smtp_destination(profile, updates)
-
-        for key, value in updates.items():
-            setattr(profile, key, value)
+        # Validate inside the session: get_session turns a ValidationError (a
+        # ValueError) into a ToolError the client can read.
+        updates: dict = {}
+        for model in _UPDATE_MODELS:
+            fields = {
+                k: v for k, v in arguments.items() if v is not None and k in model.model_fields
+            }
+            updates |= model.model_validate(fields).model_dump(exclude_unset=True)
+        apply_profile_updates(profile, updates)
 
         profile.updated_at = utc_now()
         await session.commit()

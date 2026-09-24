@@ -5,13 +5,12 @@ from pathlib import Path
 
 import pytest
 
-from invoice_machine.api.profile import validate_image_content
+from invoice_machine.api.profile import detect_image_extension
 from invoice_machine.crypto import hash_api_key
+from invoice_machine.database import InvoiceItem
 from invoice_machine.email import _sanitize_email, _sanitize_header
-from invoice_machine.services import (
-    BackupService,
-    InvoiceService,
-)
+from invoice_machine.service.backups import BackupService
+from invoice_machine.service.invoices import InvoiceService
 from invoice_machine.utils import confined_file, refuse_disallowed_host, refuse_disallowed_url
 
 
@@ -157,10 +156,13 @@ class TestIDORProtection:
             db_session, invoice1.id, description="Test", quantity=1, unit_price=100
         )
 
-        with pytest.raises(ValueError, match="does not belong to the specified invoice"):
+        assert (
             await InvoiceService.update_item(
                 db_session, item.id, invoice_id=invoice2.id, description="Hacked"
             )
+            is None
+        )
+        assert item.description == "Test"
 
     @pytest.mark.asyncio
     async def test_remove_item_validates_invoice_relationship(self, db_session, business_profile):
@@ -171,8 +173,10 @@ class TestIDORProtection:
             db_session, invoice1.id, description="Test", quantity=1, unit_price=100
         )
 
-        with pytest.raises(ValueError, match="does not belong to the specified invoice"):
-            await InvoiceService.remove_item(db_session, item.id, invoice_id=invoice2.id)
+        assert (
+            await InvoiceService.remove_item(db_session, item.id, invoice_id=invoice2.id) is False
+        )
+        assert await db_session.get(InvoiceItem, item.id) is not None
 
 
 class TestInputValidation:
@@ -283,48 +287,48 @@ class TestFileUploadSecurity:
 
     def test_validates_png_signature(self):
         png_header = b"\x89PNG\r\n\x1a\n" + b"\x00" * 100
-        assert validate_image_content(png_header) is True
+        assert detect_image_extension(png_header) is not None
 
     def test_validates_jpeg_signature(self):
         jpeg_header = b"\xff\xd8\xff" + b"\x00" * 100
-        assert validate_image_content(jpeg_header) is True
+        assert detect_image_extension(jpeg_header) is not None
 
     def test_validates_gif_signature(self):
         gif87a = b"GIF87a" + b"\x00" * 100
         gif89a = b"GIF89a" + b"\x00" * 100
-        assert validate_image_content(gif87a) is True
-        assert validate_image_content(gif89a) is True
+        assert detect_image_extension(gif87a) is not None
+        assert detect_image_extension(gif89a) is not None
 
     def test_validates_webp_signature(self):
         webp = b"RIFF" + b"\x00\x00\x00\x00" + b"WEBP" + b"\x00" * 100
-        assert validate_image_content(webp) is True
+        assert detect_image_extension(webp) is not None
 
     def test_rejects_svg_for_security(self):
         """SVG is rejected due to XSS security risks (can contain embedded JavaScript)."""
         svg1 = b"<svg" + b" " * 100
         svg2 = b"<?xml" + b" " * 100
-        assert validate_image_content(svg1) is False
-        assert validate_image_content(svg2) is False
+        assert detect_image_extension(svg1) is None
+        assert detect_image_extension(svg2) is None
 
     def test_rejects_non_image_content(self):
         # Plain text
-        assert validate_image_content(b"Hello, World!") is False
+        assert detect_image_extension(b"Hello, World!") is None
         # JavaScript
-        assert validate_image_content(b"alert('xss');") is False
+        assert detect_image_extension(b"alert('xss');") is None
         # HTML
-        assert validate_image_content(b"<!DOCTYPE html>") is False
+        assert detect_image_extension(b"<!DOCTYPE html>") is None
         # PDF
-        assert validate_image_content(b"%PDF-1.4") is False
+        assert detect_image_extension(b"%PDF-1.4") is None
         # EXE
-        assert validate_image_content(b"MZ\x90\x00") is False
+        assert detect_image_extension(b"MZ\x90\x00") is None
 
     def test_rejects_empty_content(self):
-        assert validate_image_content(b"") is False
-        assert validate_image_content(b"\x00\x00") is False
+        assert detect_image_extension(b"") is None
+        assert detect_image_extension(b"\x00\x00") is None
 
     def test_rejects_short_content(self):
-        assert validate_image_content(b"PNG") is False
-        assert validate_image_content(b"\xff\xd8") is False
+        assert detect_image_extension(b"PNG") is None
+        assert detect_image_extension(b"\xff\xd8") is None
 
 
 class TestApiKeyHashing:

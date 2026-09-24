@@ -14,7 +14,7 @@ from invoice_machine.database import (
     Payment,
     RecurringSchedule,
 )
-from invoice_machine.service.common import format_quantity
+from invoice_machine.service.common import format_currency, format_quantity
 
 
 def _maybe_iso(value: Any, json_ready: bool) -> Any:
@@ -61,6 +61,22 @@ def serialize_payment(payment: Payment, *, json_ready: bool = False) -> dict:
         "provider": payment.provider,
         "external_id": payment.external_id,
         "created_at": _maybe_iso(payment.created_at, json_ready),
+    }
+
+
+def serialize_payment_ledger(
+    invoice: Invoice, payments: list[Payment], *, json_ready: bool = False
+) -> dict:
+    """An invoice's payments with the balance they leave."""
+    return {
+        "invoice_id": invoice.id,
+        "invoice_number": invoice.invoice_number,
+        "currency_code": invoice.currency_code,
+        "total": str(invoice.total),
+        "amount_paid": str(invoice.amount_paid or 0),
+        "amount_due": str(invoice.amount_due),
+        "is_partially_paid": invoice.is_partially_paid,
+        "payments": [serialize_payment(p, json_ready=json_ready) for p in payments],
     }
 
 
@@ -248,8 +264,6 @@ def serialize_invoice(
     else:
         data["items"] = []
     if include_formatted_total:
-        from invoice_machine.services import format_currency
-
         total_amount = Decimal(str(invoice.total))
         data["total_formatted"] = format_currency(total_amount, invoice.currency_code)
     return data
