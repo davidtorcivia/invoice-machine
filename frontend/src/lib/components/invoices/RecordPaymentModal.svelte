@@ -1,6 +1,7 @@
 <script>
   import { self, preventDefault } from 'svelte/legacy';
-  import { formatCurrency } from '$lib/stores';
+  import { focusTrap } from '$lib/focusTrap';
+  import { formatCurrency, localToday } from '$lib/stores';
 
   /**
    * @typedef {Object} Props
@@ -30,7 +31,7 @@
   ];
 
   let amount = $state('');
-  let paymentDate = $state(new Date().toISOString().slice(0, 10));
+  let paymentDate = $state(localToday());
   let method = $state('bank_transfer');
   let reference = $state('');
   let notes = $state('');
@@ -48,7 +49,7 @@
     if (open && !wasOpen) {
       const due = parseFloat(amountDue) || 0;
       amount = due > 0 ? due.toFixed(2) : '';
-      paymentDate = new Date().toISOString().slice(0, 10);
+      paymentDate = localToday();
       method = 'bank_transfer';
       reference = '';
       notes = '';
@@ -81,13 +82,7 @@
       allow_overpayment: allowOverpayment
     });
   }
-
-  function onKeydown(event) {
-    if (event.key === 'Escape') oncancel?.();
-  }
 </script>
-
-<svelte:window onkeydown={onKeydown} />
 
 {#if open}
   <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
@@ -96,7 +91,7 @@
     role="presentation"
     onclick={self(() => oncancel?.())}
   >
-    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="record-payment-title">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="record-payment-title" tabindex="-1" use:focusTrap={{ onEscape: () => oncancel?.() }}>
       <div class="modal-header">
         <h2 id="record-payment-title">Record payment</h2>
         <button

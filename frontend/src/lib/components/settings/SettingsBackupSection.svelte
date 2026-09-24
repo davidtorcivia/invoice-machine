@@ -45,6 +45,7 @@
   let restoreTarget = $state<any>(null);
   let deleteTarget = $state<any>(null);
   let deletingBackup = $state(false);
+  let restoredMessage = $state('');
 
   // Fetching lives here rather than in the list child: CollapsibleSection only
   // renders its children while expanded, so the child may not exist yet.
@@ -64,8 +65,9 @@
     restoringBackup = restoreTarget.filename;
     try {
       const result = await backupsApi.restore(restoreTarget.filename, restoreTarget.location === 's3');
-      toast.success(result.message);
       restoreTarget = null;
+      // Every open form on this page still holds pre-restore values; saving one would overwrite the restore.
+      restoredMessage = result.message;
     } catch (error) {
       toast.error(error.message || 'Failed to restore backup');
     } finally {
@@ -81,7 +83,7 @@
       toast.success('Backup deleted');
       await reloadBackups();
     } catch (error) {
-      toast.error('Failed to delete backup');
+      toast.error(error.message || 'Failed to delete backup');
     } finally {
       deletingBackup = false;
       deleteTarget = null;
@@ -250,6 +252,18 @@
   loading={!!restoringBackup}
   onConfirm={restoreBackup}
   onCancel={() => (restoreTarget = null)}
+/>
+
+<ConfirmModal
+  show={!!restoredMessage}
+  title="Backup Restored"
+  message="{restoredMessage} The page will reload to show the restored data. You may need to sign in again."
+  confirmText="Reload now"
+  cancelText=""
+  variant="primary"
+  icon="check"
+  onConfirm={() => window.location.reload()}
+  onCancel={() => window.location.reload()}
 />
 
 <ConfirmModal

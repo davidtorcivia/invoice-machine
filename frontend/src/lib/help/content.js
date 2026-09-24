@@ -21,7 +21,7 @@ export const helpSections = [
   <li>Navigate to <strong>Invoices</strong> &gt; <strong>New Invoice</strong></li>
   <li>Select an existing client or enter new client details</li>
   <li>Add line items with descriptions, quantities/hours, and prices</li>
-  <li>Set the issue date and due date</li>
+  <li>Set the issue date and payment terms; the due date is calculated from them and can be changed later with <strong>Edit</strong></li>
   <li>Click <strong>Create Invoice</strong></li>
 </ol>
 <h3>Creating a Quote</h3>
@@ -177,7 +177,7 @@ export const helpSections = [
 <h3>Payments, Reminders &amp; Exchange Rates</h3>
 <p>Further down the page you will find <strong>Payment reminders</strong> for automated chasing, <strong>Online payments</strong> for accepting cards through Stripe, and <strong>Exchange rates</strong> for combining multiple currencies in reports. Each has its own help section here.</p>
 <h3>API Keys</h3>
-<p>Settings includes two separate keys: <strong>MCP API Key</strong> for Claude Desktop (<code>/mcp/*</code>) and <strong>Bot API Key</strong> for REST automation (<code>/api/*</code>).</p>`
+<p>Settings holds two kinds of named API keys: <strong>MCP Integration</strong> keys for Claude Desktop (<code>/mcp/*</code>) and <strong>Bot API Key</strong> keys for REST automation (<code>/api/*</code>). Create as many of each as you need, for example one per device or script, and rotate, rename, or revoke each one on its own. A new or rotated key is shown once, so copy it right away.</p>`
   },
   {
     key: 'taxSettings',
@@ -328,7 +328,7 @@ export const helpSections = [
 <h3>Remote Setup (Recommended)</h3>
 <ol>
   <li>Go to <strong>Settings</strong> in Invoice Machine</li>
-  <li>Scroll to <strong>MCP Integration</strong> and click <strong>Generate API Key</strong></li>
+  <li>Open <strong>MCP Integration</strong>, type a name for the key (for example, Laptop), and click <strong>New key</strong></li>
   <li>Copy the configuration shown and add it to your Claude Desktop config file</li>
 </ol>
 <p>The server uses the MCP <strong>Streamable HTTP</strong> transport at <code>/mcp</code>. Each call is an independent request, so the connection survives proxy timeouts and server restarts. Clients that support remote MCP servers directly (such as claude.ai custom connectors) can use the endpoint URL with the Bearer token — no <code>mcp-remote</code> needed.</p>
@@ -358,11 +358,11 @@ export const helpSections = [
     key: 'botApiIntegration',
     title: 'Bot API Integration',
     icon: 'settings',
-    content: `<p>For automation tools and scripts, generate a <strong>Bot API Key</strong> in Settings and use it with the REST API.</p>
+    content: `<p>For automation tools and scripts, open <strong>Bot API Key</strong> in Settings, name a key, and click <strong>New key</strong>. Use it with the REST API.</p>
 <ul>
   <li>Send the key as a bearer token to <code>/api/*</code> endpoints</li>
   <li>Keep the key secret and rotate it if you suspect exposure</li>
-  <li>Use the Settings page to revoke and regenerate access at any time</li>
+  <li>Give each script its own key, so you can rotate or revoke one without touching the others</li>
 </ul>`
   }
 ];

@@ -1,5 +1,6 @@
 <script lang="ts">
   import Icon from '$lib/components/Icons.svelte';
+  import { focusTrap } from '$lib/focusTrap';
 
   interface Props {
     show?: boolean;
@@ -18,20 +19,14 @@
     closePaymentMethodModal,
     savePaymentMethod
   }: Props = $props();
-
-  function handleModalKeydown(event) {
-    if (event.key === 'Escape') {
-      closePaymentMethodModal();
-    }
-  }
 </script>
 
 {#if show}
-  <div class="modal-overlay" role="presentation" tabindex="-1" onkeydown={handleModalKeydown}>
+  <div class="modal-overlay" role="presentation">
     <button type="button" class="modal-backdrop" aria-label="Close payment method dialog" onclick={closePaymentMethodModal}></button>
-    <div class="modal" role="dialog" aria-modal="true" tabindex="-1">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="payment-method-title" tabindex="-1" use:focusTrap={{ onEscape: closePaymentMethodModal }}>
       <div class="modal-header">
-        <h2 class="modal-title">{editingMethod ? 'Edit Payment Method' : 'Add Payment Method'}</h2>
+        <h2 id="payment-method-title" class="modal-title">{editingMethod ? 'Edit Payment Method' : 'Add Payment Method'}</h2>
         <button class="btn btn-ghost btn-icon btn-sm" aria-label="Close" onclick={closePaymentMethodModal}>
           <Icon name="x" size="md" />
         </button>
@@ -44,6 +39,7 @@
             type="text"
             class="input"
             placeholder="e.g., Bank Transfer (ACH), Venmo, Zelle"
+            data-autofocus
             bind:value={newMethodName}
           />
         </div>

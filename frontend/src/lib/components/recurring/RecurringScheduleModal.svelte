@@ -1,5 +1,6 @@
 <script lang="ts">
   import Icon from '$lib/components/Icons.svelte';
+  import { focusTrap } from '$lib/focusTrap';
   import InvoiceLineItemsCard from '$lib/components/invoices/InvoiceLineItemsCard.svelte';
   import InvoiceNotesCard from '$lib/components/invoices/InvoiceNotesCard.svelte';
   import InvoicePaymentInstructionsCard from '$lib/components/invoices/InvoicePaymentInstructionsCard.svelte';
@@ -37,20 +38,14 @@
   function saveSchedule() {
     onsave?.();
   }
-
-  function handleModalKeydown(event) {
-    if (event.key === 'Escape') {
-      closeModal();
-    }
-  }
 </script>
 
 {#if show}
-  <div class="modal-overlay" role="presentation" tabindex="-1" onkeydown={handleModalKeydown}>
+  <div class="modal-overlay" role="presentation">
     <button type="button" class="modal-backdrop" aria-label="Close recurring schedule dialog" onclick={closeModal}></button>
-    <div class="modal" role="dialog" aria-modal="true" tabindex="-1">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="schedule-modal-title" tabindex="-1" use:focusTrap={{ onEscape: closeModal }}>
       <div class="modal-header">
-        <h2>{editingSchedule ? 'Edit Schedule' : 'New Recurring Schedule'}</h2>
+        <h2 id="schedule-modal-title">{editingSchedule ? 'Edit Schedule' : 'New Recurring Schedule'}</h2>
         <button class="btn btn-ghost btn-icon" aria-label="Close" onclick={closeModal}>
           <Icon name="x" size="md" />
         </button>

@@ -31,7 +31,8 @@
     cheque: 'Cheque',
     paypal: 'PayPal',
     stripe: 'Stripe',
-    other: 'Other'
+    other: 'Other',
+    system_mark_paid: 'Marked paid'
   };
 
   let paidNum = $derived(parseFloat(amountPaid) || 0);

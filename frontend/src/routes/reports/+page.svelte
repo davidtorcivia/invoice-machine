@@ -55,7 +55,7 @@
           : null;
     } catch (error) {
       loadError = true;
-      toast.error('Failed to load analytics');
+      toast.error(error.message || 'Failed to load analytics');
       console.error(error);
     } finally {
       loading = false;

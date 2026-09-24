@@ -4,7 +4,7 @@
 
   interface Props {
     clients?: any;
-    clientId?: string;
+    clientId?: number | '';
     issueDate?: string;
     paymentTermsDays?: number;
     currencyCode?: string;

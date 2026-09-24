@@ -42,8 +42,8 @@
       drafts[kind] = '';
       await onchanged();
       toast.success('API key created');
-    } catch {
-      toast.error('Failed to create API key');
+    } catch (error) {
+      toast.error(error.message || 'Failed to create API key');
     } finally {
       busy = false;
     }
@@ -65,8 +65,8 @@
       }
       await onchanged();
       pending = null;
-    } catch {
-      toast.error(action === 'rotate' ? 'Failed to rotate key' : 'Failed to revoke key');
+    } catch (error) {
+      toast.error(error.message || (action === 'rotate' ? 'Failed to rotate key' : 'Failed to revoke key'));
     } finally {
       busy = false;
     }
@@ -78,8 +78,8 @@
     try {
       await apiKeysApi.rename(key.id, label);
       await onchanged();
-    } catch {
-      toast.error('Failed to rename key');
+    } catch (error) {
+      toast.error(error.message || 'Failed to rename key');
     }
   }
 

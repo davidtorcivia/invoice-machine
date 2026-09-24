@@ -25,7 +25,7 @@
     try {
       items = await trashApi.list();
     } catch (error) {
-      toast.error('Failed to load trash');
+      toast.error(error.message || 'Failed to load trash');
     } finally {
       loading = false;
     }
@@ -51,7 +51,7 @@
       closeRestoreModal();
       await loadTrash();
     } catch (error) {
-      toast.error('Failed to restore item');
+      toast.error(error.message || 'Failed to restore item');
     } finally {
       restoring = false;
     }
@@ -73,7 +73,7 @@
       closeEmptyModal();
       await loadTrash();
     } catch (error) {
-      toast.error('Failed to empty trash');
+      toast.error(error.message || 'Failed to empty trash');
     } finally {
       emptying = false;
     }

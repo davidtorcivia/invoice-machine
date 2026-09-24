@@ -30,7 +30,7 @@
       client = clientData;
       invoices = invoicesData;
     } catch (error) {
-      toast.error('Failed to load client');
+      toast.error(error.message || 'Failed to load client');
       goto('/clients');
     } finally {
       loading = false;
@@ -48,7 +48,7 @@
       toast.success('Client moved to trash');
       goto('/clients');
     } catch (error) {
-      toast.error('Failed to delete client');
+      toast.error(error.message || 'Failed to delete client');
     } finally {
       deleting = false;
     }

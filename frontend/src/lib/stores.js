@@ -190,15 +190,40 @@ export const formatCurrency = (amount, currency = 'USD') => {
   }
 };
 
+/** @param {Date} date */
+const toLocalIsoDate = (date) => {
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+};
+
+/** Today's calendar date in the browser's timezone, as YYYY-MM-DD. */
+export const localToday = () => toLocalIsoDate(new Date());
+
+/**
+ * Calendar-day arithmetic on a YYYY-MM-DD string, in local time so no UTC shift.
+ * @param {string} isoDate
+ * @param {number} days
+ */
+export const addDays = (isoDate, days) => {
+  const [year, month, day] = isoDate.split('-').map(Number);
+  return toLocalIsoDate(new Date(year, month - 1, day + days));
+};
+
 export const formatDate = (dateStr, format = 'short') => {
   if (!dateStr) return '';
-  // Accept both date-only ("2026-05-28") and full ISO datetimes
-  // ("2026-05-28T12:00:00+00:00"); parse the date part as a local date to
-  // avoid a UTC shift.
-  const datePart = String(dateStr).split('T')[0];
-  const [year, month, day] = datePart.split('-').map(Number);
-  if (!year || !month || !day) return '';
-  const date = new Date(year, month - 1, day);
+  const str = String(dateStr);
+  let date;
+  if (str.includes('T')) {
+    // A datetime is an instant: show its local day. The API's datetimes are UTC,
+    // and SQLite drops the offset, so a bare one is read as UTC too.
+    date = new Date(/(Z|[+-]\d\d:?\d\d)$/i.test(str) ? str : `${str}Z`);
+    if (Number.isNaN(date.getTime())) return '';
+  } else {
+    // A bare date is a calendar day; new Date("YYYY-MM-DD") would parse it as UTC.
+    const [year, month, day] = str.split('-').map(Number);
+    if (!year || !month || !day) return '';
+    date = new Date(year, month - 1, day);
+  }
   if (format === 'short') {
     return date.toLocaleDateString('en-US', {
       month: 'short',

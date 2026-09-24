@@ -33,11 +33,11 @@
     <h3 class="card-title">Revenue by Period</h3>
     <div class="card-controls">
       <div class="year-nav">
-        <button class="btn btn-ghost btn-sm" onclick={() => changeYear(-1)}>
+        <button class="btn btn-ghost btn-sm" onclick={() => changeYear(-1)} aria-label="Previous year">
           <Icon name="chevronLeft" size="sm" />
         </button>
         <span class="year-label">{year}</span>
-        <button class="btn btn-ghost btn-sm" onclick={() => changeYear(1)} disabled={year >= new Date().getFullYear()}>
+        <button class="btn btn-ghost btn-sm" onclick={() => changeYear(1)} aria-label="Next year" disabled={year >= new Date().getFullYear()}>
           <Icon name="chevronRight" size="sm" />
         </button>
       </div>

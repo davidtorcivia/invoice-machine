@@ -1,5 +1,6 @@
 <script lang="ts">
   import Icon from '$lib/components/Icons.svelte';
+  import { focusTrap } from '$lib/focusTrap';
 
   interface Props {
     show?: boolean;
@@ -16,18 +17,12 @@
     close,
     save
   }: Props = $props();
-
-  function handleKeydown(event) {
-    if (event.key === 'Escape') {
-      close();
-    }
-  }
 </script>
 
 {#if show}
-  <div class="modal-overlay" role="presentation" tabindex="-1" onkeydown={handleKeydown}>
+  <div class="modal-overlay" role="presentation">
     <button type="button" class="modal-backdrop" aria-label="Close create client dialog" onclick={close}></button>
-    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title" tabindex="-1">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title" tabindex="-1" use:focusTrap={{ onEscape: close }}>
       <div class="modal-header">
         <h2 id="modal-title" class="modal-title">New Client</h2>
         <button class="btn btn-ghost btn-icon btn-sm" aria-label="Close" onclick={close}>
@@ -39,7 +34,7 @@
         <div class="form-row">
           <div class="form-group">
             <label for="client-name" class="label">Contact Name</label>
-            <input id="client-name" type="text" class="input" placeholder="John Smith" bind:value={draft.name} />
+            <input id="client-name" type="text" class="input" placeholder="John Smith" data-autofocus bind:value={draft.name} />
           </div>
 
           <div class="form-group">

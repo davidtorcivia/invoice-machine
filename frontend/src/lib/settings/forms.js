@@ -91,7 +91,7 @@ export function mapProfileToProfileForm(profile) {
     country: profile.country || 'United States',
     ein: profile.ein || '',
     accentColor: profile.accent_color || '#16a34a',
-    defaultPaymentTermsDays: profile.default_payment_terms_days || 30,
+    defaultPaymentTermsDays: profile.default_payment_terms_days ?? 30,
     defaultCurrencyCode: profile.default_currency_code || 'USD',
     defaultNotes: profile.default_notes || '',
     defaultPaymentInstructions: profile.default_payment_instructions || '',
@@ -149,7 +149,10 @@ export function buildProfilePayload(form, paymentMethods, appBaseUrl) {
     country: form.country || undefined,
     ein: form.ein || null,
     accent_color: form.accentColor || undefined,
-    default_payment_terms_days: Number(form.defaultPaymentTermsDays) || undefined,
+    default_payment_terms_days:
+      form.defaultPaymentTermsDays == null || form.defaultPaymentTermsDays === ''
+        ? undefined
+        : Number(form.defaultPaymentTermsDays),
     default_currency_code: form.defaultCurrencyCode || undefined,
     default_notes: form.defaultNotes || null,
     default_payment_instructions: form.defaultPaymentInstructions || null,

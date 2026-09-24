@@ -60,6 +60,21 @@ Notable changes to Invoice Machine. Format based on
   worker cannot generate the same recurring invoices at boot.
 - Minimum versions: `python-multipart` 0.0.31, `weasyprint` 68, `cryptography`
   48.0.1. CI tests on Python 3.11 and 3.14, the version the image ships.
+- "Generate Now" on a recurring schedule asks for confirmation first, naming the
+  client and whether the invoice will be emailed.
+- The dashboard lists outstanding balances in other currencies under the main
+  Outstanding figure.
+- Error messages show the server's reason (with the field name for validation
+  errors) instead of a generic "Failed to ..." message.
+- Every dialog keeps keyboard focus inside while open, closes on Escape, and
+  returns focus to the button that opened it.
+- After a backup restore a dialog reloads the page, so no form keeps
+  pre-restore values.
+- A recurring schedule saved with "Apply Tax" unchecked now inherits the client
+  or global default tax. A schedule stored earlier as explicitly untaxed becomes
+  "inherit" the next time it is saved from the UI.
+- The invoice edit form recalculates the due date from the issue date and
+  payment terms as either changes, and saves the date it shows.
 
 ### Fixed
 
@@ -131,6 +146,28 @@ Notable changes to Invoice Machine. Format based on
   `'+1 555 0100`.
 - The consolidated "Paid" figure on Reports included payments on draft and
   cancelled invoices.
+- Selecting invoices in the list never showed the bulk action bar.
+- Opening New Invoice from a client page left the required client field blank.
+- Changing an invoice to Paid in the edit form recorded the "Marked paid"
+  payment for the balance before the edited line items were saved.
+- Editing an invoice's issue date or payment terms never recalculated its due
+  date.
+- Line items priced at 0 were dropped when saving an invoice.
+- Payment terms of 0 days (due on receipt) were replaced with 30 in the invoice,
+  client, and settings forms.
+- Dates could show one day early west of UTC: recurring "Next Invoice", the top
+  clients "since" year, and the default date for new invoices and payments.
+- The invoice edit form warned about unsaved changes when nothing had changed.
+- Deleting the last invoices on the last page left an empty page.
+- Cancelling a recurring schedule edit kept the line item changes on screen.
+- Hitting a rate limit showed "Request failed: 429" instead of the server's
+  message.
+- The reminders timezone list had no UTC entry, the default.
+- The exchange rate currency list offered the separator line as a currency.
+- A failed status change left the status menu showing the new status.
+- The PDF opened after "Generate PDF" could be blocked as a popup.
+- "Marked paid" payments were listed with their internal method name.
+- Help text for API keys and invoice creation matched an older UI.
 
 ### Security
 

@@ -1,13 +1,14 @@
 <script>
   import { run, preventDefault } from 'svelte/legacy';
 
-  import { onMount } from 'svelte';
-  import { goto, beforeNavigate } from '$app/navigation';
+  import { onMount, tick } from 'svelte';
+  import { goto } from '$app/navigation';
   import { page } from '$app/stores';
   import { clientsApi, invoicesApi, profileApi } from '$lib/api';
   import { buildClientPayload, createClientDraft } from '$lib/clients/config';
   import { parseJsonArray, stringifyJsonArray } from '$lib/json';
-  import { toast } from '$lib/stores';
+  import { localToday, toast } from '$lib/stores';
+  import { createUnsavedGuard } from '$lib/unsavedGuard';
   import Header from '$lib/components/Header.svelte';
   import Icon from '$lib/components/Icons.svelte';
   import ConfirmModal from '$lib/components/ConfirmModal.svelte';
@@ -31,10 +32,10 @@
   let profile = $state(/** @type {import('$lib/types').BusinessProfile|null} */ (null));
   let loading = $state(false);
   let saving = $state(false);
-  let allowLeave = $state(false);
 
+  /** @type {number|''} */
   let clientId = $state('');
-  let issueDate = $state(new Date().toISOString().split('T')[0]);
+  let issueDate = $state(localToday());
   let paymentTermsDays = $state(30);
   let currencyCode = $state('USD');
   let notes = $state('');
@@ -53,21 +54,25 @@
   /** @type {InvoiceItemDraft[]} */
   let items = $state([{ description: '', quantity: 1, unit_price: '', unit_type: 'qty' }]);
 
-  // Warn before navigating away from a partially-filled form: any client chosen
-  // or line item started counts as work worth keeping.
-  let isDirty = $derived(
-    !allowLeave &&
-    (!!clientId ||
-      !!(notes && notes.trim()) ||
-      items.some((i) => (i.description || '').trim() || `${i.unit_price ?? ''}`.trim())));
-
-  beforeNavigate((nav) => {
-    if (isDirty && !saving) {
-      if (!confirm('You have unsaved changes. Leave without saving?')) {
-        nav.cancel();
-      }
-    }
-  });
+  const guard = createUnsavedGuard(() =>
+    JSON.stringify({
+      clientId,
+      issueDate,
+      paymentTermsDays,
+      currencyCode,
+      notes,
+      useDefaultNotes,
+      isQuote,
+      clientReference,
+      showPaymentInstructions,
+      invoiceNumberOverride,
+      selectedPaymentMethods,
+      taxEnabled,
+      taxRate,
+      taxName,
+      items
+    })
+  );
 
   let showClientModal = $state(false);
   let clientModalSaving = $state(false);
@@ -88,6 +93,9 @@
 
   onMount(async () => {
     await Promise.all([loadClients(), loadProfile()]);
+    // After the effect applies a preselected client's defaults.
+    await tick();
+    guard.snapshot();
   });
 
   async function loadClients() {
@@ -97,10 +105,10 @@
       // Preselect a client when arriving from a client page (?client=<id>).
       const requested = $page.url.searchParams.get('client');
       if (requested && clients.some((c) => c.id === parseInt(requested))) {
-        clientId = requested;
+        clientId = Number(requested);
       }
     } catch (error) {
-      toast.error('Failed to load clients');
+      toast.error(error.message || 'Failed to load clients');
     } finally {
       loading = false;
     }
@@ -112,7 +120,7 @@
       profile = loaded;
 
       // Seed the form from the business defaults.
-      if (loaded.default_payment_terms_days) paymentTermsDays = loaded.default_payment_terms_days;
+      if (loaded.default_payment_terms_days != null) paymentTermsDays = loaded.default_payment_terms_days;
       if (loaded.default_currency_code) currencyCode = loaded.default_currency_code;
       if (loaded.default_tax_enabled) taxEnabled = true;
       if (loaded.default_tax_rate) taxRate = loaded.default_tax_rate;
@@ -138,7 +146,7 @@
     if (client.preferred_currency) {
       currencyCode = client.preferred_currency;
     }
-    if (client.payment_terms_days) {
+    if (client.payment_terms_days != null) {
       paymentTermsDays = client.payment_terms_days;
     }
     // Apply client tax settings only if the client has explicit overrides.
@@ -160,7 +168,7 @@
       return;
     }
 
-    const validItems = items.filter(item => item.description.trim() && item.unit_price);
+    const validItems = items.filter(item => item.description.trim() && Number.isFinite(parseFloat(item.unit_price)));
     if (validItems.length === 0) {
       toast.error('Please add at least one line item with a description and price');
       return;
@@ -171,7 +179,8 @@
       const invoiceData = {
         client_id: Number(clientId),
         issue_date: issueDate || undefined,
-        payment_terms_days: Number(paymentTermsDays) || undefined,
+        // An emptied number input binds null; 0 is a real value (due on receipt).
+        payment_terms_days: paymentTermsDays == null ? undefined : Number(paymentTermsDays),
         currency_code: currencyCode,
         notes: effectiveNotes || undefined,
         document_type: isQuote ? 'quote' : 'invoice',
@@ -196,7 +205,7 @@
       const invoice = await invoicesApi.create(invoiceData);
 
       toast.success(isQuote ? 'Quote created successfully' : 'Invoice created successfully');
-      allowLeave = true;
+      guard.allowLeave();
       goto(`/invoices/${invoice.id}`);
     } catch (error) {
       toast.error(error.message || 'Failed to create invoice');
@@ -226,10 +235,10 @@
 
       toast.success('Client created successfully');
       await loadClients();
-      clientId = client.id.toString();
+      clientId = client.id;
       closeClientModal();
     } catch (error) {
-      toast.error('Failed to create client');
+      toast.error(error.message || 'Failed to create client');
     } finally {
       clientModalSaving = false;
     }
@@ -241,13 +250,13 @@
 
   function confirmDiscard() {
     showDiscardModal = false;
-    allowLeave = true;
+    guard.allowLeave();
     goto('/invoices');
   }
 
   let defaultNotesText = $derived(profile?.default_notes || '');
   let effectiveNotes = $derived(useDefaultNotes && defaultNotesText ? defaultNotesText : notes);
-  let selectedClient = $derived(clients.find(c => c.id === parseInt(clientId)) || null);
+  let selectedClient = $derived(clients.find(c => c.id === clientId) || null);
   run(() => {
     applyClientDefaults(selectedClient);
   });
