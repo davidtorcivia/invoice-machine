@@ -29,7 +29,7 @@
       <span class="logo-mark">Invoice</span>
       <span class="logo-text">Machine</span>
     </div>
-    <button class="btn btn-ghost btn-icon mobile-close" onclick={toggleSidebar}>
+    <button class="btn btn-ghost btn-icon mobile-close" onclick={toggleSidebar} aria-label="Close menu">
       <Icon name="x" size="md" />
     </button>
   </div>

@@ -49,7 +49,7 @@
   <dl class="detail-list">
     <div class="detail-item">
       <dt>Payment Terms</dt>
-      <dd>Net {client.payment_terms_days || 30} days</dd>
+      <dd>Net {client.payment_terms_days ?? 30} days</dd>
     </div>
     <div class="detail-item">
       <dt>Tax Settings</dt>

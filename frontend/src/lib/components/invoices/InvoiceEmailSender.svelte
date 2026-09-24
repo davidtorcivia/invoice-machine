@@ -23,7 +23,7 @@
       emailSubject = preview.subject;
       emailBody = preview.body;
     } catch (error) {
-      toast.error('Failed to load email preview');
+      toast.error(error.message || 'Failed to load email preview');
       show = false;
     } finally {
       emailLoading = false;

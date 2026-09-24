@@ -98,7 +98,7 @@ function createCrudApi(basePath, buildListParams) {
  * FastAPI returns ``detail`` as a string for HTTPException and as an array of
  * ``{loc, msg, type}`` objects for validation errors.
  *
- * @param {{ detail?: unknown, message?: string } | null} data
+ * @param {{ detail?: unknown, message?: string, error?: string } | null} data
  * @param {Response} response
  */
 function formatApiError(data, response) {
@@ -108,10 +108,13 @@ function formatApiError(data, response) {
     const first = detail[0];
     if (typeof first === 'string' && first) return first;
     if (first && typeof first === 'object' && typeof first.msg === 'string') {
-      return first.msg;
+      const loc = Array.isArray(first.loc) ? first.loc : [];
+      return loc.length > 1 ? `${loc[loc.length - 1]}: ${first.msg}` : first.msg;
     }
   }
   if (typeof data?.message === 'string' && data.message) return data.message;
+  // slowapi's 429 body.
+  if (typeof data?.error === 'string' && data.error) return data.error;
   return response.statusText || `Request failed: ${response.status}`;
 }
 
@@ -286,7 +289,6 @@ export const clientsApi = {
       page: params.page || 1,
       per_page: params.per_page || 24,
     })),
-  restore: (id) => post(`/clients/${id}/restore`),
 };
 
 // ===== Invoices =====
@@ -316,7 +318,6 @@ export const invoicesApi = {
       page: params.page || 1,
       per_page: params.per_page || 25,
     })),
-  restore: (id) => post(`/invoices/${id}/restore`),
 
   /** @param {number | string} id @param {{description?: string, quantity?: number, unit_type?: string, unit_price?: string | number, sort_order?: number}} item */
   addItem: (id, item) =>
@@ -361,9 +362,6 @@ export const paymentsApi = {
 
   /** @param {number | string} invoiceId @param {Record<string, unknown>} data */
   record: (invoiceId, data) => post(`/invoices/${invoiceId}/payments`, data),
-
-  /** @param {number | string} paymentId @param {Record<string, unknown>} data */
-  update: (paymentId, data) => put(`/payments/${paymentId}`, data),
 
   /** @param {number | string} paymentId */
   delete: (paymentId) => del(`/payments/${paymentId}`),
@@ -451,18 +449,17 @@ export const backupsApi = {
   /** @param {string} filename */
   delete: (filename) => del(`/backups/${encodeURIComponent(filename)}`),
 
-  cleanup: () => post('/backups/cleanup'),
-
   testS3: () => post('/backups/test-s3'),
 };
 
 // ===== Recurring Schedules =====
 
 export const recurringApi = {
-  ...createCrudApi('/recurring', (params) => ({
-    client_id: params.client_id,
-    active_only: params.active_only,
-  })),
+  list: (params = {}) =>
+    get(withQuery('/recurring', { client_id: params.client_id, active_only: params.active_only })),
+  create: (data) => post('/recurring', data),
+  update: (id, data) => put(`/recurring/${id}`, data),
+  delete: (id) => del(`/recurring/${id}`),
   trigger: (id) => post(`/recurring/${id}/trigger`),
 };
 

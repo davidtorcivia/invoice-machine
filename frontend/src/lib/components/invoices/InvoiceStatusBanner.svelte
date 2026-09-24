@@ -49,7 +49,13 @@
       <select
         class="status-select {statusConfig[currentStatus]?.class || 'badge-draft'}"
         value={currentStatus}
-        onchange={(event) => onstatuschange?.(getSelectTarget(event).value)}
+        onchange={(event) => {
+          // Show the saved status until the parent reloads it, so a failed change leaves no stale pick.
+          const select = getSelectTarget(event);
+          const next = select.value;
+          select.value = currentStatus;
+          onstatuschange?.(next);
+        }}
       >
         {#each statusOptions as option}
           <option value={option.value}>{option.label}</option>

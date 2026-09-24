@@ -45,8 +45,8 @@
   async function load() {
     try {
       keys = await apiKeysApi.list();
-    } catch {
-      toast.error('Failed to load API keys');
+    } catch (error) {
+      toast.error(error.message || 'Failed to load API keys');
     }
   }
 </script>

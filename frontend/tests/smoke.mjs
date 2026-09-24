@@ -174,7 +174,7 @@ async function seed() {
     cookies,
   );
 
-  return { invoiceId };
+  return { invoiceId, clientId };
 }
 
 // ------------------------------------------------------------------- driver
@@ -285,7 +285,7 @@ function check(label, ok, detail = '') {
 
 // ------------------------------------------------------------------- checks
 
-const { invoiceId } = await seed();
+const { invoiceId, clientId } = await seed();
 console.log(`\nDriving ${BASE} with ${chromePath}\n`);
 
 await goto('/login');
@@ -465,6 +465,24 @@ check(
     taxPreview.includes('220.00'),
   String(taxPreview).slice(0, 120),
 );
+
+// Option values are numbers, so a string id preselects nothing and the
+// required select renders blank.
+await goto(`/invoices/new?client=${clientId}`);
+const preselected = await evaluate(`document.querySelector('#client')?.value`);
+check('?client= preselects the client', preselected === String(clientId), String(preselected));
+
+// A plain Set in $state is not reactive; mutating one left the bulk bar hidden.
+await goto('/invoices');
+const bulkBar = await evaluate(`(async () => {
+  const box = document.querySelector('tbody input[type=checkbox]');
+  if (!box) return 'no row checkbox';
+  box.click();
+  await new Promise((r) => setTimeout(r, 600));
+  return document.body.innerText.includes('1 selected') ? 'shown' : 'bulk bar did not appear';
+})()`);
+drainEvents();
+check('selecting a row shows the bulk action bar', bulkBar === 'shown', String(bulkBar));
 
 // Component callbacks. svelte-check proves a callback prop is wired to a
 // declared prop; only clicking proves the child actually invokes it. A missed

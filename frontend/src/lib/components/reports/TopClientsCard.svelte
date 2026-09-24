@@ -23,7 +23,7 @@
             <span class="client-stats">
               {client.invoice_count} invoice{client.invoice_count !== 1 ? 's' : ''}
               {#if client.first_invoice}
-                &middot; since {new Date(client.first_invoice).getFullYear()}
+                &middot; since {String(client.first_invoice).slice(0, 4)}
               {/if}
             </span>
           </div>

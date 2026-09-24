@@ -60,7 +60,7 @@ export function applyClientToDraft(client) {
     state: client.state || '',
     postal_code: client.postal_code || '',
     country: client.country || '',
-    payment_terms_days: client.payment_terms_days || 30,
+    payment_terms_days: client.payment_terms_days ?? 30,
     notes: client.notes || '',
     preferred_currency: client.preferred_currency || '',
     tax_override: client.tax_enabled !== null,
@@ -82,7 +82,8 @@ export function buildClientPayload(draft, useNullTaxDefaults = false) {
     state: draft.state || null,
     postal_code: draft.postal_code || null,
     country: draft.country || null,
-    payment_terms_days: Number(draft.payment_terms_days) || undefined,
+    payment_terms_days:
+      draft.payment_terms_days == null || draft.payment_terms_days === '' ? undefined : Number(draft.payment_terms_days),
     notes: draft.notes || null,
     preferred_currency: draft.preferred_currency || (useNullTaxDefaults ? null : undefined)
   };

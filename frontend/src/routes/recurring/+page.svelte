@@ -30,6 +30,7 @@
   let deleteTarget = $state(/** @type {any} */ (null));
   let deleting = $state(false);
   let triggering = $state(/** @type {any} */ (null));
+  let triggerTarget = $state(/** @type {any} */ (null));
 
   let availablePaymentMethods = $derived(parseJsonArray(profile?.payment_methods));
   let defaultNotesText = $derived(profile?.default_notes || '');
@@ -43,7 +44,7 @@
     try {
       schedules = await recurringApi.list({ active_only: false });
     } catch (error) {
-      toast.error('Failed to load recurring schedules');
+      toast.error(error.message || 'Failed to load recurring schedules');
     } finally {
       loading = false;
     }
@@ -136,7 +137,7 @@
       deleteTarget = null;
       await loadSchedules();
     } catch (error) {
-      toast.error('Failed to delete schedule');
+      toast.error(error.message || 'Failed to delete schedule');
     } finally {
       deleting = false;
     }
@@ -148,11 +149,21 @@
       await loadSchedules();
       toast.success(schedule.is_active ? 'Schedule paused' : 'Schedule activated');
     } catch (error) {
-      toast.error('Failed to update schedule');
+      toast.error(error.message || 'Failed to update schedule');
     }
   }
 
+  function describeTrigger(schedule) {
+    if (!schedule) return '';
+    const client = schedule.client_name || schedule.client_business || 'the client';
+    const email = schedule.auto_email_enabled && smtpEnabled
+      ? `It will also be emailed to ${client} right away.`
+      : 'No email will be sent.';
+    return `Create an invoice for ${client} from "${schedule.name}" now? ${email}`;
+  }
+
   async function triggerNow(schedule) {
+    triggerTarget = null;
     triggering = schedule.id;
     try {
       const result = await recurringApi.trigger(schedule.id);
@@ -202,7 +213,7 @@
         <RecurringScheduleCard
           {schedule}
           isTriggering={triggering === schedule.id}
-          ontrigger={() => triggerNow(schedule)}
+          ontrigger={() => (triggerTarget = schedule)}
           ontoggle={() => toggleActive(schedule)}
           onedit={() => openEditModal(schedule)}
           ondelete={() => openDeleteModal(schedule)}
@@ -223,6 +234,17 @@
   {saving}
   onclose={closeModal}
   onsave={saveSchedule}
+/>
+
+<ConfirmModal
+  show={!!triggerTarget}
+  title="Generate Invoice Now"
+  message={describeTrigger(triggerTarget)}
+  confirmText="Generate"
+  variant="primary"
+  icon="play"
+  onConfirm={() => triggerNow(triggerTarget)}
+  onCancel={() => (triggerTarget = null)}
 />
 
 <ConfirmModal

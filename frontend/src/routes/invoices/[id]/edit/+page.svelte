@@ -1,12 +1,13 @@
 <script>
   import { run, preventDefault } from 'svelte/legacy';
 
-  import { onMount } from 'svelte';
+  import { onMount, tick } from 'svelte';
   import { page } from '$app/stores';
-  import { goto, beforeNavigate } from '$app/navigation';
+  import { goto } from '$app/navigation';
   import { invoicesApi, profileApi } from '$lib/api';
   import { parseJsonArray, stringifyJsonArray } from '$lib/json';
-  import { toast } from '$lib/stores';
+  import { addDays, toast } from '$lib/stores';
+  import { createUnsavedGuard } from '$lib/unsavedGuard';
   import Header from '$lib/components/Header.svelte';
   import Icon from '$lib/components/Icons.svelte';
   import ConfirmModal from '$lib/components/ConfirmModal.svelte';
@@ -51,10 +52,6 @@
   let taxRate = $state('');
   let taxName = $state('Tax');
 
-  // Unsaved-changes guard: compare current form state to a snapshot taken on load.
-  let allowLeave = $state(false);
-  let initialSnapshot = $state('');
-
   function formState() {
     return JSON.stringify({
       issueDate,
@@ -74,13 +71,17 @@
     });
   }
 
-  let isDirty = $derived(!allowLeave && initialSnapshot !== '' && formState() !== initialSnapshot);
+  const guard = createUnsavedGuard(formState);
 
-  beforeNavigate((nav) => {
-    if (isDirty && !saving) {
-      if (!confirm('You have unsaved changes. Leave without saving?')) {
-        nav.cancel();
-      }
+  // Issue date and terms as last loaded or recomputed, so loading a saved invoice
+  // never overwrites its stored due date.
+  let dueDateBasis = '';
+  $effect(() => {
+    const basis = `${issueDate}|${paymentTermsDays}`;
+    if (basis === dueDateBasis) return;
+    dueDateBasis = basis;
+    if (issueDate && paymentTermsDays != null && `${paymentTermsDays}` !== '') {
+      dueDate = addDays(issueDate, Number(paymentTermsDays));
     }
   });
 
@@ -88,6 +89,9 @@
 
   onMount(async () => {
     await Promise.all([loadInvoice(), loadProfile()]);
+    // After the effect below flips useDefaultNotes, or the baseline is dirty from the start.
+    await tick();
+    guard.snapshot();
   });
 
   async function loadProfile() {
@@ -109,7 +113,7 @@
 
       issueDate = data.issue_date || '';
       dueDate = data.due_date || '';
-      paymentTermsDays = data.payment_terms_days || 30;
+      paymentTermsDays = data.payment_terms_days ?? 30;
       notes = data.notes || '';
       status = data.status || 'draft';
       documentType = data.document_type || 'invoice';
@@ -133,11 +137,10 @@
       taxName = data.tax_name || 'Tax';
 
       originalNotes = data.notes || '';
-
-      initialSnapshot = formState();
+      dueDateBasis = `${issueDate}|${paymentTermsDays}`;
     } catch (error) {
-      toast.error('Failed to load invoice');
-      allowLeave = true;
+      toast.error(error.message || 'Failed to load invoice');
+      guard.allowLeave();
       goto('/invoices');
     } finally {
       loading = false;
@@ -153,7 +156,7 @@
   });
 
   async function saveInvoice() {
-    const validItems = items.filter(item => item.description.trim() && item.unit_price);
+    const validItems = items.filter(item => item.description.trim() && Number.isFinite(parseFloat(String(item.unit_price))));
     if (validItems.length === 0) {
       toast.error('Please add at least one line item');
       return;
@@ -164,9 +167,13 @@
       await invoicesApi.update(invoiceId, {
         issue_date: issueDate || undefined,
         due_date: dueDate || undefined,
-        payment_terms_days: Number(paymentTermsDays) || undefined,
+        // An emptied number input binds null; 0 is a real value (due on receipt).
+        payment_terms_days: paymentTermsDays == null ? undefined : Number(paymentTermsDays),
         notes: effectiveNotes,
-        status: status !== invoice?.status ? status : undefined,
+        // Paid is applied last so its payment covers the new total. Any other change
+        // goes first: the item calls can already move a paid invoice back to sent, after
+        // which a later status update no longer removes the "Marked paid" payment.
+        status: status !== invoice?.status && status !== 'paid' ? status : undefined,
         document_type: documentType,
         client_reference: clientReference,
         show_payment_instructions: showPaymentInstructions,
@@ -206,8 +213,12 @@
         }
       }
 
+      if (status === 'paid' && invoice?.status !== 'paid') {
+        await invoicesApi.update(invoiceId, { status });
+      }
+
       toast.success('Invoice updated successfully');
-      allowLeave = true;
+      guard.allowLeave();
       goto(`/invoices/${invoiceId}`);
     } catch (error) {
       // The save is a sequence of calls; on failure some may have applied.
@@ -217,6 +228,7 @@
           ' — reloading the latest saved state.'
       );
       await loadInvoice();
+      guard.snapshot();
     } finally {
       saving = false;
     }
@@ -228,7 +240,7 @@
 
   function confirmDiscard() {
     showDiscardModal = false;
-    allowLeave = true;
+    guard.allowLeave();
     goto(`/invoices/${invoiceId}`);
   }
 </script>

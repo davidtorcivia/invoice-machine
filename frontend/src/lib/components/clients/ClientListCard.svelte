@@ -50,7 +50,7 @@
   </div>
 
   <div class="client-footer">
-    <span class="payment-terms">Net {client.payment_terms_days || 30} days</span>
+    <span class="payment-terms">Net {client.payment_terms_days ?? 30} days</span>
   </div>
 </div>
 

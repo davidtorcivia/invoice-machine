@@ -16,7 +16,7 @@
 
   let entries = $derived(Object.entries(fxRates.rates || {}).sort(([a], [b]) => a.localeCompare(b)));
   let available = $derived((currencies || []).filter(
-    (currency) => currency.code !== fxRates.base_currency_code
+    (currency) => !currency.disabled && currency.code !== fxRates.base_currency_code
   ));
 
   function addRate() {

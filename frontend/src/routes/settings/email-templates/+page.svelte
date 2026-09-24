@@ -43,7 +43,7 @@
       bodyTemplate = data.email_body_template ?? defaultBody;
       guard.snapshot();
     } catch (error) {
-      toast.error('Failed to load email templates');
+      toast.error(error.message || 'Failed to load email templates');
     } finally {
       loading = false;
     }
@@ -72,7 +72,7 @@
       toast.success('Email templates saved');
       guard.snapshot();
     } catch (error) {
-      toast.error('Failed to save templates');
+      toast.error(error.message || 'Failed to save templates');
     } finally {
       saving = false;
     }

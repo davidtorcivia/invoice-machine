@@ -23,9 +23,9 @@
   let newOffset = $state('');
 
   // Whatever the host platform knows about, so the list stays current without
-  // shipping a hardcoded copy of the tz database.
-  const timezones =
-    typeof Intl.supportedValuesOf === 'function' ? Intl.supportedValuesOf('timeZone') : ['UTC'];
+  // shipping a hardcoded copy of the tz database. V8 omits 'UTC', the backend default.
+  const knownZones = typeof Intl.supportedValuesOf === 'function' ? Intl.supportedValuesOf('timeZone') : [];
+  const timezones = knownZones.includes('UTC') ? knownZones : ['UTC', ...knownZones];
   const browserZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
   let hours = $derived(Array.from({ length: 24 }, (_, hour) => hour));

@@ -38,7 +38,7 @@
       guard.allowLeave();
       goto(`/clients/${client.id}`);
     } catch (error) {
-      toast.error('Failed to create client');
+      toast.error(error.message || 'Failed to create client');
     } finally {
       saving = false;
     }

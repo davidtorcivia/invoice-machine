@@ -13,7 +13,8 @@
     paidThisMonth: 0,
     draftCount: 0,
     clientCount: 0,
-    currency: 'USD'
+    currency: 'USD',
+    otherOutstanding: /** @type {string[]} */ ([])
   });
 
   let recentInvoices = $state([]);
@@ -37,12 +38,17 @@
         paidThisMonth: parseFloat(dashboardData.paid_this_month) || 0,
         draftCount: dashboardData.draft_count || 0,
         clientCount: clientsData.total ?? (clientsData.clients?.length || 0),
-        currency: dashboardData.currency || 'USD'
+        currency: dashboardData.currency || 'USD',
+        // Balances in other currencies are listed, never summed into the primary one.
+        otherOutstanding: (dashboardData.other_currencies || [])
+          .map((code) => dashboardData.by_currency?.[code])
+          .filter((totals) => totals && parseFloat(totals.outstanding) > 0)
+          .map((totals) => totals.outstanding_formatted)
       };
       recentInvoices = invoicesData;
     } catch (error) {
       loadError = true;
-      toast.error('Failed to load dashboard');
+      toast.error(error.message || 'Failed to load dashboard');
     } finally {
       loading = false;
     }

@@ -21,7 +21,6 @@
   let invoice = $state(/** @type {import('$lib/types').Invoice|null} */ (null));
   let items = $state([]);
   let loading = $state(true);
-  let loadError = false;
   let generatingPdf = $state(false);
   let showDeleteModal = $state(false);
   let deleting = $state(false);
@@ -36,15 +35,13 @@
 
   async function loadInvoice() {
     loading = true;
-    loadError = false;
     try {
       const data = await invoicesApi.get(invoiceId);
       invoice = data;
       items = data.items || [];
       await loadPayments();
     } catch (error) {
-      loadError = true;
-      toast.error('Failed to load invoice');
+      toast.error(error.message || 'Failed to load invoice');
     } finally {
       loading = false;
     }
@@ -98,12 +95,15 @@
 
   async function generatePdf() {
     generatingPdf = true;
+    // Opened before the await: popup blockers only allow window.open inside the click.
+    const pdfWindow = window.open('', '_blank');
     try {
-      const result = await invoicesApi.generatePdf(invoiceId);
+      await invoicesApi.generatePdf(invoiceId);
       toast.success('PDF generated successfully');
-      window.open(result.pdf_url, '_blank');
+      if (pdfWindow) pdfWindow.location.href = invoicesApi.getPdfUrl(invoiceId);
     } catch (error) {
-      toast.error('Failed to generate PDF');
+      pdfWindow?.close();
+      toast.error(error.message || 'Failed to generate PDF');
     } finally {
       generatingPdf = false;
     }
@@ -119,7 +119,7 @@
       toast.success(`Invoice marked as ${status}`);
       await loadInvoice();
     } catch (error) {
-      toast.error('Failed to update status');
+      toast.error(error.message || 'Failed to update status');
     }
   }
 
@@ -134,7 +134,7 @@
       toast.success('Invoice moved to trash');
       goto('/invoices');
     } catch (error) {
-      toast.error('Failed to delete invoice');
+      toast.error(error.message || 'Failed to delete invoice');
     } finally {
       deleting = false;
     }

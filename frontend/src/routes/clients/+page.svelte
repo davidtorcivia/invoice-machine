@@ -68,7 +68,7 @@
       currentPage = result.page || currentPage;
       syncUrl();
     } catch (error) {
-      toast.error('Failed to load clients');
+      toast.error(error.message || 'Failed to load clients');
     } finally {
       loading = false;
     }
@@ -112,7 +112,7 @@
         changePage(currentPage - 1);
       }
     } catch (error) {
-      toast.error('Failed to delete client');
+      toast.error(error.message || 'Failed to delete client');
     } finally {
       deleting = false;
       deleteTargetId = null;

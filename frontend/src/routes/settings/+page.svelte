@@ -191,7 +191,7 @@
       profileSnapshot = profileState();
       smtpSnapshot = smtpState();
     } catch (error) {
-      toast.error('Failed to load profile');
+      toast.error(error.message || 'Failed to load profile');
     } finally {
       loading = false;
     }

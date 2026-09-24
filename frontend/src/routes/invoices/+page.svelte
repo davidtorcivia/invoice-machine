@@ -1,5 +1,6 @@
 <script>
   import { onMount } from 'svelte';
+  import { SvelteSet } from 'svelte/reactivity';
   import { goto } from '$app/navigation';
   import { page } from '$app/stores';
   import { invoicesApi, clientsApi } from '$lib/api';
@@ -10,7 +11,7 @@
   import InvoiceBulkActionBar from '$lib/components/invoices/InvoiceBulkActionBar.svelte';
   import InvoiceCards from '$lib/components/invoices/InvoiceCards.svelte';
   import InvoiceFiltersBar from '$lib/components/invoices/InvoiceFiltersBar.svelte';
-  import InvoicePagination from '$lib/components/invoices/InvoicePagination.svelte';
+  import Pagination from '$lib/components/Pagination.svelte';
   import InvoiceTable from '$lib/components/invoices/InvoiceTable.svelte';
   import {
     getBulkActionLabel,
@@ -51,7 +52,7 @@
   let deleteTargetNumber = $state('');
   let deleting = $state(false);
 
-  let selectedIds = $state(new Set());
+  const selectedIds = new SvelteSet();
   let showBulkModal = $state(false);
   let bulkAction = $state(/** @type {any} */ (null));
   let bulkActionLoading = $state(false);
@@ -143,10 +144,16 @@
       invoices = invoicesData.items || [];
       pagination = invoicesData.pagination || pagination;
       currentPage = pagination.page || currentPage;
-      // Reflect the loaded view in the URL (page may be clamped by the server).
+      // The server does not clamp the page: deleting the last rows of the last page leaves it empty.
+      if (invoices.length === 0 && currentPage > pagination.total_pages && pagination.total_pages >= 1) {
+        currentPage = pagination.total_pages;
+        await loadData();
+        return;
+      }
+      // Reflect the loaded view in the URL.
       syncUrl();
     } catch (error) {
-      toast.error('Failed to load invoices');
+      toast.error(error.message || 'Failed to load invoices');
     } finally {
       loading = false;
     }
@@ -214,15 +221,18 @@
     } else {
       selectedIds.add(id);
     }
-    selectedIds = selectedIds;
   }
 
   function toggleSelectAll() {
-    selectedIds = allSelected ? new Set() : new Set(invoices.map((invoice) => invoice.id));
+    if (allSelected) {
+      selectedIds.clear();
+    } else {
+      invoices.forEach((invoice) => selectedIds.add(invoice.id));
+    }
   }
 
   function clearSelection() {
-    selectedIds = new Set();
+    selectedIds.clear();
   }
 
   function openBulkActionModal(action) {
@@ -276,7 +286,7 @@
       showDeleteModal = false;
       await loadData();
     } catch (error) {
-      toast.error('Failed to delete invoice');
+      toast.error(error.message || 'Failed to delete invoice');
     } finally {
       deleting = false;
       deleteTargetId = null;
@@ -296,7 +306,7 @@
       toast.success('Invoice marked as paid');
       await loadData();
     } catch (error) {
-      toast.error('Failed to update invoice');
+      toast.error(error.message || 'Failed to update invoice');
     }
   }
 </script>
@@ -369,7 +379,7 @@
       onmarkpaid={(detail) => markAsPaid(detail)}
     />
 
-    <InvoicePagination {pageStart} {pageEnd} {pagination} {loading} onpagechange={(detail) => changePage(detail)} />
+    <Pagination {pageStart} {pageEnd} {pagination} {loading} noun="invoice" onpagechange={(detail) => changePage(detail)} />
   {:else}
     <div class="empty-state">
       <div class="empty-state-icon">

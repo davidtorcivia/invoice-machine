@@ -7,7 +7,8 @@
     paidThisMonth: 0,
     draftCount: 0,
     clientCount: 0,
-    currency: 'USD'
+    currency: 'USD',
+    otherOutstanding: [] as string[]
   } } = $props();
 
   const cards = [
@@ -27,6 +28,9 @@
       <div class="stat-info">
         <div class="stat-value">{card.money ? formatCurrency(stats[card.key], stats.currency) : stats[card.key]}</div>
         <div class="stat-label">{card.label}</div>
+        {#if card.key === 'totalOutstanding' && stats.otherOutstanding?.length}
+          <div class="stat-extra">+ {stats.otherOutstanding.join(', ')}</div>
+        {/if}
       </div>
     </div>
   {/each}
@@ -102,6 +106,12 @@
   .stat-label {
     font-size: 0.875rem;
     color: var(--color-text-secondary);
+  }
+
+  .stat-extra {
+    margin-top: var(--space-1);
+    font-size: 0.8125rem;
+    color: var(--color-text-tertiary);
   }
 
   @media (max-width: 1024px) {

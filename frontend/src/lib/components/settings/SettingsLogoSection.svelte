@@ -35,7 +35,7 @@
       logoPreview = `/api/profile/logo/${result.logo_path}`;
       toast.success('Logo uploaded successfully');
     } catch (error) {
-      toast.error('Failed to upload logo');
+      toast.error(error.message || 'Failed to upload logo');
     } finally {
       logoUploading = false;
       event.target.value = '';
@@ -50,7 +50,7 @@
       toast.success('Logo deleted');
       showDeleteModal = false;
     } catch (error) {
-      toast.error('Failed to delete logo');
+      toast.error(error.message || 'Failed to delete logo');
     } finally {
       deleting = false;
     }

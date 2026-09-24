@@ -1,26 +1,14 @@
 <script>
-  import { tick } from 'svelte';
   import Icon from './Icons.svelte';
+  import { focusTrap } from '$lib/focusTrap';
 
-  
-  
-  
-  
-  
-  
-  
-  
-  
-
-  
-  
   /**
    * @typedef {Object} Props
    * @property {boolean} [show]
    * @property {string} [title]
    * @property {string} [message]
    * @property {string} [confirmText]
-   * @property {string} [cancelText]
+   * @property {string} [cancelText] empty hides the cancel button
    * @property {'danger' | 'warning' | 'primary'} [variant]
    * @property {'danger' | 'warning' | 'primary' | undefined} [confirmVariant]
    * @property {string} [icon]
@@ -44,30 +32,6 @@
     onCancel = () => {}
   } = $props();
 
-  /** @type {HTMLElement | null} */
-  let dialogEl = $state(/** @type {any} */ (null));
-  /** @type {HTMLButtonElement | null} */
-  let confirmBtn = $state(/** @type {any} */ (null));
-  /** @type {Element | null} */
-  let previouslyFocused = null;
-  let wasShown = $state(false);
-
-
-  async function openModal() {
-    if (typeof document !== 'undefined') {
-      previouslyFocused = document.activeElement;
-    }
-    await tick();
-    confirmBtn?.focus();
-  }
-
-  function restoreFocus() {
-    if (previouslyFocused && previouslyFocused instanceof HTMLElement) {
-      previouslyFocused.focus();
-    }
-    previouslyFocused = null;
-  }
-
   function handleConfirm() {
     onConfirm();
   }
@@ -76,47 +40,16 @@
     onCancel();
   }
 
-  function handleKeydown(e) {
-    if (e.key === 'Escape') {
-      handleCancel();
-      return;
-    }
-    // Simple focus trap so Tab stays within the dialog.
-    if (e.key === 'Tab' && dialogEl) {
-      /** @type {NodeListOf<HTMLElement>} */
-      const focusables = dialogEl.querySelectorAll('button:not([disabled])');
-      if (focusables.length === 0) return;
-      const first = focusables[0];
-      const last = focusables[focusables.length - 1];
-      if (e.shiftKey && document.activeElement === first) {
-        e.preventDefault();
-        last.focus();
-      } else if (!e.shiftKey && document.activeElement === last) {
-        e.preventDefault();
-        first.focus();
-      }
-    }
-  }
-
-  $effect(() => {
-    if (show && !wasShown) {
-      wasShown = true;
-      openModal();
-    } else if (!show && wasShown) {
-      wasShown = false;
-      restoreFocus();
-    }
-  });
   let activeVariant = $derived(confirmVariant || variant);
   let buttonClass = $derived(activeVariant === 'danger' ? 'btn-danger' : activeVariant === 'warning' ? 'btn-warning' : 'btn-primary');
   let iconClass = $derived(activeVariant === 'danger' ? 'danger' : activeVariant === 'warning' ? 'warning' : 'primary');
 </script>
 
 {#if show}
-  <div class="modal-overlay" role="presentation" tabindex="-1" onkeydown={handleKeydown}>
+  <div class="modal-overlay" role="presentation">
     <button type="button" class="modal-backdrop" aria-label="Close confirmation dialog" onclick={handleCancel}></button>
     <div
-      bind:this={dialogEl}
+      use:focusTrap={{ onEscape: handleCancel }}
       class="modal confirm-modal"
       role="dialog"
       aria-modal="true"
@@ -130,10 +63,12 @@
       <h3 class="modal-title" id="confirm-modal-title">{title}</h3>
       <p class="modal-message" id="confirm-modal-message">{message}</p>
       <div class="modal-actions">
-        <button class="btn btn-secondary" onclick={handleCancel} disabled={loading}>
-          {cancelText}
-        </button>
-        <button class="btn {buttonClass}" bind:this={confirmBtn} onclick={handleConfirm} disabled={loading}>
+        {#if cancelText}
+          <button class="btn btn-secondary" onclick={handleCancel} disabled={loading}>
+            {cancelText}
+          </button>
+        {/if}
+        <button class="btn {buttonClass}" data-autofocus onclick={handleConfirm} disabled={loading}>
           {#if loading}
             <span class="spinner-sm"></span>
           {/if}

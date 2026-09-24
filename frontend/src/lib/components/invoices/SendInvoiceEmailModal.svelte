@@ -1,5 +1,6 @@
 <script lang="ts">
   import Icon from '$lib/components/Icons.svelte';
+  import { focusTrap } from '$lib/focusTrap';
 
   interface Props {
     oncancel?: (detail?: any) => void;
@@ -21,20 +22,14 @@
     emailRecipient = $bindable(''),
     emailSubject = $bindable(''),
     emailBody = $bindable(''), oncancel, onconfirm }: Props = $props();
-
-  function handleKeydown(event) {
-    if (event.key === 'Escape') {
-      oncancel?.();
-    }
-  }
 </script>
 
 {#if show}
-  <div class="modal-overlay" role="presentation" tabindex="-1" onkeydown={handleKeydown}>
+  <div class="modal-overlay" role="presentation">
     <button type="button" class="modal-backdrop" aria-label="Close send email dialog" onclick={() => oncancel?.()}></button>
-    <div class="modal-content email-modal" role="dialog" aria-modal="true" tabindex="-1">
+    <div class="modal-content email-modal" role="dialog" aria-modal="true" aria-labelledby="send-email-title" tabindex="-1" use:focusTrap={{ onEscape: () => oncancel?.() }}>
       <div class="modal-header">
-        <h2 class="modal-title">
+        <h2 id="send-email-title" class="modal-title">
           <Icon name="send" size="md" />
           Send {documentLabel} via Email
         </h2>

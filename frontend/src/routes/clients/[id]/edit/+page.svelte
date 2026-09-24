@@ -40,7 +40,7 @@
       draft = applyClientToDraft(data);
       guard.snapshot();
     } catch (error) {
-      toast.error('Failed to load client');
+      toast.error(error.message || 'Failed to load client');
       goto('/clients');
     } finally {
       loading = false;
@@ -60,7 +60,7 @@
       guard.allowLeave();
       goto(`/clients/${clientId}`);
     } catch (error) {
-      toast.error('Failed to update client');
+      toast.error(error.message || 'Failed to update client');
     } finally {
       saving = false;
     }

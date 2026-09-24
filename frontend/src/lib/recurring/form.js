@@ -1,3 +1,5 @@
+import { formatDate } from '$lib/stores';
+
 /**
  * @typedef {{ description: string, quantity: number, unit_price: string | number, unit_type: string }} LineItemDraft
  * @typedef {{
@@ -123,13 +125,14 @@ export function createScheduleFormDataFromSchedule(schedule) {
     currency_code: schedule.currency_code,
     payment_terms_days: schedule.payment_terms_days,
     notes: schedule.notes || '',
-    line_items: schedule.line_items ? [...schedule.line_items] : [],
+    // Copies of each item, so edits abandoned by Cancel never reach the schedule shown on the page.
+    line_items: (schedule.line_items || []).map((item) => ({ ...item })),
     is_active: schedule.is_active,
     tax_enabled: schedule.tax_enabled,
     tax_rate: schedule.tax_rate || '',
     tax_name: schedule.tax_name || 'Tax',
     show_payment_instructions: schedule.show_payment_instructions !== false,
-    selected_payment_methods: schedule.selected_payment_methods || [],
+    selected_payment_methods: [...(schedule.selected_payment_methods || [])],
     auto_email_enabled: schedule.auto_email_enabled || false,
     email_subject_template: schedule.email_subject_template || '',
     email_body_template: schedule.email_body_template || '',
@@ -164,7 +167,8 @@ export function buildSchedulePayload(formData) {
     email_subject_template: formData.email_subject_template || null,
     email_body_template: formData.email_body_template || null,
     is_active: !!formData.is_active,
-    tax_enabled: formData.tax_enabled,
+    // null inherits the client or global default; the form has no explicit "no tax" state.
+    tax_enabled: formData.tax_enabled ? true : null,
     tax_rate: formData.tax_enabled && formData.tax_rate ? Number(formData.tax_rate) : null,
     tax_name: formData.tax_name || null
   };
@@ -188,6 +192,5 @@ export function formatFrequency(frequency) {
  * @param {string | undefined} dateStr
  */
 export function formatScheduleDate(dateStr) {
-  if (!dateStr) return '-';
-  return new Date(dateStr).toLocaleDateString();
+  return dateStr ? formatDate(dateStr) : '-';
 }
