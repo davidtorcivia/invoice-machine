@@ -325,3 +325,73 @@ def test_migration_021_moves_legacy_keys_into_api_keys():
             assert not columns & {"mcp_api_key", "bot_api_key"}
         finally:
             conn.close()
+
+
+def test_migration_022_turns_checkout_session_links_into_pay_links():
+    """An expiring Stripe session URL becomes a permanent /pay link on the base URL."""
+    import os
+    import sqlite3
+    import subprocess
+    import sys
+    import tempfile
+    from pathlib import Path
+
+    project_root = Path(__file__).resolve().parent.parent
+
+    with tempfile.TemporaryDirectory() as tmp:
+        db_file = Path(tmp) / "links.db"
+        env = dict(os.environ)
+        env["DATABASE_URL"] = f"sqlite+aiosqlite:///{db_file}"
+        env["ENVIRONMENT"] = "development"
+
+        def upgrade(target):
+            step = (
+                "from alembic.config import Config; from alembic import command; "
+                f"command.upgrade(Config('alembic.ini'), '{target}')"
+            )
+            result = subprocess.run(
+                [sys.executable, "-c", step],
+                cwd=str(project_root),
+                env=env,
+                capture_output=True,
+                text=True,
+            )
+            assert result.returncode == 0, result.stderr
+
+        upgrade("021_api_keys")
+
+        conn = sqlite3.connect(str(db_file))
+        conn.execute(
+            "INSERT INTO business_profile (id, name, app_base_url) "
+            "VALUES (1, 'Test', 'https://inv.example')"
+        )
+        for number, link_id in (("A-1", "cs_test_abc"), ("A-2", None)):
+            conn.execute(
+                "INSERT INTO invoices (invoice_number, status, document_type, issue_date, "
+                "payment_terms_days, currency_code, subtotal, tax_amount, total, "
+                "payment_link_id, payment_link_url, pdf_generated_at, created_at, updated_at) "
+                "VALUES (?, 'sent', 'invoice', '2026-01-01', 30, 'USD', 1, 0, 1, ?, ?, "
+                "'2026-01-02', '2026-01-01', '2026-01-01')",
+                (number, link_id, "https://checkout.stripe.com/x" if link_id else None),
+            )
+        conn.commit()
+        conn.close()
+
+        upgrade("head")
+
+        conn = sqlite3.connect(str(db_file))
+        try:
+            rows = dict(
+                (number, (token, url, stamp))
+                for number, token, url, stamp in conn.execute(
+                    "SELECT invoice_number, payment_link_id, payment_link_url, pdf_generated_at "
+                    "FROM invoices"
+                )
+            )
+            token, url, stamp = rows["A-1"]
+            assert token and not token.startswith("cs_")
+            assert url == f"https://inv.example/pay/{token}"
+            assert stamp is None, "the PDF must be reprinted with the working link"
+            assert rows["A-2"] == (None, None, "2026-01-02")
+        finally:
+            conn.close()

@@ -354,6 +354,7 @@ class Invoice(Base):
 
     # Hosted payment link (Stripe Checkout Session) for this invoice.
     payment_link_url: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    # Token of the permanent /pay/<token> page, not a Stripe id; see api/pay.py.
     payment_link_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     payment_link_created_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
@@ -402,6 +403,7 @@ class Invoice(Base):
         Index("idx_invoices_client_deleted", "client_id", "deleted_at"),
         # Reminder sweep and A/R aging both scan open invoices by due date.
         Index("idx_invoices_due_status_deleted", "due_date", "status", "deleted_at"),
+        Index("uq_invoices_payment_link_id", "payment_link_id", unique=True),
     )
 
     @property

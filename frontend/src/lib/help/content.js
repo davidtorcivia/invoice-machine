@@ -109,7 +109,7 @@ export const helpSections = [
 </ol>
 <p class="note"><strong>Why a restricted key:</strong> it can create checkouts and nothing else, so a leaked value cannot move money or read your customer list. Both the key and the signing secret are encrypted before they are stored and are never shown again.</p>
 <h3>Using It</h3>
-<p>Open an invoice and click <strong>Create payment link</strong>. The link covers whatever is still outstanding, appears on the PDF, and can be included in emails with the <code>{payment_link}</code> placeholder. When a client pays, the payment is recorded against the invoice automatically and the balance updates.</p>
+<p>Open an invoice and click <strong>Create payment link</strong>. The link points at this app, never expires, and always charges whatever is still outstanding. It appears on the PDF and can be included in emails with the <code>{payment_link}</code> placeholder. If the app sits behind Cloudflare Access or another login wall, let <code>/pay/*</code> through so clients can reach it. When a client pays, the payment is recorded against the invoice automatically and the balance updates.</p>
 <p>Which cards and wallets appear at checkout is controlled from your Stripe dashboard, not here.</p>
 <p>Without the webhook secret, links still work but completed payments will not be recorded back, so you would have to enter them by hand.</p>`
   },

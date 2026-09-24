@@ -5,8 +5,10 @@ a deliberately small dependency set, and the surface used here is two calls plus
 webhook signature verification.
 
 Design notes:
-- A Checkout Session (not the deprecated Charges API) is created per invoice for
-  the *outstanding* balance, so a partially-paid invoice links for what's left.
+- The link printed on PDFs and emails is this app's ``/pay/<token>`` page, which
+  creates a Checkout Session for the *outstanding* balance when the client
+  clicks. Stripe expires a session within 24 hours, so a session URL can never
+  be the shared link, and a partially paid invoice charges only what is left.
 - ``payment_method_types`` is never sent, which leaves Stripe's dynamic payment
   methods enabled — the methods shown are controlled from the Stripe Dashboard.
 - The API key is stored encrypted and never logged or returned to the client.
@@ -18,7 +20,6 @@ import hashlib
 import hmac
 import json
 import logging
-import secrets
 import time
 from decimal import Decimal
 
@@ -156,16 +157,20 @@ def _raise_for_stripe_error(response: httpx.Response) -> None:
     raise StripeError(message)
 
 
-async def create_payment_link(
-    profile: BusinessProfile,
-    invoice: Invoice,
-    success_url: str,
-    cancel_url: str,
-) -> dict:
+def pay_page_url(base_url: str, token: str) -> str:
+    """The shareable link for an invoice; it outlives any one Checkout Session."""
+    return f"{base_url.rstrip('/')}/pay/{token}"
+
+
+async def create_payment_link(profile: BusinessProfile, invoice: Invoice, base_url: str) -> dict:
     """Create a Stripe Checkout Session for an invoice's outstanding balance.
 
-    Returns ``{"id", "url"}``. Raises StripeError on any failure.
+    Stripe returns the client to the invoice's pay page afterwards, which needs
+    no login. Returns ``{"id", "url"}``. Raises StripeError on any failure.
     """
+    page = pay_page_url(base_url, invoice.payment_link_id or "")
+    success_url = f"{page}?result=paid"
+    cancel_url = f"{page}?result=cancelled"
     secret_key = get_stripe_secret_key(profile)
     if not secret_key:
         raise StripeError("Stripe is not configured. Add an API key in settings.")
@@ -197,10 +202,16 @@ async def create_payment_link(
         "metadata[invoice_id]": str(invoice.id),
         "metadata[invoice_number]": invoice.invoice_number,
         "payment_intent_data[metadata][invoice_id]": str(invoice.id),
-        "integration_identifier": f"invoice-machine-{secrets.token_hex(4)}",
+        "integration_identifier": "invoice-machine",
     }
     if invoice.client_email:
         form["customer_email"] = invoice.client_email
+    # Stripe rejects a reused idempotency key whose parameters differ, so the key
+    # covers every parameter. The hour bucket bounds a replay: Stripe keeps keys
+    # at least a day and sessions expire after one, so a replayed session is at
+    # most an hour old, and a cached error clears within the hour.
+    params_digest = hashlib.sha256(json.dumps(form, sort_keys=True).encode()).hexdigest()[:32]
+    hour = int(time.time() // 3600)
 
     try:
         async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT) as client:
@@ -208,10 +219,7 @@ async def create_payment_link(
                 f"{STRIPE_API_BASE}/checkout/sessions",
                 data=form,
                 headers=_api_headers(
-                    secret_key,
-                    # Re-creating a link for the same invoice+amount reuses the
-                    # session instead of littering the Stripe account.
-                    idempotency_key=f"im-invoice-{invoice.id}-{amount_due}",
+                    secret_key, idempotency_key=f"im-invoice-{invoice.id}-{params_digest}-{hour}"
                 ),
             )
     except httpx.HTTPError as exc:

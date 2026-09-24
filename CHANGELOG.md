@@ -18,6 +18,13 @@ Notable changes to Invoice Machine. Format based on
 
 ### Changed
 
+- Payment links are permanent: the shared link is `/pay/<token>` on this app,
+  and each click opens a fresh Stripe checkout for the balance still due. The
+  old links were Stripe Checkout Sessions, which expire within 24 hours, yet
+  were printed on PDFs and sent in reminders. Existing links are converted on
+  upgrade and their PDFs reprinted. The pay page needs no login; behind
+  Cloudflare Access, let `/pay/*` through. Creating a link needs the app base
+  URL, and is refused for cancelled invoices.
 - Multiple MCP and bot API keys, each labeled and rotated or revoked on its own,
   under Settings > MCP Integration and Settings > Bot API Key. Existing keys keep
   working and appear as "Migrated MCP key" and "Migrated bot key".
@@ -48,6 +55,9 @@ Notable changes to Invoice Machine. Format based on
 
 ### Fixed
 
+- Creating a payment link again for an unchanged invoice within a day failed
+  with a Stripe idempotency error, because a random value was sent with the
+  same idempotency key.
 - WeasyPrint 70 (clears PYSEC-2026-3940). It removed the function-style URL
   fetcher the PDF renderer used, so the renderer now uses WeasyPrint's own
   fetcher limited to `data:` URIs; `file:` and `http:` resources are still

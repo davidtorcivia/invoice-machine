@@ -1,5 +1,6 @@
 """Payments API endpoints (partial payments and A/R aging)."""
 
+import secrets
 from datetime import date
 from decimal import Decimal
 
@@ -193,17 +194,17 @@ async def create_payment_link(
     invoice_id: int,
     session: AsyncSession = Depends(get_session),
 ) -> dict:
-    """Create (or refresh) a hosted payment link for an invoice's balance."""
+    """Give an invoice its permanent pay link, creating it on first use."""
     from invoice_machine.config import get_settings
     from invoice_machine.database import BusinessProfile
-    from invoice_machine.service.stripe_links import StripeError
+    from invoice_machine.service.stripe_links import StripeError, pay_page_url
     from invoice_machine.service.stripe_links import (
         create_payment_link as create_stripe_link,
     )
     from invoice_machine.utils import utc_now
 
     invoice = await InvoiceService.get_invoice(session, invoice_id)
-    if not invoice or invoice.deleted_at is not None:
+    if not invoice:
         raise HTTPException(status_code=404, detail="Invoice not found")
 
     if invoice.document_type == "quote":
@@ -214,6 +215,10 @@ async def create_payment_link(
             status_code=400,
             detail="Quotes cannot have payment links. Convert the quote to an invoice first.",
         )
+    if invoice.status == "cancelled":
+        # The webhook refuses payments on cancelled invoices, so the money would
+        # arrive with nothing recording it.
+        raise HTTPException(status_code=400, detail="Cancelled invoices cannot be paid online.")
 
     profile = await BusinessProfile.get_or_create(session)
     if not profile.payments_enabled:
@@ -230,24 +235,29 @@ async def create_payment_link(
         raise HTTPException(status_code=400, detail="Invoice has no outstanding balance")
 
     base_url = (profile.app_base_url or get_settings().app_base_url or "").rstrip("/")
-    try:
-        link = await create_stripe_link(
-            profile,
-            invoice,
-            success_url=f"{base_url}/invoices/{invoice.id}?payment=success",
-            cancel_url=f"{base_url}/invoices/{invoice.id}?payment=cancelled",
+    if not base_url.startswith(("https://", "http://")):
+        raise HTTPException(
+            status_code=400,
+            detail="Set the app base URL in settings first: the link points back to this app.",
         )
+
+    if not invoice.payment_link_id:
+        invoice.payment_link_id = secrets.token_urlsafe(24)
+    try:
+        # One session now so a Stripe misconfiguration shows up here, not to the client.
+        await create_stripe_link(profile, invoice, base_url)
     except StripeError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 
-    invoice.payment_link_url = link["url"]
-    invoice.payment_link_id = link["id"]
-    invoice.payment_link_created_at = utc_now()
+    url = pay_page_url(base_url, invoice.payment_link_id)
+    if invoice.payment_link_url != url:
+        invoice.payment_link_url = url
+        invoice.payment_link_created_at = utc_now()
     await session.commit()
 
     return {
         "invoice_id": invoice.id,
-        "payment_link_url": link["url"],
+        "payment_link_url": url,
         "amount_due": str(invoice.amount_due),
         "currency_code": invoice.currency_code,
         "provider": "stripe",

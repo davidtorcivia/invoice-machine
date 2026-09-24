@@ -9,10 +9,9 @@
   async function createPaymentLink() {
     creatingPaymentLink = true;
     try {
-      const result = await invoicesApi.createPaymentLink(invoiceId);
-      toast.success('Payment link created');
+      await invoicesApi.createPaymentLink(invoiceId);
+      toast.success(invoice.payment_link_url ? 'Payment link updated' : 'Payment link created');
       await onupdated();
-      window.open(result.payment_link_url, '_blank', 'noopener');
     } catch (error) {
       toast.error(error.message || 'Failed to create payment link');
     } finally {
@@ -37,7 +36,10 @@
   </div>
   <div class="card-body">
     {#if invoice.payment_link_url}
-      <p class="link-hint">Share this link so the client can pay by card.</p>
+      <p class="link-hint">
+        Share this link so the client can pay by card. It does not expire and
+        always charges what is still due.
+      </p>
       <div class="link-actions">
         <a
           href={invoice.payment_link_url}
@@ -53,14 +55,15 @@
           class="btn btn-secondary btn-sm"
           onclick={createPaymentLink}
           disabled={creatingPaymentLink}
+          title="Point the link at the current app base URL, after a domain change"
         >
-          {creatingPaymentLink ? 'Refreshing...' : 'Refresh'}
+          {creatingPaymentLink ? 'Updating...' : 'Update link'}
         </button>
       </div>
     {:else}
       <p class="link-hint">
-        Create a hosted checkout link for the outstanding balance. Requires
-        online payments to be configured in settings.
+        Create a link the client can use to pay the outstanding balance by card.
+        Requires online payments and the app base URL in settings.
       </p>
       <button
         type="button"
