@@ -353,6 +353,46 @@ def _invoice_filters(
     return conditions
 
 
+_BULK_TRANSITIONS = {
+    "mark_sent": ["draft"],
+    "mark_paid": ["sent", "overdue"],
+    "delete": ["draft", "sent", "paid", "overdue", "cancelled"],
+}
+
+
+def _validate_bulk_targets(
+    action: str, invoice_ids: list[int], invoices: dict[int, Invoice]
+) -> tuple[list[int], list[dict]]:
+    """Split the requested ids into those the action may apply to and per-id errors."""
+    valid_ids = []
+    errors = []
+    for invoice_id in invoice_ids:
+        if invoice_id not in invoices:
+            errors.append({"id": invoice_id, "reason": "Invoice not found or deleted"})
+            continue
+
+        invoice = invoices[invoice_id]
+        if action == "mark_paid" and getattr(invoice, "document_type", "invoice") == "quote":
+            errors.append(
+                {
+                    "id": invoice_id,
+                    "reason": "Cannot mark a quote as paid. Convert it to an invoice first.",
+                }
+            )
+            continue
+        if invoice.status not in _BULK_TRANSITIONS[action]:
+            errors.append(
+                {
+                    "id": invoice_id,
+                    "reason": f"Invalid status transition: {invoice.status} cannot be {action.replace('_', ' ')}",
+                }
+            )
+            continue
+
+        valid_ids.append(invoice_id)
+    return valid_ids, errors
+
+
 class InvoiceService:
     """Service for invoice operations."""
 
@@ -817,13 +857,7 @@ class InvoiceService:
         invoice_ids: list[int],
     ) -> dict:
         """Execute a bulk action on multiple invoices with validation."""
-        valid_transitions = {
-            "mark_sent": ["draft"],
-            "mark_paid": ["sent", "overdue"],
-            "delete": ["draft", "sent", "paid", "overdue", "cancelled"],
-        }
-
-        if action not in valid_transitions:
+        if action not in _BULK_TRANSITIONS:
             return {
                 "action": action,
                 "total_requested": len(invoice_ids),
@@ -839,32 +873,7 @@ class InvoiceService:
         )
         invoices = {invoice.id: invoice for invoice in result.scalars().all()}
 
-        valid_ids = []
-        errors = []
-        for invoice_id in invoice_ids:
-            if invoice_id not in invoices:
-                errors.append({"id": invoice_id, "reason": "Invoice not found or deleted"})
-                continue
-
-            invoice = invoices[invoice_id]
-            if action == "mark_paid" and getattr(invoice, "document_type", "invoice") == "quote":
-                errors.append(
-                    {
-                        "id": invoice_id,
-                        "reason": "Cannot mark a quote as paid. Convert it to an invoice first.",
-                    }
-                )
-                continue
-            if invoice.status not in valid_transitions[action]:
-                errors.append(
-                    {
-                        "id": invoice_id,
-                        "reason": f"Invalid status transition: {invoice.status} cannot be {action.replace('_', ' ')}",
-                    }
-                )
-                continue
-
-            valid_ids.append(invoice_id)
+        valid_ids, errors = _validate_bulk_targets(action, invoice_ids, invoices)
 
         successful = 0
         if valid_ids:

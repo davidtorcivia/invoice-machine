@@ -194,25 +194,91 @@ async def _verify_bot_api_key(token: str | None) -> bool:
     return await authenticate_api_key("bot", token)
 
 
+def _warn_production_misconfig() -> None:
+    """Log the production settings that silently break the app in a browser."""
+    if settings.environment.lower() != "production":
+        return
+    # The app's own origin missing from the CORS allow-list is a common
+    # misconfiguration (e.g. the invoice/invoices typo).
+    origins = settings.cors_origins_list
+    base = settings.app_base_url.rstrip("/")
+    if base and base not in origins:
+        logger.warning(
+            "CORS_ORIGINS (%s) does not include APP_BASE_URL (%s); "
+            "cross-origin browser requests from the app will be blocked.",
+            origins,
+            base,
+        )
+    if not settings.secure_cookies:
+        logger.warning(
+            "SECURE_COOKIES is off in production; the session cookie will be "
+            "sent over plain HTTP. Set SECURE_COOKIES=true behind HTTPS."
+        )
+
+
+async def _auth_middleware(request: Request, call_next):
+    """Require a bot bearer key or a web session (plus CSRF on writes) under /api/."""
+    path = request.url.path
+
+    if path in PUBLIC_PATHS or not path.startswith("/api/"):
+        return await call_next(request)
+
+    if request.method == "OPTIONS":
+        return await call_next(request)
+
+    # Key management, backups and payment settings are web-session-only: a
+    # bot key must not mint or revoke keys, a restore (or a download-edit-
+    # restore cycle) would resurrect revoked keys and forge sessions, and
+    # swapping the Stripe keys would route payments to another account.
+    # Bearer auth is skipped there and cookie auth applies.
+    if not path.startswith(
+        ("/api/auth/", "/api/api-keys", "/api/backups", "/api/settings/payments")
+    ):
+        bearer_token = _extract_bearer_token(request)
+        if bearer_token:
+            client_ip = get_client_ip(request)
+            if bearer_auth_throttle.is_blocked(client_ip):
+                return JSONResponse(
+                    {"detail": "Too many authentication attempts. Try again later."},
+                    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                )
+            if await _verify_bot_api_key(bearer_token):
+                return await call_next(request)
+            # Invalid bearer token: count it before falling back to cookie auth.
+            bearer_auth_throttle.record_failure(client_ip)
+
+    session_token = request.cookies.get(SESSION_COOKIE_NAME)
+    if not session_token:
+        return JSONResponse(
+            {"detail": "Authentication required"},
+            status_code=status.HTTP_401_UNAUTHORIZED,
+        )
+
+    # Imported per request: tests swap the module attribute for a temp database.
+    from invoice_machine.database import async_session_maker
+
+    async with async_session_maker() as db_session:
+        user_session = await get_session_data(db_session, session_token)
+        if not user_session or not user_session.user_id:
+            return JSONResponse(
+                {"detail": "Session expired"},
+                status_code=status.HTTP_401_UNAUTHORIZED,
+            )
+
+        if request.method in UNSAFE_METHODS:
+            csrf_header = request.headers.get("X-CSRF-Token")
+            if not csrf_header or not secrets.compare_digest(user_session.csrf_token, csrf_header):
+                return JSONResponse(
+                    {"detail": "Invalid CSRF token"},
+                    status_code=status.HTTP_403_FORBIDDEN,
+                )
+
+    return await call_next(request)
+
+
 def configure_http_middleware(app: FastAPI) -> None:
     """Attach shared middleware and request guards to the app."""
-    # In production, warn loudly if the app's own origin isn't in the CORS
-    # allow-list — a common misconfiguration (e.g. the invoice/invoices typo).
-    if settings.environment.lower() == "production":
-        origins = settings.cors_origins_list
-        base = settings.app_base_url.rstrip("/")
-        if base and base not in origins:
-            logger.warning(
-                "CORS_ORIGINS (%s) does not include APP_BASE_URL (%s); "
-                "cross-origin browser requests from the app will be blocked.",
-                origins,
-                base,
-            )
-        if not settings.secure_cookies:
-            logger.warning(
-                "SECURE_COOKIES is off in production; the session cookie will be "
-                "sent over plain HTTP. Set SECURE_COOKIES=true behind HTTPS."
-            )
+    _warn_production_misconfig()
 
     app.state.limiter = limiter
     # slowapi's handler is typed for RateLimitExceeded; Starlette types every
@@ -233,69 +299,10 @@ def configure_http_middleware(app: FastAPI) -> None:
     )
     app.add_middleware(SecurityHeadersMiddleware)
     app.add_middleware(RequestSizeLimitMiddleware)
+    app.middleware("http")(_auth_middleware)
 
-    @app.middleware("http")
-    async def auth_middleware(request: Request, call_next):
-        path = request.url.path
-
-        if path in PUBLIC_PATHS or not path.startswith("/api/"):
-            return await call_next(request)
-
-        if request.method == "OPTIONS":
-            return await call_next(request)
-
-        # Key management, backups and payment settings are web-session-only: a
-        # bot key must not mint or revoke keys, a restore (or a download-edit-
-        # restore cycle) would resurrect revoked keys and forge sessions, and
-        # swapping the Stripe keys would route payments to another account.
-        # Bearer auth is skipped there and cookie auth applies.
-        if not path.startswith(
-            ("/api/auth/", "/api/api-keys", "/api/backups", "/api/settings/payments")
-        ):
-            bearer_token = _extract_bearer_token(request)
-            if bearer_token:
-                client_ip = get_client_ip(request)
-                if bearer_auth_throttle.is_blocked(client_ip):
-                    return JSONResponse(
-                        {"detail": "Too many authentication attempts. Try again later."},
-                        status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                    )
-                if await _verify_bot_api_key(bearer_token):
-                    return await call_next(request)
-                # Invalid bearer token: count it before falling back to cookie auth.
-                bearer_auth_throttle.record_failure(client_ip)
-
-        session_token = request.cookies.get(SESSION_COOKIE_NAME)
-        if not session_token:
-            return JSONResponse(
-                {"detail": "Authentication required"},
-                status_code=status.HTTP_401_UNAUTHORIZED,
-            )
-
-        from invoice_machine.database import async_session_maker
-
-        async with async_session_maker() as db_session:
-            user_session = await get_session_data(db_session, session_token)
-            if not user_session or not user_session.user_id:
-                return JSONResponse(
-                    {"detail": "Session expired"},
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                )
-
-            if request.method in UNSAFE_METHODS:
-                csrf_header = request.headers.get("X-CSRF-Token")
-                if not csrf_header or not secrets.compare_digest(
-                    user_session.csrf_token, csrf_header
-                ):
-                    return JSONResponse(
-                        {"detail": "Invalid CSRF token"},
-                        status_code=status.HTTP_403_FORBIDDEN,
-                    )
-
-        return await call_next(request)
-
-    # Registered last so it sits OUTSIDE auth_middleware: a request must be turned
-    # away (503) during a restore before auth_middleware can open a DB connection
+    # Registered last so it sits OUTSIDE _auth_middleware: a request must be turned
+    # away (503) during a restore before _auth_middleware can open a DB connection
     # mid-swap, and active_requests must count every in-flight request (including
     # those still in auth) so the restore drain can actually see them.
     @app.middleware("http")

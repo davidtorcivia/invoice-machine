@@ -16,6 +16,71 @@ from invoice_machine.service.reminders import business_now
 from invoice_machine.utils import utc_now
 
 
+def _client_stats_query(client_id: int | None):
+    """Per-client, per-currency invoice aggregates; one row per client and currency."""
+    query = (
+        select(
+            Client.id,
+            Client.name,
+            Client.business_name,
+            Client.email,
+            Invoice.currency_code.label("currency"),
+            func.coalesce(
+                func.sum(case((Invoice.status.in_(BILLED_STATUSES), Invoice.total), else_=0)),
+                0,
+            ).label("total_invoiced"),
+            func.coalesce(
+                func.sum(case((Invoice.status == "paid", Invoice.total), else_=0)), 0
+            ).label("total_paid"),
+            func.count(Invoice.id).label("invoice_count"),
+            func.coalesce(
+                func.sum(case((Invoice.status.in_(BILLED_STATUSES), 1), else_=0)), 0
+            ).label("billed_invoice_count"),
+            func.coalesce(func.sum(case((Invoice.status == "paid", 1), else_=0)), 0).label(
+                "paid_invoice_count"
+            ),
+            func.min(Invoice.issue_date).label("first_invoice"),
+            func.max(Invoice.issue_date).label("last_invoice"),
+        )
+        .outerjoin(
+            Invoice,
+            and_(
+                Invoice.client_id == Client.id,
+                Invoice.document_type == "invoice",
+                Invoice.deleted_at.is_(None),
+            ),
+        )
+        .group_by(Client.id, Invoice.currency_code)
+    )
+
+    # A client asked for by id is reported even from the trash, like get_client.
+    if client_id:
+        query = query.where(Client.id == client_id)
+    else:
+        query = query.where(Client.deleted_at.is_(None))
+    return query
+
+
+def _set_headline_currency(entry: dict, default_cur: str) -> None:
+    """Pick the client's dominant currency and copy its totals to the top level."""
+    by_currency = entry["by_currency"]
+    if by_currency:
+        dominant = (
+            default_cur
+            if default_cur in by_currency
+            else max(by_currency, key=lambda c: by_currency[c]["invoice_count"])
+        )
+    else:
+        dominant = default_cur
+    entry["currency"] = dominant
+    entry["total_invoiced"] = (
+        Decimal(by_currency[dominant]["invoiced"]) if dominant in by_currency else Decimal("0.00")
+    )
+    entry["total_paid"] = (
+        Decimal(by_currency[dominant]["paid"]) if dominant in by_currency else Decimal("0.00")
+    )
+
+
 class ClientService:
     """Service for client operations."""
 
@@ -34,48 +99,7 @@ class ClientService:
         profile = await BusinessProfile.get(session)
         default_cur = (profile.default_currency_code if profile else None) or "USD"
 
-        query = (
-            select(
-                Client.id,
-                Client.name,
-                Client.business_name,
-                Client.email,
-                Invoice.currency_code.label("currency"),
-                func.coalesce(
-                    func.sum(case((Invoice.status.in_(BILLED_STATUSES), Invoice.total), else_=0)),
-                    0,
-                ).label("total_invoiced"),
-                func.coalesce(
-                    func.sum(case((Invoice.status == "paid", Invoice.total), else_=0)), 0
-                ).label("total_paid"),
-                func.count(Invoice.id).label("invoice_count"),
-                func.coalesce(
-                    func.sum(case((Invoice.status.in_(BILLED_STATUSES), 1), else_=0)), 0
-                ).label("billed_invoice_count"),
-                func.coalesce(func.sum(case((Invoice.status == "paid", 1), else_=0)), 0).label(
-                    "paid_invoice_count"
-                ),
-                func.min(Invoice.issue_date).label("first_invoice"),
-                func.max(Invoice.issue_date).label("last_invoice"),
-            )
-            .outerjoin(
-                Invoice,
-                and_(
-                    Invoice.client_id == Client.id,
-                    Invoice.document_type == "invoice",
-                    Invoice.deleted_at.is_(None),
-                ),
-            )
-            .group_by(Client.id, Invoice.currency_code)
-        )
-
-        # A client asked for by id is reported even from the trash, like get_client.
-        if client_id:
-            query = query.where(Client.id == client_id)
-        else:
-            query = query.where(Client.deleted_at.is_(None))
-
-        rows = (await session.execute(query)).all()
+        rows = (await session.execute(_client_stats_query(client_id))).all()
 
         clients: dict[int, dict] = {}
         for row in rows:
@@ -118,26 +142,7 @@ class ClientService:
                 entry["paid_invoice_count"] += row.paid_invoice_count or 0
 
         for entry in clients.values():
-            by_currency = entry["by_currency"]
-            if by_currency:
-                dominant = (
-                    default_cur
-                    if default_cur in by_currency
-                    else max(by_currency, key=lambda c: by_currency[c]["invoice_count"])
-                )
-            else:
-                dominant = default_cur
-            entry["currency"] = dominant
-            entry["total_invoiced"] = (
-                Decimal(by_currency[dominant]["invoiced"])
-                if dominant in by_currency
-                else Decimal("0.00")
-            )
-            entry["total_paid"] = (
-                Decimal(by_currency[dominant]["paid"])
-                if dominant in by_currency
-                else Decimal("0.00")
-            )
+            _set_headline_currency(entry, default_cur)
 
         ordered = sorted(
             clients.values(),

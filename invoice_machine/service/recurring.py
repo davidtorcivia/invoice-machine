@@ -94,6 +94,33 @@ def _dump_payment_methods(value: list[str] | str | None) -> str | None:
     return json.dumps([str(item) for item in value]) if value else None
 
 
+async def _advance_schedule(
+    session: AsyncSession, schedule_id: int, invoice_id: int, period_date: date
+) -> RecurringSchedule:
+    """Move the schedule past ``period_date`` and commit it with the new invoice.
+
+    Returns the re-fetched schedule: create_invoice may roll back on a numbering
+    retry, which expires the caller's instance.
+    """
+    schedule = await session.get(RecurringSchedule, schedule_id)
+    if schedule is None:
+        raise RuntimeError(f"Recurring schedule {schedule_id} disappeared mid-run")
+
+    schedule.last_invoice_id = invoice_id
+    schedule.next_invoice_date = RecurringService.calculate_next_date(
+        period_date,
+        schedule.frequency,
+        schedule.schedule_day,
+        schedule.schedule_month,
+        schedule.quarter_month,
+    )
+    schedule.updated_at = utc_now()
+    # Invoice and schedule advance commit together so a crash
+    # cannot regenerate this period.
+    await session.commit()
+    return schedule
+
+
 class RecurringService:
     """Service for managing recurring invoice schedules."""
 
@@ -522,25 +549,7 @@ class RecurringService:
                 invoice = await RecurringService._create_invoice_from_schedule(
                     session, schedule, period_date
                 )
-                # create_invoice may roll back on a numbering retry, which
-                # expires this instance; re-fetch before reading its fields.
-                refetched = await session.get(RecurringSchedule, schedule_id)
-                if refetched is None:
-                    raise RuntimeError(f"Recurring schedule {schedule_id} disappeared mid-run")
-                schedule = refetched
-
-                schedule.last_invoice_id = invoice.id
-                schedule.next_invoice_date = RecurringService.calculate_next_date(
-                    period_date,
-                    schedule.frequency,
-                    schedule.schedule_day,
-                    schedule.schedule_month,
-                    schedule.quarter_month,
-                )
-                schedule.updated_at = utc_now()
-                # Invoice and schedule advance commit together so a crash
-                # cannot regenerate this period.
-                await session.commit()
+                schedule = await _advance_schedule(session, schedule_id, invoice.id, period_date)
                 pending["generated"] += 1
 
                 entry = {

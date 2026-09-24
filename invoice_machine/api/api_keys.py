@@ -1,4 +1,4 @@
-"""Labeled API key management (web session only - see auth_middleware)."""
+"""Labeled API key management (web session only - see _auth_middleware in app_middleware)."""
 
 from typing import Literal
 
