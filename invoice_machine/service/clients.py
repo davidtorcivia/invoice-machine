@@ -5,8 +5,14 @@ from decimal import Decimal
 from sqlalchemy import and_, asc, case, desc, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from invoice_machine.database import BusinessProfile, Client, Invoice
-from invoice_machine.service.common import BILLED_STATUSES, quantize_money
+from invoice_machine.database import BusinessProfile, Client, Invoice, RecurringSchedule
+from invoice_machine.service.common import (
+    BILLED_STATUSES,
+    quantize_money,
+    validate_document_fields,
+)
+from invoice_machine.service.recurring import RecurringService
+from invoice_machine.service.reminders import business_now
 from invoice_machine.utils import utc_now
 
 
@@ -237,6 +243,7 @@ class ClientService:
     async def create_client(session: AsyncSession, **kwargs) -> Client:
         """Create a new client."""
         fields = {k: v for k, v in kwargs.items() if k in ClientService._WRITABLE_FIELDS}
+        validate_document_fields(fields.get("payment_terms_days"), fields.get("tax_rate"))
         client = Client(**fields)
         session.add(client)
         await session.commit()
@@ -254,6 +261,7 @@ class ClientService:
         if not client:
             return None
 
+        validate_document_fields(kwargs.get("payment_terms_days"), kwargs.get("tax_rate"))
         for key, value in kwargs.items():
             if key not in ClientService._WRITABLE_FIELDS:
                 continue
@@ -290,5 +298,12 @@ class ClientService:
 
         client.deleted_at = None
         client.updated_at = utc_now()
+        # The recurring sweep skipped this client while trashed; don't back-fill it.
+        today = business_now(await BusinessProfile.get(session)).date()
+        schedules = await session.execute(
+            select(RecurringSchedule).where(RecurringSchedule.client_id == client_id)
+        )
+        for schedule in schedules.scalars():
+            RecurringService.skip_missed_periods(schedule, today)
         await session.commit()
         return True

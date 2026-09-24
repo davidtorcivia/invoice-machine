@@ -137,6 +137,39 @@ async def generate_invoice_number(
     return f"{prefix}{date_prefix}-{max_seq + 1}"
 
 
+VALID_DOCUMENT_TYPES = ("invoice", "quote")
+
+
+def validate_document_fields(
+    payment_terms_days: int | None = None,
+    tax_rate: Decimal | None = None,
+    document_type: str | None = None,
+) -> None:
+    """Range-check fields MCP passes straight through (REST also checks them in its schemas)."""
+    if payment_terms_days is not None and not (0 <= payment_terms_days <= 365):
+        raise ValueError("Payment terms must be between 0 and 365 days")
+    if tax_rate is not None and (tax_rate < 0 or tax_rate > 100):
+        raise ValueError("Tax rate must be between 0 and 100")
+    if document_type is not None and document_type not in VALID_DOCUMENT_TYPES:
+        raise ValueError(f"Invalid document type. Must be one of: {list(VALID_DOCUMENT_TYPES)}")
+
+
+def resolve_payment_terms(
+    payment_terms_days: int | None,
+    client: Client | None = None,
+    business: BusinessProfile | None = None,
+) -> int:
+    """Pick invoice, client, then business terms; 0 is "due on receipt", not unset."""
+    for terms in (
+        payment_terms_days,
+        client.payment_terms_days if client else None,
+        business.default_payment_terms_days if business else None,
+    ):
+        if terms is not None:
+            return terms
+    return 30
+
+
 def calculate_due_date(
     issue_date: date,
     payment_terms_days: int | None = None,
@@ -148,12 +181,7 @@ def calculate_due_date(
     if explicit_due_date:
         return explicit_due_date
 
-    terms = (
-        payment_terms_days
-        or (client.payment_terms_days if client else None)
-        or (business.default_payment_terms_days if business else None)
-        or 30
-    )
+    terms = resolve_payment_terms(payment_terms_days, client, business)
     return issue_date + timedelta(days=terms)
 
 
@@ -316,11 +344,7 @@ def validate_recurring_schedule(
     if quarter_month is not None and not (1 <= quarter_month <= 3):
         raise ValueError("quarter_month must be 1-3 (which month within the quarter)")
 
-    if payment_terms_days is not None and not (0 <= payment_terms_days <= 365):
-        raise ValueError("Payment terms must be between 0 and 365 days")
-
-    if tax_rate is not None and (tax_rate < 0 or tax_rate > 100):
-        raise ValueError("Tax rate must be between 0 and 100")
+    validate_document_fields(payment_terms_days=payment_terms_days, tax_rate=tax_rate)
 
 
 def delete_invoice_pdf_files(pdf_paths: list[str]) -> int:
@@ -388,18 +412,30 @@ async def purge_trashed_records(
         .where(RecurringSchedule.last_invoice_id.in_(invoice_ids))
         .values(last_invoice_id=None)
     )
+    # The conversion links are not foreign keys, and SQLite can reuse a purged id.
+    await session.execute(
+        update(Invoice)
+        .where(Invoice.converted_to_invoice_id.in_(invoice_ids))
+        .values(converted_to_invoice_id=None)
+    )
+    await session.execute(
+        update(Invoice)
+        .where(Invoice.converted_from_invoice_id.in_(invoice_ids))
+        .values(converted_from_invoice_id=None)
+    )
     await session.execute(delete(InvoiceItem).where(InvoiceItem.invoice_id.in_(invoice_ids)))
     await session.execute(delete(Invoice).where(invoice_filter))
 
+    client_ids = select(Client.id).where(client_filter, ~remaining_invoice_exists)
     client_count = int(
-        (
-            await session.execute(
-                select(func.count(Client.id)).where(client_filter, ~remaining_invoice_exists)
-            )
-        ).scalar()
+        (await session.execute(select(func.count()).select_from(client_ids.subquery()))).scalar()
         or 0
     )
-    await session.execute(delete(Client).where(client_filter, ~remaining_invoice_exists))
+    # recurring_schedules.client_id is NOT NULL, so a purged client's schedules go too.
+    await session.execute(
+        delete(RecurringSchedule).where(RecurringSchedule.client_id.in_(client_ids))
+    )
+    await session.execute(delete(Client).where(Client.id.in_(client_ids)))
 
     pdfs_deleted = delete_invoice_pdf_files(doomed_pdfs)
 

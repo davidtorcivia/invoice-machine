@@ -254,6 +254,9 @@ class TestPartialPayments:
         invoice = await _invoice(db_session, test_client, total=Decimal("80.00"), status="draft")
         await PaymentService.record_payment(db_session, invoice.id, amount="80.00")
         invoice = await InvoiceService.update_invoice(db_session, invoice.id, status="sent")
+        assert invoice.status == "paid"
+        # Rows saved before a paid draft settled on send can still read "sent".
+        invoice.status = "sent"
         invoice.due_date = utc_now().date() - timedelta(days=3)
         await db_session.commit()
 

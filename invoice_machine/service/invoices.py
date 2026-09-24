@@ -20,9 +20,12 @@ from invoice_machine.service.common import (
     quantize_quantity,
     recalculate_invoice_totals,
     resolve_exchange_rate,
+    resolve_payment_terms,
     snapshot_client_info,
+    validate_document_fields,
 )
 from invoice_machine.service.payments import recalculate_invoice_payments
+from invoice_machine.service.reminders import business_now
 from invoice_machine.utils import normalize_invoice_number_override, utc_now
 
 _MARKED_PAID_NOTE = "Marked paid"
@@ -32,6 +35,9 @@ _MARKED_PAID_METHOD = "system_mark_paid"
 async def _sync_invoice_money(session: AsyncSession, invoice: Invoice) -> None:
     """Recompute totals; resync paid/sent only when a payment ledger exists."""
     await recalculate_invoice_totals(session, invoice)
+    # An item edit that leaves the totals alone issues no UPDATE, so onupdate never
+    # fires; the PDF freshness check needs updated_at to move.
+    invoice.updated_at = utc_now()
     if invoice.amount_paid and invoice.amount_paid > 0:
         await recalculate_invoice_payments(session, invoice)
 
@@ -115,9 +121,7 @@ def _invoice_column_values(
         "due_date": calculate_due_date(
             invoice_date, payment_terms_days, due_date, client, business
         ),
-        "payment_terms_days": payment_terms_days
-        or (client.payment_terms_days if client else None)
-        or business.default_payment_terms_days,
+        "payment_terms_days": resolve_payment_terms(payment_terms_days, client, business),
         "currency_code": currency_code,
         "notes": notes,
         "status": "draft",
@@ -211,6 +215,9 @@ _UPDATABLE_KWARGS = {
 
 def _apply_update_kwargs(invoice: Invoice, kwargs: dict) -> tuple[bool, bool]:
     """Apply allow-listed kwargs; report whether tax fields or document_type changed."""
+    validate_document_fields(
+        kwargs.get("payment_terms_days"), kwargs.get("tax_rate"), kwargs.get("document_type")
+    )
     tax_fields_changed = False
     doc_type_changed = False
     for key, value in kwargs.items():
@@ -247,6 +254,7 @@ async def _apply_dates_and_number(
     client: Client | None,
     business: BusinessProfile,
 ) -> None:
+    previous_due = invoice.due_date
     date_changed = False
     if issue_date is not None and issue_date != invoice.issue_date:
         date_changed = True
@@ -266,8 +274,17 @@ async def _apply_dates_and_number(
     if due_date:
         invoice.due_date = due_date
 
+    # Only a moved due date clears overdue; a status set by hand is left alone.
+    if (
+        invoice.status == "overdue"
+        and invoice.due_date != previous_due
+        and invoice.due_date
+        and invoice.due_date >= business_now(business).date()
+    ):
+        invoice.status = "sent"
 
-async def _apply_status(session: AsyncSession, invoice: Invoice, status: str) -> None:
+
+async def apply_status(session: AsyncSession, invoice: Invoice, status: str) -> None:
     valid_statuses = ["draft", "sent", "paid", "overdue", "cancelled"]
     if status not in valid_statuses:
         raise ValueError(f"Invalid status. Must be one of: {valid_statuses}")
@@ -295,7 +312,11 @@ async def _apply_status(session: AsyncSession, invoice: Invoice, status: str) ->
         if status != "paid" and invoice.status == "paid":
             invoice.paid_at = None
             await _drop_marked_paid_placeholder(session, invoice)
+        leaving_draft = invoice.status == "draft" and status != "draft"
         invoice.status = status
+        # Payments never promote a draft, so settle one paid while still a draft.
+        if leaving_draft and (invoice.amount_paid or 0) > 0:
+            await recalculate_invoice_payments(session, invoice)
 
 
 async def _flush_invoice_with_items(
@@ -456,8 +477,7 @@ class InvoiceService:
         """Create a new invoice or quote, including optional line items."""
         business = await BusinessProfile.get_or_create(session)
 
-        if tax_rate is not None and (tax_rate < 0 or tax_rate > 100):
-            raise ValueError("Tax rate must be between 0 and 100")
+        validate_document_fields(payment_terms_days, tax_rate, document_type)
 
         client = await session.get(Client, client_id) if client_id else None
         if client_id and client is None:
@@ -532,14 +552,17 @@ class InvoiceService:
             session, invoice, issue_date, due_date, doc_type_changed, client, business
         )
 
-        if status:
-            await _apply_status(session, invoice, status)
+        # Un-paying drops the mark-paid row before totals move; paying settles the
+        # resynced total rather than the old one.
+        if status and status != "paid":
+            await apply_status(session, invoice, status)
+        if tax_fields_changed:
+            await _sync_invoice_money(session, invoice)
+        if status == "paid":
+            await apply_status(session, invoice, status)
 
         if notes is not None:
             invoice.notes = notes
-
-        if tax_fields_changed:
-            await _sync_invoice_money(session, invoice)
 
         # Re-snapshot only when the client was reassigned; otherwise the invoice
         # keeps the details captured at creation, so editing a client record (or
@@ -605,7 +628,9 @@ class InvoiceService:
             session,
             client_id=quote.client_id,
             issue_date=issue_date or utc_now().date(),
-            payment_terms_days=payment_terms_days or quote.payment_terms_days,
+            payment_terms_days=(
+                payment_terms_days if payment_terms_days is not None else quote.payment_terms_days
+            ),
             currency_code=quote.currency_code,
             notes=quote.notes,
             items=items,
@@ -774,9 +799,6 @@ class InvoiceService:
     @staticmethod
     async def update_overdue_invoices(session: AsyncSession) -> int:
         """Mark sent invoices as overdue when due_date has passed."""
-        from invoice_machine.database import BusinessProfile
-        from invoice_machine.service.reminders import business_now
-
         today = business_now(await BusinessProfile.get(session)).date()
         result = await session.execute(
             update(Invoice)
@@ -854,11 +876,9 @@ class InvoiceService:
         if valid_ids:
             now = utc_now()
             if action == "mark_sent":
-                await session.execute(
-                    update(Invoice)
-                    .where(Invoice.id.in_(valid_ids))
-                    .values(status="sent", updated_at=now)
-                )
+                for invoice_id in valid_ids:
+                    await apply_status(session, invoices[invoice_id], "sent")
+                    invoices[invoice_id].updated_at = now
             elif action == "mark_paid":
                 for invoice_id in valid_ids:
                     invoice = invoices[invoice_id]

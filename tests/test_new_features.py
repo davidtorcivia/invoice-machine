@@ -1,6 +1,6 @@
 """Tests for new features: tax handling, recurring invoices, and search."""
 
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
 import pytest
@@ -797,3 +797,60 @@ class TestFtsRebuildAtomicity:
         assert "error" in result
         assert result["rebuilt"] is False
         assert len(await matches()) == 1
+
+
+class TestResumeSkipsMissedPeriods:
+    """Resuming never back-fills (and auto-emails) the periods missed while paused."""
+
+    async def _stale_schedule(self, db_session, test_client):
+        schedule = await RecurringService.create_schedule(
+            db_session,
+            client_id=test_client.id,
+            name="Retainer",
+            frequency="weekly",
+            schedule_day=0,
+            next_invoice_date=utc_now().date() - timedelta(days=60),
+            line_items=[{"description": "Retainer", "quantity": 1, "unit_price": "100"}],
+        )
+        return schedule
+
+    @pytest.mark.asyncio
+    async def test_resume_advances_a_past_next_date(
+        self, db_session, business_profile, test_client
+    ):
+        schedule = await self._stale_schedule(db_session, test_client)
+        await RecurringService.pause_schedule(db_session, schedule.id)
+
+        await RecurringService.resume_schedule(db_session, schedule.id)
+        await db_session.refresh(schedule)
+
+        today = utc_now().date()
+        assert today <= schedule.next_invoice_date < today + timedelta(days=7)
+        assert schedule.next_invoice_date.weekday() == 0
+        assert len(await RecurringService.process_due_schedules(db_session)) <= 1
+
+    @pytest.mark.asyncio
+    async def test_activating_through_update_advances_a_past_next_date(
+        self, db_session, business_profile, test_client
+    ):
+        schedule = await self._stale_schedule(db_session, test_client)
+        await RecurringService.pause_schedule(db_session, schedule.id)
+
+        await RecurringService.update_schedule(db_session, schedule.id, is_active=1)
+        await db_session.refresh(schedule)
+
+        assert schedule.next_invoice_date >= utc_now().date()
+
+    @pytest.mark.asyncio
+    async def test_restoring_a_client_advances_its_schedules(
+        self, db_session, business_profile, test_client
+    ):
+        from invoice_machine.services import ClientService
+
+        schedule = await self._stale_schedule(db_session, test_client)
+        await ClientService.delete_client(db_session, test_client.id)
+
+        await ClientService.restore_client(db_session, test_client.id)
+        await db_session.refresh(schedule)
+
+        assert schedule.next_invoice_date >= utc_now().date()

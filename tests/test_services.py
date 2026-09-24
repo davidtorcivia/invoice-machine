@@ -558,3 +558,62 @@ class TestPurgeDeletesGeneratedFiles:
 
         await db_session.refresh(schedule)
         assert schedule.last_invoice_id is None
+
+    @pytest.mark.asyncio
+    async def test_purge_deletes_the_schedules_of_a_purged_client(self, db_session, test_client):
+        """recurring_schedules.client_id is NOT NULL, so the schedule goes with the client."""
+        from invoice_machine.database import RecurringSchedule
+
+        schedule = RecurringSchedule(
+            client_id=test_client.id,
+            name="Retainer",
+            frequency="monthly",
+            schedule_day=1,
+            next_invoice_date=date(2026, 2, 1),
+        )
+        db_session.add(schedule)
+        test_client.deleted_at = utc_now()
+        await db_session.commit()
+        schedule_id = schedule.id
+
+        result = await purge_trashed_records(db_session)
+        await db_session.commit()
+
+        assert result["clients_deleted"] == 1
+        assert await db_session.get(RecurringSchedule, schedule_id) is None
+
+    @pytest.mark.asyncio
+    async def test_purging_the_converted_invoice_frees_the_quote(
+        self, db_session, business_profile, test_client
+    ):
+        quote = await InvoiceService.create_invoice(
+            db_session,
+            client_id=test_client.id,
+            document_type="quote",
+            items=[{"description": "Proposal", "quantity": 1, "unit_price": 100}],
+        )
+        converted = await InvoiceService.convert_quote_to_invoice(db_session, quote.id)
+        await InvoiceService.delete_invoice(db_session, converted.id)
+
+        await purge_trashed_records(db_session)
+        await db_session.commit()
+        await db_session.refresh(quote)
+
+        assert quote.converted_to_invoice_id is None
+        assert await InvoiceService.convert_quote_to_invoice(db_session, quote.id) is not None
+
+    @pytest.mark.asyncio
+    async def test_purging_the_quote_clears_the_invoice_back_link(
+        self, db_session, business_profile, test_client
+    ):
+        quote = await InvoiceService.create_invoice(
+            db_session, client_id=test_client.id, document_type="quote"
+        )
+        converted = await InvoiceService.convert_quote_to_invoice(db_session, quote.id)
+        await InvoiceService.delete_invoice(db_session, quote.id)
+
+        await purge_trashed_records(db_session)
+        await db_session.commit()
+        await db_session.refresh(converted)
+
+        assert converted.converted_from_invoice_id is None

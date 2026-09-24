@@ -102,7 +102,9 @@ async def test_recurring_job_generates_due_invoice(scheduler_db):
 
 
 @pytest.mark.asyncio
-async def test_scheduled_backup_job_noops_when_disabled(scheduler_db):
+async def test_scheduled_backup_job_noops_when_disabled(scheduler_db, monkeypatch):
+    from unittest.mock import AsyncMock, MagicMock
+
     from invoice_machine.database import BusinessProfile
 
     async with scheduler_db() as session:
@@ -110,7 +112,14 @@ async def test_scheduled_backup_job_noops_when_disabled(scheduler_db):
         profile.backup_enabled = 0
         await session.commit()
 
+    service = MagicMock()
+    monkeypatch.setattr(
+        "invoice_machine.api.backup.get_backup_service", AsyncMock(return_value=service)
+    )
+
     await app_runtime._scheduled_backup_job()
+
+    assert not service.create_backup.called
 
 
 @pytest.mark.asyncio
@@ -258,8 +267,31 @@ async def test_periodic_runners_survive_a_failing_job(monkeypatch, runner):
 
 
 @pytest.mark.asyncio
-async def test_session_cleanup_job_runs(scheduler_db):
+async def test_session_cleanup_job_deletes_only_expired_sessions(scheduler_db):
+    from sqlalchemy import select
+
+    from invoice_machine.database import Session, User
+
+    async with scheduler_db() as session:
+        user = User(username="admin", password_hash="x")
+        session.add(user)
+        await session.flush()
+        for token, delta in (("expired", -1), ("live", 1)):
+            session.add(
+                Session(
+                    token=token,
+                    csrf_token=token,
+                    user_id=user.id,
+                    expires_at=utc_now() + timedelta(hours=delta),
+                )
+            )
+        await session.commit()
+
     await app_runtime._session_cleanup_job()
+
+    async with scheduler_db() as session:
+        tokens = (await session.execute(select(Session.token))).scalars().all()
+    assert tokens == ["live"]
 
 
 @pytest.mark.asyncio
@@ -327,15 +359,27 @@ async def test_reminder_job_waits_for_the_send_hour(scheduler_db, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_reminder_job_noops_when_reminders_are_disabled(scheduler_db):
+async def test_reminder_job_noops_when_reminders_are_disabled(scheduler_db, monkeypatch):
+    from unittest.mock import AsyncMock
+
     from invoice_machine.database import BusinessProfile
 
     async with scheduler_db() as session:
         profile = await BusinessProfile.get_or_create(session)
         profile.reminders_enabled = 0
+        profile.reminder_send_hour = 9
         await session.commit()
 
+    sender = AsyncMock(return_value=[])
+    monkeypatch.setattr("invoice_machine.service.reminders.send_due_reminders", sender)
+    monkeypatch.setattr(
+        "invoice_machine.service.reminders.business_now",
+        lambda profile: utc_now().replace(hour=9),
+    )
+
     await app_runtime._payment_reminder_job()
+
+    assert sender.await_count == 0
 
 
 @pytest.mark.asyncio
