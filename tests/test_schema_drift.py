@@ -1,7 +1,7 @@
 """Guard against schema drift between SQLAlchemy models and Alembic migrations.
 
 The rest of the suite builds the schema with `Base.metadata.create_all`, so only
-running the real migrations catches a model column with no matching migration.
+running the real migrations catches a model change with no matching migration.
 """
 
 import os
@@ -10,6 +10,10 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
+
+from alembic.autogenerate import compare_metadata
+from alembic.migration import MigrationContext
+from sqlalchemy import create_engine
 
 from invoice_machine.database import Base
 
@@ -59,6 +63,22 @@ def test_alembic_head_has_all_model_columns():
             conn.close()
 
         assert not missing, "Schema drift between models and Alembic head:\n" + "\n".join(missing)
+
+        # Nullability, types and indexes too. The FTS tables have no models.
+        engine = create_engine(f"sqlite:///{db_file}")
+        try:
+            with engine.connect() as conn:
+                context = MigrationContext.configure(conn, opts={"compare_type": True})
+                diffs = [
+                    diff
+                    for diff in compare_metadata(context, Base.metadata)
+                    if not (diff[0] == "remove_table" and "_fts" in diff[1].name)
+                ]
+        finally:
+            engine.dispose()
+        assert not diffs, "Schema drift between models and Alembic head:\n" + "\n".join(
+            map(str, diffs)
+        )
 
 
 def test_alembic_head_keeps_fts_triggers():

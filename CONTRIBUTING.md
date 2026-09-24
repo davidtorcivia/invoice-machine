@@ -42,9 +42,9 @@ change makes it possible to add dollars to euros, it will be sent back.
 
 **Alembic is the source of truth for the schema.** Every model change needs a
 migration. `tests/test_schema_drift.py` runs the migrations against a throwaway
-database and fails if a model table or column is missing from the result; it
-does not compare nullability or indexes, so check those by hand. Never edit a migration that has shipped;
-add a new one.
+database and fails if the models and migrations disagree, including
+nullability, types and indexes. Never edit a migration that has shipped; add a
+new one.
 
 **Migrations must consider existing data, not just the schema.** A column added
 with a default is only half the job if live rows need backfilling. Migration 015

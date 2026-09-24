@@ -256,12 +256,7 @@ class Client(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now, onupdate=utc_now)
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
-    __table_args__ = (
-        Index("idx_clients_deleted", "deleted_at"),
-        Index("idx_clients_email", "email"),
-        Index("idx_clients_name", "name"),
-        Index("idx_clients_business_name", "business_name"),
-    )
+    __table_args__ = (Index("idx_clients_deleted", "deleted_at"),)
 
     @property
     def display_name(self) -> str:
@@ -369,9 +364,6 @@ class Invoice(Base):
     )
 
     __table_args__ = (
-        Index("idx_invoices_date", "issue_date"),
-        Index("idx_invoices_status", "status"),
-        Index("idx_invoices_client", "client_id"),
         Index("idx_invoices_deleted", "deleted_at"),
         Index("idx_invoices_status_deleted", "status", "deleted_at"),
         Index("idx_invoices_client_status", "client_id", "status"),
@@ -701,7 +693,6 @@ class RecurringSchedule(Base):
     __table_args__ = (
         Index("idx_recurring_client", "client_id"),
         Index("idx_recurring_next_date", "next_invoice_date"),
-        Index("idx_recurring_active", "is_active"),
         Index("idx_recurring_active_next_date", "is_active", "next_invoice_date"),
     )
 
@@ -739,7 +730,7 @@ if db_url.startswith("sqlite://"):
     db_url = db_url.replace("sqlite://", "sqlite+aiosqlite://", 1)
 
 
-def _apply_sqlite_pragmas(dbapi_connection) -> None:
+def apply_sqlite_pragmas(dbapi_connection, *, foreign_keys: bool = True) -> None:
     """Apply required PRAGMAs to a raw SQLite DBAPI connection.
 
     SQLite needs these set per-connection:
@@ -750,7 +741,7 @@ def _apply_sqlite_pragmas(dbapi_connection) -> None:
     """
     cursor = dbapi_connection.cursor()
     try:
-        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.execute(f"PRAGMA foreign_keys={'ON' if foreign_keys else 'OFF'}")
         cursor.execute("PRAGMA journal_mode=WAL")
         cursor.execute("PRAGMA busy_timeout=5000")
         cursor.execute("PRAGMA synchronous=NORMAL")
@@ -766,7 +757,7 @@ def register_sqlite_pragmas(target_engine) -> None:
 
     @event.listens_for(sync_engine, "connect")
     def _set_sqlite_pragma(dbapi_connection, connection_record):  # noqa: ARG001
-        _apply_sqlite_pragmas(dbapi_connection)
+        apply_sqlite_pragmas(dbapi_connection)
 
 
 engine = create_async_engine(

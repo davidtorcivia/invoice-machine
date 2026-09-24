@@ -442,7 +442,7 @@ alembic revision -m "describe the change"
 alembic upgrade head
 ```
 
-`tests/test_schema_drift.py` runs the migrations against a throwaway database and fails if a table or column in the models is missing from the migrated schema. It does not compare nullability or indexes.
+`tests/test_schema_drift.py` runs the migrations against a throwaway database and fails if the models and migrations disagree, including nullability, types and indexes.
 
 ### Layout
 
