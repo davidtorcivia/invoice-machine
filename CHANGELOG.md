@@ -97,6 +97,32 @@ Notable changes to Invoice Machine. Format based on
   the invoice to unpaid.
 - Recording a payment shared the payment list's rate limit and could return 429
   after the payment was committed.
+- Emptying the trash, and the nightly trash cleanup, failed for good once a
+  trashed client had a recurring schedule. The schedule is now deleted with the
+  client.
+- Payment terms of 0 days ("due on receipt") became 30 days on invoices, quote
+  conversions, and recurring invoices.
+- A draft paid in full stayed "sent" with nothing due once sent, bulk-marked
+  sent, or emailed. It is now marked paid.
+- Editing a line item's description, unit, or order kept serving the old PDF.
+- A PDF missing from disk (for example after a restore) was not regenerated,
+  so downloads returned 404 and email sends failed.
+- Marking an invoice paid while changing its tax in the same save left a
+  balance due.
+- Moving an overdue invoice's due date to today or later now returns it to
+  sent.
+- Tax rates outside 0-100, payment terms outside 0-365 days, and unknown
+  document types were accepted from MCP tools.
+- Resuming a paused recurring schedule, or restoring its trashed client,
+  generated and emailed an invoice for every missed period. It now resumes at
+  the next period on or after today.
+- Purging a converted invoice left its quote unconvertible.
+- CSV exports prefix text cells that start with `=`, `+`, `-`, `@`, tab, or
+  carriage return with `'` so spreadsheets do not run them as formulas. Money
+  columns are unchanged; a phone number such as `+1 555 0100` now exports as
+  `'+1 555 0100`.
+- The consolidated "Paid" figure on Reports included payments on draft and
+  cancelled invoices.
 
 ### Security
 

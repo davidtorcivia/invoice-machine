@@ -25,13 +25,23 @@ UTF8_BOM = "﻿"
 
 EXPORT_KINDS = ("invoices", "line_items", "payments", "clients")
 
+# A spreadsheet runs a cell starting with one of these as a formula.
+_FORMULA_PREFIXES = ("=", "+", "-", "@", "\t", "\r")
+
+
+def _cell(value):
+    if value is None:
+        return ""
+    # Money stays Decimal so a negative amount is not mistaken for a formula.
+    if isinstance(value, str) and value.startswith(_FORMULA_PREFIXES):
+        return "'" + value
+    return value
+
 
 def _csv_line(row: list) -> str:
     """Render one CSV row (handles quoting/escaping)."""
     buffer = io.StringIO()
-    csv.writer(buffer, lineterminator="\n").writerow(
-        ["" if value is None else value for value in row]
-    )
+    csv.writer(buffer, lineterminator="\n").writerow([_cell(value) for value in row])
     return buffer.getvalue()
 
 
@@ -111,15 +121,15 @@ async def _export_invoices(
                 invoice.client_email,
                 invoice.client_reference,
                 invoice.currency_code,
-                str(quantize_money(invoice.subtotal or 0)),
+                quantize_money(invoice.subtotal or 0),
                 invoice.tax_name,
-                str(invoice.tax_rate or 0),
-                str(quantize_money(invoice.tax_amount or 0)),
-                str(quantize_money(invoice.total or 0)),
-                str(quantize_money(invoice.amount_paid or 0)),
-                str(invoice.amount_due),
+                invoice.tax_rate or 0,
+                quantize_money(invoice.tax_amount or 0),
+                quantize_money(invoice.total or 0),
+                quantize_money(invoice.amount_paid or 0),
+                invoice.amount_due,
                 _date_str(invoice.paid_at),
-                str(invoice.exchange_rate) if invoice.exchange_rate is not None else "",
+                invoice.exchange_rate,
                 invoice.base_currency_code,
                 invoice.notes,
                 _date_str(invoice.deleted_at),
@@ -172,8 +182,8 @@ async def _export_line_items(
                 item.description,
                 format_quantity(item.quantity),
                 item.unit_type,
-                str(item.unit_price),
-                str(item.total),
+                item.unit_price,
+                item.total,
             ]
         )
 
@@ -226,7 +236,7 @@ async def _export_payments(
                 invoice.invoice_number,
                 invoice.client_business or invoice.client_name,
                 payment.currency_code,
-                str(quantize_money(payment.amount)),
+                quantize_money(payment.amount),
                 payment.method,
                 payment.reference,
                 payment.provider,
@@ -289,7 +299,7 @@ async def _export_clients(
                 client.payment_terms_days,
                 client.preferred_currency,
                 "" if client.tax_enabled is None else bool(client.tax_enabled),
-                str(client.tax_rate) if client.tax_rate is not None else "",
+                client.tax_rate,
                 client.tax_name,
                 client.notes,
                 _date_str(client.created_at),

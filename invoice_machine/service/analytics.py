@@ -388,9 +388,10 @@ async def consolidated_summary(
         total_base = convert_to_base(row.total or 0, row.exchange_rate) or Decimal("0.00")
         paid_base = convert_to_base(row.amount_paid or 0, row.exchange_rate) or Decimal("0.00")
 
+        # Money taken against a draft or cancelled invoice is not billed revenue.
         if row.status in BILLED_STATUSES:
             invoiced += total_base
-        paid += paid_base
+            paid += paid_base
         if row.status in ("sent", "overdue"):
             outstanding += max(total_base - paid_base, Decimal("0.00"))
 

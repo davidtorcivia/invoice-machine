@@ -214,6 +214,12 @@ async def generate_pdf(session: AsyncSession, invoice: Invoice) -> str:
     return f"pdfs/{pdf_filename}"
 
 
+def _stored_pdf_exists(pdf_path: str) -> bool:
+    """Backups exclude pdfs/, so a fresh stamp can point at a file that is gone."""
+    candidate = confined_file(settings.pdf_dir, Path(pdf_path).name)
+    return candidate is not None and candidate.is_file()
+
+
 async def store_invoice_pdf(session: AsyncSession, invoice: Invoice, *, force: bool = False) -> str:
     """Render the invoice PDF when it is missing or stale and persist the stamp.
 
@@ -226,7 +232,12 @@ async def store_invoice_pdf(session: AsyncSession, invoice: Invoice, *, force: b
     statement — leaving the invoice permanently "stale" and re-rendering the PDF
     on every single fetch.
     """
-    if not force and invoice.pdf_path and not invoice.needs_pdf_regeneration:
+    if (
+        not force
+        and invoice.pdf_path
+        and not invoice.needs_pdf_regeneration
+        and _stored_pdf_exists(invoice.pdf_path)
+    ):
         return invoice.pdf_path
 
     pdf_path = await generate_pdf(session, invoice)

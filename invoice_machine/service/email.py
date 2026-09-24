@@ -27,10 +27,12 @@ async def send_invoice_email(
     ``error`` message; ``not_found: True`` distinguishes a missing invoice so the
     REST layer can map it to 404. The PDF is (re)generated when missing or stale
     so a changed invoice is never emailed with an out-of-date document, and a
-    successful send moves a draft to ``sent`` (recorded as ``status_updated``).
+    successful send moves a draft to ``sent``, or ``paid`` when payments already
+    cover it (recorded as ``status_updated``).
     """
     from invoice_machine.email import EmailService
     from invoice_machine.pdf.generator import store_invoice_pdf
+    from invoice_machine.service.invoices import apply_status
     from invoice_machine.services import InvoiceService
 
     invoice = await InvoiceService.get_invoice(session, invoice_id)
@@ -56,8 +58,8 @@ async def send_invoice_email(
     )
 
     if result.get("success") and invoice.status == "draft":
-        invoice.status = "sent"
+        await apply_status(session, invoice, "sent")
         await session.commit()
-        result["status_updated"] = "sent"
+        result["status_updated"] = invoice.status
 
     return result

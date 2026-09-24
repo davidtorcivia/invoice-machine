@@ -245,10 +245,14 @@ class RecurringService:
                 new_quarter_month,
             )
 
+        # The UI's pause/activate toggle resumes through here, not resume_schedule.
+        resumed = bool(kwargs.get("is_active")) and not schedule.is_active
         for key, value in kwargs.items():
             if value is None and key not in RecurringService._NULLABLE_FIELDS:
                 continue
             setattr(schedule, key, value)
+        if resumed:
+            RecurringService.skip_missed_periods(schedule, await _business_today(session))
 
         schedule.updated_at = utc_now()
         await session.commit()
@@ -280,15 +284,29 @@ class RecurringService:
 
     @staticmethod
     async def resume_schedule(session: AsyncSession, schedule_id: int) -> bool:
-        """Resume a paused recurring schedule."""
+        """Resume a paused recurring schedule without back-filling the paused periods."""
         schedule = await RecurringService.get_schedule(session, schedule_id)
         if not schedule:
             return False
 
+        if not schedule.is_active:
+            RecurringService.skip_missed_periods(schedule, await _business_today(session))
         schedule.is_active = 1
         schedule.updated_at = utc_now()
         await session.commit()
         return True
+
+    @staticmethod
+    def skip_missed_periods(schedule: RecurringSchedule, today: date) -> None:
+        """Advance next_invoice_date along the cadence to the first period on or after today."""
+        while schedule.next_invoice_date < today:
+            schedule.next_invoice_date = RecurringService.calculate_next_date(
+                schedule.next_invoice_date,
+                schedule.frequency,
+                schedule.schedule_day,
+                schedule.schedule_month,
+                schedule.quarter_month,
+            )
 
     @staticmethod
     def initial_next_date(

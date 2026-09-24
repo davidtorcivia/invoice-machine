@@ -296,6 +296,26 @@ class TestCsvExport:
         csv_text = await export_csv_text(db_session, "invoices", max_rows=2)
         assert "# truncated at 2 rows" in csv_text
 
+    @pytest.mark.asyncio
+    async def test_formula_text_is_escaped_but_negative_money_is_not(
+        self, db_session, business_profile, test_client
+    ):
+        invoice = await InvoiceService.create_invoice(
+            db_session,
+            client_id=test_client.id,
+            notes="@SUM(A1)",
+            items=[{"description": '=HYPERLINK("http://x")', "quantity": 1, "unit_price": 1}],
+        )
+        invoice.total = Decimal("-5.00")
+        await db_session.commit()
+
+        invoices_csv = await export_csv_text(db_session, "invoices")
+        items_csv = await export_csv_text(db_session, "line_items")
+
+        assert ",-5.00," in invoices_csv
+        assert "'@SUM(A1)" in invoices_csv
+        assert '"\'=HYPERLINK(""http://x"")"' in items_csv
+
 
 class TestConsolidatedReporting:
     """Opt-in multi-currency roll-up, with explicit coverage reporting."""
@@ -383,6 +403,21 @@ class TestConsolidatedReporting:
         assert summary["invoiced"] == "200.00"
         assert summary["paid"] == "80.00"
         assert summary["outstanding"] == "120.00"
+
+    @pytest.mark.asyncio
+    async def test_paid_counts_only_billed_invoices(
+        self, db_session, business_profile, test_client
+    ):
+        draft = await InvoiceService.create_invoice(
+            db_session,
+            client_id=test_client.id,
+            items=[{"description": "Service", "quantity": 1, "unit_price": 100}],
+        )
+        await PaymentService.record_payment(db_session, draft.id, amount="40.00")
+
+        summary = await analytics_service.consolidated_summary(db_session)
+        assert summary["invoiced"] == "0.00"
+        assert summary["paid"] == "0.00"
 
 
 class TestSupersededReminders:

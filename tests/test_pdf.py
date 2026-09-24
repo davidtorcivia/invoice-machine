@@ -383,12 +383,29 @@ class TestPDFTemplate:
         assert "format_money" in content
 
 
+@pytest.fixture
+def fake_renderer(monkeypatch, tmp_path):
+    """Replace WeasyPrint with a stub that writes an empty file into a temp pdf_dir."""
+    from types import SimpleNamespace
+
+    renders = []
+
+    async def fake_generate(session, invoice):
+        renders.append(invoice.id)
+        (tmp_path / "fake.pdf").write_bytes(b"%PDF-1.4")
+        return "pdfs/fake.pdf"
+
+    monkeypatch.setattr("invoice_machine.pdf.generator.settings", SimpleNamespace(pdf_dir=tmp_path))
+    monkeypatch.setattr("invoice_machine.pdf.generator.generate_pdf", fake_generate)
+    return SimpleNamespace(renders=renders, file=tmp_path / "fake.pdf")
+
+
 class TestStoreInvoicePDF:
     """Regression tests for PDF freshness bookkeeping and filename uniqueness."""
 
     @pytest.mark.asyncio
     async def test_stamping_does_not_leave_invoice_permanently_stale(
-        self, db_session, invoice_with_client, business_profile
+        self, db_session, invoice_with_client, business_profile, fake_renderer
     ):
         """A stamped PDF must not immediately look stale again.
 
@@ -397,63 +414,78 @@ class TestStoreInvoicePDF:
         """
         from invoice_machine.pdf.generator import store_invoice_pdf
 
-        renders = []
+        await store_invoice_pdf(db_session, invoice_with_client)
+        assert fake_renderer.renders == [invoice_with_client.id]
 
-        async def fake_generate(session, invoice):
-            renders.append(invoice.id)
-            return "pdfs/fake.pdf"
+        # Second and third fetches must reuse the stored PDF.
+        await store_invoice_pdf(db_session, invoice_with_client)
+        await store_invoice_pdf(db_session, invoice_with_client)
+        assert fake_renderer.renders == [invoice_with_client.id]
 
-        with patch("invoice_machine.pdf.generator.generate_pdf", side_effect=fake_generate):
-            await store_invoice_pdf(db_session, invoice_with_client)
-            assert renders == [invoice_with_client.id]
-
-            # Second and third fetches must reuse the stored PDF.
-            await store_invoice_pdf(db_session, invoice_with_client)
-            await store_invoice_pdf(db_session, invoice_with_client)
-            assert renders == [invoice_with_client.id]
-
-            assert not invoice_with_client.needs_pdf_regeneration
+        assert not invoice_with_client.needs_pdf_regeneration
 
     @pytest.mark.asyncio
     async def test_real_edit_still_invalidates_the_pdf(
-        self, db_session, invoice_with_client, business_profile
+        self, db_session, invoice_with_client, business_profile, fake_renderer
     ):
         """Editing the invoice must still force a re-render."""
         from invoice_machine.pdf.generator import store_invoice_pdf
 
-        renders = []
+        await store_invoice_pdf(db_session, invoice_with_client)
 
-        async def fake_generate(session, invoice):
-            renders.append(invoice.id)
-            return "pdfs/fake.pdf"
+        invoice_with_client.notes = "edited"
+        await db_session.commit()
+        await db_session.refresh(invoice_with_client)
 
-        with patch("invoice_machine.pdf.generator.generate_pdf", side_effect=fake_generate):
-            await store_invoice_pdf(db_session, invoice_with_client)
+        await store_invoice_pdf(db_session, invoice_with_client)
 
-            invoice_with_client.notes = "edited"
-            await db_session.commit()
-            await db_session.refresh(invoice_with_client)
-
-            await store_invoice_pdf(db_session, invoice_with_client)
-
-        assert len(renders) == 2
+        assert len(fake_renderer.renders) == 2
 
     @pytest.mark.asyncio
-    async def test_force_always_rerenders(self, db_session, invoice_with_client, business_profile):
+    async def test_force_always_rerenders(
+        self, db_session, invoice_with_client, business_profile, fake_renderer
+    ):
         """The explicit regenerate action bypasses the freshness check."""
         from invoice_machine.pdf.generator import store_invoice_pdf
 
-        renders = []
+        await store_invoice_pdf(db_session, invoice_with_client)
+        await store_invoice_pdf(db_session, invoice_with_client, force=True)
 
-        async def fake_generate(session, invoice):
-            renders.append(invoice.id)
-            return "pdfs/fake.pdf"
+        assert len(fake_renderer.renders) == 2
 
-        with patch("invoice_machine.pdf.generator.generate_pdf", side_effect=fake_generate):
-            await store_invoice_pdf(db_session, invoice_with_client)
-            await store_invoice_pdf(db_session, invoice_with_client, force=True)
+    @pytest.mark.asyncio
+    async def test_missing_file_is_rerendered(
+        self, db_session, invoice_with_client, business_profile, fake_renderer
+    ):
+        """A fresh stamp with no file on disk (e.g. after a restore) must re-render."""
+        from invoice_machine.pdf.generator import store_invoice_pdf
 
-        assert len(renders) == 2
+        await store_invoice_pdf(db_session, invoice_with_client)
+        fake_renderer.file.unlink()
+
+        await store_invoice_pdf(db_session, invoice_with_client)
+
+        assert len(fake_renderer.renders) == 2
+        assert fake_renderer.file.exists()
+
+    @pytest.mark.asyncio
+    async def test_text_only_item_edit_invalidates_the_pdf(
+        self, db_session, invoice_with_items, business_profile, fake_renderer
+    ):
+        """An item edit that leaves the totals alone still changes the document."""
+        from invoice_machine.pdf.generator import store_invoice_pdf
+        from invoice_machine.services import InvoiceService
+
+        await store_invoice_pdf(db_session, invoice_with_items)
+        item_id = invoice_with_items.items[0].id
+
+        await InvoiceService.update_item(db_session, item_id, description="Typo fixed")
+        await db_session.refresh(invoice_with_items)
+
+        assert invoice_with_items.needs_pdf_regeneration
+        await store_invoice_pdf(db_session, invoice_with_items)
+        await store_invoice_pdf(db_session, invoice_with_items)
+        assert len(fake_renderer.renders) == 2
 
     def test_filenames_are_unique_across_punctuation_variants(self):
         """ "INV.001" and "INV001" must not share a PDF file.
