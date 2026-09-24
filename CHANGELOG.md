@@ -25,6 +25,14 @@ Notable changes to Invoice Machine. Format based on
   upgrade and their PDFs reprinted. The pay page needs no login; behind
   Cloudflare Access, let `/pay/*` through. Creating a link needs the app base
   URL, and is refused for cancelled invoices.
+- `DEFAULT_PAYMENT_TERMS_DAYS`, `DEFAULT_CURRENCY_CODE` and
+  `DEFAULT_ACCENT_COLOR` are gone from the settings, compose file and docs. The
+  app never read them; those defaults live in Settings.
+- `docker-compose.yml` forwards `MAX_LOGO_SIZE_MB`, which it silently dropped.
+- Production logs a warning at startup when `SECURE_COOKIES` is off.
+- The image installs `libharfbuzz-subset0`, which WeasyPrint uses for font
+  subsetting and warned about on every render, and no longer installs the app
+  into the venv a second time, so a code change reuses the dependency layer.
 - Multiple MCP and bot API keys, each labeled and rotated or revoked on its own,
   under Settings > MCP Integration and Settings > Bot API Key. Existing keys keep
   working and appear as "Migrated MCP key" and "Migrated bot key".

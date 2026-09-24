@@ -208,6 +208,11 @@ def configure_http_middleware(app: FastAPI) -> None:
                 origins,
                 base,
             )
+        if not settings.secure_cookies:
+            logger.warning(
+                "SECURE_COOKIES is off in production; the session cookie will be "
+                "sent over plain HTTP. Set SECURE_COOKIES=true behind HTTPS."
+            )
 
     app.state.limiter = limiter
     # slowapi's handler is typed for RateLimitExceeded; Starlette types every
