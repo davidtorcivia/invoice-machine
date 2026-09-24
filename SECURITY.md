@@ -58,7 +58,9 @@ scoped to Checkout Sessions over a full secret key.
 These are accepted for the threat model above, and worth knowing:
 
 - `X-Forwarded-For` and `CF-Connecting-IP` are read only when
-  `TRUST_PROXY_HEADERS=true`. Leave that off unless a proxy overwrites them.
+  `TRUST_PROXY_HEADERS=true`. Leave that off unless a proxy overwrites them,
+  and when it is on, publish the port on `127.0.0.1` only: the app cannot tell
+  a proxy from a client that reaches the port directly.
 - The outbound-host guard resolves DNS before connecting, so a rebinding
   attack between the two is theoretically possible.
 - There is no audit log of administrative actions.

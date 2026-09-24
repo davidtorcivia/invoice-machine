@@ -28,6 +28,26 @@ def _validate_smtp_target(host: str, port: int) -> None:
     refuse_disallowed_host(host, port, kind="SMTP host")
 
 
+def require_password_for_new_smtp_destination(profile: BusinessProfile, updates: dict) -> None:
+    """Refuse to send the stored SMTP password anywhere new without re-entering it.
+
+    API keys can edit SMTP settings but never read the password, so without this
+    a key could point the saved password at its own server or turn TLS off.
+    """
+    if "smtp_password" in updates or not profile.smtp_password:
+        return
+    changed = (
+        ("smtp_host" in updates and updates["smtp_host"] != profile.smtp_host)
+        or ("smtp_port" in updates and updates["smtp_port"] != (profile.smtp_port or 587))
+        or ("smtp_username" in updates and updates["smtp_username"] != profile.smtp_username)
+        or ("smtp_use_tls" in updates and not updates["smtp_use_tls"] and profile.smtp_use_tls)
+    )
+    if changed:
+        raise ValueError(
+            "Re-enter the SMTP password when changing the host, port, username, or TLS setting."
+        )
+
+
 def _sanitize_email(email: str) -> str:
     """Validate an address and reject anything that could inject a header."""
     if not email:

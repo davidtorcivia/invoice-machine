@@ -239,11 +239,14 @@ def configure_http_middleware(app: FastAPI) -> None:
         if request.method == "OPTIONS":
             return await call_next(request)
 
-        # Key management and backups are web-session-only: a bot key must not
-        # mint or revoke keys, and a restore (or a download-edit-restore cycle)
-        # would resurrect revoked keys and forge sessions. Bearer auth is skipped
-        # there and cookie auth applies.
-        if not path.startswith(("/api/auth/", "/api/api-keys", "/api/backups")):
+        # Key management, backups and payment settings are web-session-only: a
+        # bot key must not mint or revoke keys, a restore (or a download-edit-
+        # restore cycle) would resurrect revoked keys and forge sessions, and
+        # swapping the Stripe keys would route payments to another account.
+        # Bearer auth is skipped there and cookie auth applies.
+        if not path.startswith(
+            ("/api/auth/", "/api/api-keys", "/api/backups", "/api/settings/payments")
+        ):
             bearer_token = _extract_bearer_token(request)
             if bearer_token:
                 client_ip = get_client_ip(request)

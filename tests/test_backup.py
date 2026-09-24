@@ -688,3 +688,132 @@ class TestLogoBackupAndRestore:
 
         assert not outside.exists(), "archive escaped the logo directory"
         assert (data_dir / "invoice_machine.db").read_bytes().startswith(b"SQLite format 3")
+
+
+class TestRestoreKeepsLiveCredentials:
+    """A restore must not revive an old password, a stolen session, or a revoked key."""
+
+    @staticmethod
+    def _db(path: Path, password_hash: str, key_id: int, session_token: str) -> None:
+        from sqlalchemy import create_engine
+
+        from invoice_machine.database import Base
+
+        engine = create_engine(f"sqlite:///{path}")
+        Base.metadata.create_all(engine)
+        engine.dispose()
+        conn = sqlite3.connect(path)
+        with conn:
+            conn.execute(
+                "INSERT INTO users (id, username, password_hash, singleton, created_at)"
+                " VALUES (1, 'me', ?, 1, '2026-01-01')",
+                (password_hash,),
+            )
+            conn.execute(
+                "INSERT INTO api_keys (id, kind, label, key_hash, created_at)"
+                " VALUES (?, 'bot', 'k', 'hash', '2026-01-01')",
+                (key_id,),
+            )
+            conn.execute(
+                "INSERT INTO sessions (token, user_id, expires_at, created_at, csrf_token)"
+                " VALUES (?, 1, '2999-01-01', '2026-01-01', 'c')",
+                (session_token,),
+            )
+            conn.execute(
+                "INSERT INTO invoices (id, invoice_number, status, document_type,"
+                " show_payment_instructions, issue_date, payment_terms_days, currency_code,"
+                " subtotal, tax_enabled, tax_rate, tax_name, tax_amount, total, created_at,"
+                " updated_at, pdf_path, pdf_generated_at) VALUES (1, 'INV-1', 'sent', 'invoice',"
+                " 1, '2026-01-01', 30, 'USD', 0, 0, 0, 'Tax', 0, 0, '2026-01-01', '2026-01-01',"
+                " 'pdfs/INV-1-1.pdf', '2026-01-02')"
+            )
+        conn.close()
+
+    def test_restore_keeps_live_login_and_keys_and_ends_sessions(self, tmp_path, monkeypatch):
+        data_dir = tmp_path / "data"
+        data_dir.mkdir()
+        monkeypatch.setattr(get_settings(), "data_dir", data_dir)
+        service = BackupService(backup_dir=tmp_path / "backups")
+
+        self._db(data_dir / "invoice_machine.db", "live-hash", key_id=2, session_token="live")
+        backup_name = "invoice_machine_backup_20260101_120000.db"
+        self._db(service.backup_dir / backup_name, "old-hash", key_id=1, session_token="stolen")
+
+        result = service.restore_backup(backup_name, validate=False)
+        service.keep_live_credentials(result["pre_restore_backup"])
+
+        conn = sqlite3.connect(data_dir / "invoice_machine.db")
+        try:
+            assert conn.execute("SELECT password_hash FROM users").fetchall() == [("live-hash",)]
+            assert conn.execute("SELECT id FROM api_keys").fetchall() == [(2,)]
+            assert conn.execute("SELECT COUNT(*) FROM sessions").fetchone() == (0,)
+            assert conn.execute("SELECT pdf_generated_at FROM invoices").fetchall() == [(None,)]
+        finally:
+            conn.close()
+
+    def test_without_a_pre_restore_copy_restored_keys_are_dropped(self, tmp_path, monkeypatch):
+        data_dir = tmp_path / "data"
+        data_dir.mkdir()
+        monkeypatch.setattr(get_settings(), "data_dir", data_dir)
+        service = BackupService(backup_dir=tmp_path / "backups")
+        self._db(data_dir / "invoice_machine.db", "old-hash", key_id=1, session_token="stolen")
+
+        service.keep_live_credentials(None)
+
+        conn = sqlite3.connect(data_dir / "invoice_machine.db")
+        try:
+            assert conn.execute("SELECT COUNT(*) FROM api_keys").fetchone() == (0,)
+            assert conn.execute("SELECT COUNT(*) FROM sessions").fetchone() == (0,)
+        finally:
+            conn.close()
+
+    def test_a_logo_failure_after_the_swap_still_returns(self, tmp_path, monkeypatch):
+        """The caller must learn the swap happened so it can reset credentials."""
+        data_dir = tmp_path / "data"
+        data_dir.mkdir()
+        monkeypatch.setattr(get_settings(), "data_dir", data_dir)
+        service = BackupService(backup_dir=tmp_path / "backups")
+        self._db(data_dir / "invoice_machine.db", "live-hash", key_id=2, session_token="live")
+        backup_name = "invoice_machine_backup_20260101_120000.db"
+        self._db(service.backup_dir / backup_name, "old-hash", key_id=1, session_token="stolen")
+
+        def disk_full(_path):
+            raise OSError(28, "No space left on device")
+
+        monkeypatch.setattr(service, "_restore_logos", disk_full)
+        result = service.restore_backup(backup_name, validate=False)
+
+        assert result["pre_restore_backup"]
+        assert result["logos_restored"] == 0
+
+    def test_legacy_key_columns_of_an_old_backup_are_cleared(self, tmp_path, monkeypatch):
+        data_dir = tmp_path / "data"
+        data_dir.mkdir()
+        monkeypatch.setattr(get_settings(), "data_dir", data_dir)
+        db = data_dir / "invoice_machine.db"
+        self._db(db, "old-hash", key_id=1, session_token="stolen")
+        from sqlalchemy import create_engine
+        from sqlalchemy.orm import Session
+
+        from invoice_machine.database import BusinessProfile
+
+        engine = create_engine(f"sqlite:///{db}")
+        with Session(engine) as orm:
+            orm.add(BusinessProfile(id=1, name="B"))
+            orm.commit()
+        engine.dispose()
+        conn = sqlite3.connect(db)
+        with conn:
+            conn.execute("ALTER TABLE business_profile ADD COLUMN bot_api_key VARCHAR(128)")
+            conn.execute("UPDATE business_profile SET bot_api_key = 'h'")
+            # Older than migration 010, whose upgrade failed: no sessions table yet.
+            conn.execute("DROP TABLE sessions")
+        conn.close()
+
+        BackupService(backup_dir=tmp_path / "backups").keep_live_credentials(None)
+
+        conn = sqlite3.connect(db)
+        try:
+            assert conn.execute("SELECT bot_api_key FROM business_profile").fetchone() == (None,)
+        finally:
+            conn.close()

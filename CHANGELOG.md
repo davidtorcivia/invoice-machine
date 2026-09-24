@@ -98,6 +98,28 @@ Notable changes to Invoice Machine. Format based on
 - Recording a payment shared the payment list's rate limit and could return 429
   after the payment was committed.
 
+### Security
+
+- Changing the SMTP host, port, or username, or turning TLS off, now requires
+  the SMTP password in the same request, from the web UI, a bot key, or MCP.
+  An API key cannot read the stored password, and could previously point it at
+  a server of its choosing.
+- Bot API keys no longer reach `/api/settings/payments`, so a leaked key cannot
+  swap the Stripe keys and collect payments into another account.
+- Restoring a backup keeps the current password and API keys, ends every
+  session, and marks cached PDFs stale. A backup previously brought back its
+  own password hash, sessions, and keys, reviving a changed password, a stolen
+  session, or a revoked key. Expect to sign in again after a restore.
+- With `TRUST_PROXY_HEADERS=true`, the client IP falls back to the last
+  `X-Forwarded-For` hop, the one the proxy appended, instead of the first,
+  which the client controls. The README now says to publish the port on
+  `127.0.0.1` when proxy headers are trusted.
+- `GET /mcp/status` no longer reports whether an MCP key exists; it needs no
+  login.
+- The Docker entrypoint migrates through the same path as the app: a legacy
+  `invoicely.db` is renamed first, old revision ids are remapped, and a
+  database that predates Alembic is refused instead of partially migrated.
+
 ## [0.3.0]
 
 ### Added

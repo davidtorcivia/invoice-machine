@@ -330,7 +330,7 @@ A hosted skill file describing the API lives at `https://your-server.com/SKILL.m
 
 Automatic backups run daily at midnight UTC once enabled under Settings > Backup & Restore. Set a retention period (30 days by default) and optionally upload to any S3-compatible store (AWS S3, Backblaze B2, Cloudflare R2, MinIO).
 
-Backups are taken through SQLite's online backup API, so they are consistent even while the app is writing. Restoring creates a pre-restore safety copy first, then applies any pending schema migrations, so a backup from an older release comes back usable.
+Backups are taken through SQLite's online backup API, so they are consistent even while the app is writing. Restoring creates a pre-restore safety copy first, then applies any pending schema migrations, so a backup from an older release comes back usable. A restore keeps the current password and API keys rather than the backup's, and signs everyone out; after restoring onto a fresh install, create new API keys.
 
 The `data/` directory holds everything: database, PDFs, logos, and backups. Copying it is a complete backup.
 
@@ -350,7 +350,7 @@ The `data/` directory holds everything: database, PDFs, logos, and backups. Copy
 
 1. Generate and set `INVOICE_MACHINE_ENCRYPTION_KEY`, `chmod 600` your `.env`, and back the key up somewhere separate
 2. Set `SECURE_COOKIES=true` behind HTTPS
-3. Set `TRUST_PROXY_HEADERS=true` only if a reverse proxy overwrites client IP headers
+3. Set `TRUST_PROXY_HEADERS=true` only if a reverse proxy overwrites client IP headers, and then publish the port on `127.0.0.1` only, so nothing can reach the app without going through the proxy
 4. Point `CORS_ORIGINS` at your domain only
 5. Turn on automatic backups with S3 for offsite copies
 6. Put an access layer in front of it (Cloudflare Access, Tailscale, or a VPN)
@@ -384,7 +384,8 @@ services:
     image: invoice-machine:latest
     container_name: invoice-machine
     ports:
-      - "8080:8080"
+      # Loopback only: the reverse proxy or tunnel on this host is the way in.
+      - "127.0.0.1:8080:8080"
     environment:
       - INVOICE_MACHINE_ENCRYPTION_KEY=${INVOICE_MACHINE_ENCRYPTION_KEY}
       - APP_BASE_URL=https://invoices.yourdomain.com
@@ -412,7 +413,7 @@ Two things that catch people out: `DATABASE_URL` needs four slashes (three for t
 cloudflared tunnel create invoice-machine
 ```
 
-Configure an Access policy in the Cloudflare dashboard, then set `APP_BASE_URL`, `SECURE_COOKIES=true`, and `TRUST_PROXY_HEADERS=true`. The app then reads `CF-Connecting-IP` for rate limiting and audit logging, so limits apply per client rather than to the tunnel as a whole.
+Configure an Access policy in the Cloudflare dashboard, then set `APP_BASE_URL`, `SECURE_COOKIES=true`, and `TRUST_PROXY_HEADERS=true`. The app then reads `CF-Connecting-IP` for rate limiting and audit logging, so limits apply per client rather than to the tunnel as a whole. Point the tunnel at `localhost` and publish the port on `127.0.0.1` only: any host that can reach the port directly can send its own `CF-Connecting-IP` and pick its rate-limit key.
 
 ### Scheduled jobs
 

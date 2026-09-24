@@ -169,6 +169,18 @@ class TestApiKeyScopeSeparation:
             assert (await client.post("/api/backups/restore/x.db")).status_code == 401
             assert (await client.get("/api/invoices")).status_code == 200
 
+    @pytest.mark.asyncio
+    async def test_bot_key_cannot_reach_payment_settings(self, test_client):
+        """Swapping the Stripe keys would route payments to another account."""
+        created = await create_key(test_client, "bot", "Escalating")
+
+        async with bearer_client(created["key"]) as client:
+            assert (await client.get("/api/settings/payments")).status_code == 401
+            response = await client.put(
+                "/api/settings/payments", json={"stripe_secret_key": "sk_test_attacker"}
+            )
+            assert response.status_code == 401
+
     MCP_HEADERS = {
         "Content-Type": "application/json",
         "Accept": "application/json, text/event-stream",

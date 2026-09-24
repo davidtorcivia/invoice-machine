@@ -76,6 +76,22 @@ async def test_update_business_profile_rejects_bad_accent_color(mcp_db):
 
 
 @pytest.mark.asyncio
+async def test_update_business_profile_keeps_smtp_password_at_its_server(mcp_db):
+    await profile_tools.update_business_profile(
+        smtp_host="smtp.example.com", smtp_username="me", smtp_password="secret"
+    )
+
+    for redirect in ({"smtp_host": "mx.attacker.test"}, {"smtp_use_tls": False}):
+        with pytest.raises(ToolError, match="Re-enter the SMTP password"):
+            await profile_tools.update_business_profile(**redirect)
+
+    moved = await profile_tools.update_business_profile(
+        smtp_host="smtp2.example.com", smtp_password="new-secret"
+    )
+    assert moved["smtp_host"] == "smtp2.example.com"
+
+
+@pytest.mark.asyncio
 async def test_list_invoices_document_type_filter(mcp_db):
     client = await client_tools.create_client(name="Mixed")
     await invoice_tools.create_invoice(
