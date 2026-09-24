@@ -49,10 +49,6 @@ class Settings(BaseSettings):
 
     data_dir: Path = Path("./data")
 
-    default_payment_terms_days: int = 30
-    default_currency_code: str = "USD"
-    default_accent_color: str = "#16a34a"
-
     max_logo_size_mb: int = 5
     # Note: SVG is excluded due to XSS security risks (can contain embedded JavaScript)
     allowed_logo_extensions: list[str] = [".jpg", ".jpeg", ".png", ".gif", ".webp"]

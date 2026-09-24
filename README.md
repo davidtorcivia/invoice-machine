@@ -70,14 +70,6 @@ Set these in a `.env` file or as environment variables. See `.env.example` for a
 | `SENTRY_DSN` | Report unhandled errors to Sentry (no PII) | none |
 | `CORS_ORIGINS` | Allowed origins, comma-separated | `http://localhost:3000,http://localhost:8080` |
 
-### Invoice defaults
-
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `DEFAULT_PAYMENT_TERMS_DAYS` | Default payment terms | `30` |
-| `DEFAULT_CURRENCY_CODE` | Default currency | `USD` |
-| `DEFAULT_ACCENT_COLOR` | PDF accent color (hex) | `#16a34a` |
-
 ### Production
 
 Behind HTTPS (Cloudflare Tunnel, nginx, Caddy), all of these are required:
@@ -150,7 +142,7 @@ Subject and body templates live in Settings > Email templates and accept placeho
 
 ### Payment reminders
 
-Settings > Payment reminders chases unpaid invoices for you. Pick a schedule as day offsets around the due date, for example three days before, then one, seven, and fourteen days after. The sweep runs daily at 09:00 UTC.
+Settings > Payment reminders chases unpaid invoices for you. Pick a schedule as day offsets around the due date, for example three days before, then one, seven, and fourteen days after. The sweep checks every hour and sends when the business timezone reaches the send hour (09:00 local by default), both set on the same page.
 
 Each offset is sent at most once per invoice. Fully paid invoices are never chased, partially paid ones are chased for the balance, and turning reminders on for an already-overdue invoice sends a single current reminder rather than the whole backlog.
 
@@ -279,7 +271,7 @@ Running locally with Docker, you can use stdio instead:
   "mcpServers": {
     "invoice-machine": {
       "command": "docker",
-      "args": ["exec", "-i", "invoice-machine", "python", "-m", "invoice_machine.mcp.server"]
+      "args": ["exec", "-i", "-u", "appuser", "invoice-machine", "python", "-m", "invoice_machine.mcp.server"]
     }
   }
 }
@@ -417,7 +409,7 @@ Configure an Access policy in the Cloudflare dashboard, then set `APP_BASE_URL`,
 
 ### Scheduled jobs
 
-One worker holds a lock and runs these; the times are UTC.
+One worker holds a lock and runs these; the times are UTC unless noted.
 
 | Job | When |
 |-----|------|
@@ -425,7 +417,7 @@ One worker holds a lock and runs these; the times are UTC.
 | Overdue invoice sweep | 01:00 |
 | Recurring invoice generation | 02:00 |
 | Trash purge | 03:00 |
-| Payment reminders | 09:00 |
+| Payment reminders | hourly check; sends at the send hour in the business timezone |
 | Expired session cleanup | hourly |
 
 ## Development
@@ -450,7 +442,7 @@ alembic revision -m "describe the change"
 alembic upgrade head
 ```
 
-`tests/test_schema_drift.py` runs the migrations against a throwaway database and fails if the models and migrations disagree.
+`tests/test_schema_drift.py` runs the migrations against a throwaway database and fails if a table or column in the models is missing from the migrated schema. It does not compare nullability or indexes.
 
 ### Layout
 

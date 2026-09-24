@@ -1,12 +1,12 @@
 name: CI
 
+# No push trigger: a pull request is rebased onto main before its one push, so
+# the squash-merged tree is the tree its pull request run already tested.
 on:
   pull_request:
-  push:
-    branches:
-      - main
-  # Weekly run so a new advisory against the locked tree surfaces between
-  # pull requests.
+  workflow_dispatch:
+  # Weekly: a new advisory against the locked tree, or a base image change that
+  # breaks the build, surfaces between pull requests.
   schedule:
     - cron: "0 6 * * 1"
 
@@ -20,6 +20,8 @@ permissions:
 
 jobs:
   backend:
+    # The tree is unchanged on a scheduled run, so only audit and docker can learn anything.
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     # A hung step must fail fast; one runaway job once billed 45 minutes.
     timeout-minutes: 12
@@ -76,17 +78,13 @@ jobs:
 
       - name: Run tests
         # faulthandler_timeout dumps every thread's stack if one test exceeds it.
-        run: pytest -q -o faulthandler_timeout=120 --cov --cov-report=term-missing --cov-report=xml --cov-fail-under=79
-
-      - name: Upload coverage
-        if: matrix.python-version == '3.14'
-        uses: actions/upload-artifact@v7
-        with:
-          name: coverage
-          path: coverage.xml
-          retention-days: 7
+        # Coverage on one leg: the greenlet-aware tracer roughly doubles the run.
+        run: >-
+          pytest -q -o faulthandler_timeout=120
+          ${{ matrix.python-version == '3.14' && '--cov --cov-report=term-missing --cov-fail-under=79' || '' }}
 
   frontend:
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     # A hung step must fail fast; one runaway job once billed 45 minutes.
     timeout-minutes: 12

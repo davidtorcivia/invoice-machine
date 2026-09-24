@@ -30,10 +30,11 @@ ENV PATH="/opt/venv/bin:$PATH"
 
 WORKDIR /app
 COPY pyproject.toml uv.lock README.md ./
-COPY invoice_machine/ ./invoice_machine/
+# Dependencies only: the app itself runs from /app/invoice_machine in the
+# runtime stage, so a code change does not invalidate this layer.
 # uv is pinned to the version that wrote uv.lock (lock format revision 1).
 RUN pip install --no-cache-dir uv==0.6.8 \
-    && UV_PROJECT_ENVIRONMENT=/opt/venv uv sync --frozen --no-editable
+    && UV_PROJECT_ENVIRONMENT=/opt/venv uv sync --frozen --no-install-project
 
 # ---------------------------------------------------------------------------
 # Stage 3: slim runtime image (no compilers, no Node, no build cruft).
@@ -46,12 +47,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libpango-1.0-0 \
     libpangocairo-1.0-0 \
     libgdk-pixbuf-2.0-0 \
+    libharfbuzz-subset0 \
     shared-mime-info \
     ca-certificates \
     gosu \
     && rm -rf /var/lib/apt/lists/*
 
+# The app is not installed into the venv; PYTHONPATH lets the alembic console
+# script and any docker exec import it from /app.
 ENV PATH="/opt/venv/bin:$PATH" \
+    PYTHONPATH=/app \
     PYTHONUNBUFFERED=1
 COPY --from=builder /opt/venv /opt/venv
 
