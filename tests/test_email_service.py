@@ -585,7 +585,7 @@ class TestSendInvoiceEmailFlow:
     @pytest.mark.asyncio
     async def test_refuses_when_smtp_is_disabled(self, db_session, business_profile, test_client):
         from invoice_machine.service.email import send_invoice_email
-        from invoice_machine.services import InvoiceService
+        from invoice_machine.service.invoices import InvoiceService
 
         invoice = await InvoiceService.create_invoice(
             db_session,

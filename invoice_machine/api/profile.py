@@ -1,21 +1,20 @@
 """Business profile API endpoints."""
 
-import json
 import logging
 import os
 import uuid
 from datetime import datetime
-from decimal import Decimal
 
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from invoice_machine.config import get_settings
 from invoice_machine.database import BusinessProfile, get_session
 from invoice_machine.rate_limit import limiter
-from invoice_machine.utils import confined_file, utc_now
+from invoice_machine.service.profile import BusinessProfileUpdate, apply_profile_updates
+from invoice_machine.utils import confined_file, detect_image_type, utc_now
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/profile", tags=["profile"])
@@ -64,84 +63,6 @@ class BusinessProfileSchema(BaseModel):
         return v
 
 
-class BusinessProfileUpdate(BaseModel):
-    """Business profile update schema."""
-
-    name: str | None = Field(None, max_length=255)
-    business_name: str | None = Field(None, max_length=255)
-    address_line1: str | None = Field(None, max_length=500)
-    address_line2: str | None = Field(None, max_length=500)
-    city: str | None = Field(None, max_length=100)
-    state: str | None = Field(None, max_length=100)
-    postal_code: str | None = Field(None, max_length=20)
-    country: str | None = Field(None, max_length=100)
-    email: str | None = Field(None, max_length=255)
-    phone: str | None = Field(None, max_length=50)
-    ein: str | None = Field(None, max_length=50)
-    accent_color: str | None = Field(None, pattern="^#[0-9a-fA-F]{6}$")
-    default_payment_terms_days: int | None = Field(None, ge=0, le=365)
-    default_currency_code: str | None = Field(None, pattern="^[A-Z]{3}$")
-    default_notes: str | None = Field(None, max_length=10000)
-    default_payment_instructions: str | None = Field(None, max_length=10000)
-    payment_methods: str | None = Field(None, max_length=10000)  # JSON string
-    theme_preference: str | None = Field(None, pattern="^(system|light|dark)$")
-    app_base_url: str | None = Field(None, max_length=500)
-    # Bounded Decimal, not a free-form string: the rate reaches a DECIMAL column
-    # and is applied to every subsequently created invoice.
-    default_tax_enabled: bool | None = None
-    default_tax_rate: Decimal | None = Field(None, ge=0, le=100)
-    default_tax_name: str | None = Field(None, max_length=50)
-
-    @field_validator("payment_methods")
-    @classmethod
-    def validate_payment_methods(cls, value: str | None) -> str | None:
-        """Reject payment_methods that isn't a JSON array of {id, name, instructions}.
-
-        Readers silently degrade unparseable JSON to an empty list, so an invalid
-        value here would make a user's payment methods disappear.
-        """
-        if value is None or value == "":
-            return value
-        try:
-            parsed = json.loads(value)
-        except (json.JSONDecodeError, TypeError):
-            raise ValueError("payment_methods must be valid JSON") from None
-        if not isinstance(parsed, list):
-            raise ValueError("payment_methods must be a JSON array")
-        if len(parsed) > 50:
-            raise ValueError("payment_methods supports at most 50 entries")
-        for entry in parsed:
-            if not isinstance(entry, dict):
-                raise ValueError("each payment method must be a JSON object")
-            if not str(entry.get("id") or "").strip():
-                raise ValueError("each payment method needs a non-empty id")
-            if not str(entry.get("name") or "").strip():
-                raise ValueError("each payment method needs a non-empty name")
-        return value
-
-
-# Optional profile columns that an explicit `null` may legitimately clear. Every
-# other column is NOT NULL (or has app-level meaning for its default), so a null
-# there is treated as "leave unchanged".
-NULLABLE_PROFILE_FIELDS = frozenset(
-    {
-        "business_name",
-        "address_line1",
-        "address_line2",
-        "city",
-        "state",
-        "postal_code",
-        "email",
-        "phone",
-        "ein",
-        "default_notes",
-        "default_payment_instructions",
-        "payment_methods",
-        "app_base_url",
-    }
-)
-
-
 def sanitize_filename(filename: str) -> str:
     """Sanitize filename to prevent path traversal."""
     name = os.path.basename(filename)
@@ -165,17 +86,6 @@ def _delete_logo_file(logo_filename: str | None) -> None:
         logger.warning("Could not delete logo file %s: %s", safe_name, exc)
 
 
-# SVG is excluded due to XSS security risks (can contain embedded JavaScript)
-# WebP is intentionally absent here: a bare ``RIFF`` prefix also matches AVI/WAV
-# containers, so it is validated separately by its full RIFF....WEBP signature.
-IMAGE_SIGNATURES = {
-    b"\x89PNG\r\n\x1a\n": ".png",  # PNG
-    b"\xff\xd8\xff": ".jpg",  # JPEG
-    b"GIF87a": ".gif",  # GIF87a
-    b"GIF89a": ".gif",  # GIF89a
-}
-
-
 def detect_image_extension(content: bytes) -> str | None:
     """Return the file extension implied by the content's magic bytes.
 
@@ -183,23 +93,8 @@ def detect_image_extension(content: bytes) -> str | None:
     filename, so a PNG uploaded as "logo.jpg" is stored (and later served) as the
     format it actually is.
     """
-    if len(content) < 8:
-        return None
-
-    for signature, extension in IMAGE_SIGNATURES.items():
-        if content[: len(signature)] == signature:
-            return extension
-
-    # WebP requires the full RIFF....WEBP container, not just a RIFF prefix.
-    if content[:4] == b"RIFF" and len(content) >= 12 and content[8:12] == b"WEBP":
-        return ".webp"
-
-    return None
-
-
-def validate_image_content(content: bytes) -> bool:
-    """Validate that file content appears to be an image, not a renamed file."""
-    return detect_image_extension(content) is not None
+    detected = detect_image_type(content)
+    return detected[0] if detected else None
 
 
 @router.get("", response_model=BusinessProfileSchema)
@@ -222,20 +117,7 @@ async def update_profile(
 ) -> BusinessProfile:
     """Update business profile."""
     profile = await BusinessProfile.get_or_create(session)
-
-    update_data = updates.model_dump(exclude_unset=True)
-
-    # SQLite stores booleans as ints.
-    if "default_tax_enabled" in update_data and update_data["default_tax_enabled"] is not None:
-        update_data["default_tax_enabled"] = int(update_data["default_tax_enabled"])
-
-    for key, value in update_data.items():
-        # An explicit null clears an optional field; NOT-NULL columns keep their
-        # current value rather than blowing up on an IntegrityError.
-        if value is None and key not in NULLABLE_PROFILE_FIELDS:
-            continue
-        setattr(profile, key, value)
-
+    apply_profile_updates(profile, updates.model_dump(exclude_unset=True))
     profile.updated_at = utc_now()
     await session.commit()
     await session.refresh(profile)

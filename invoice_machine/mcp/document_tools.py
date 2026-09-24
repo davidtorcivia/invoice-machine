@@ -5,9 +5,8 @@ from __future__ import annotations
 from mcp.server.mcpserver.exceptions import ToolError
 
 from invoice_machine.config import get_settings
-from invoice_machine.database import Client, Invoice
-from invoice_machine.services import InvoiceService
-from invoice_machine.utils import ensure_utc, utc_now
+from invoice_machine.service.common import list_trashed
+from invoice_machine.service.invoices import InvoiceService
 
 from .annotations import ADDITIVE_IDEMPOTENT, READ_ONLY
 from .context import get_session, mcp
@@ -43,59 +42,8 @@ async def generate_pdf(invoice_id: int) -> dict:
 async def list_trash() -> list:
     """List trashed invoices and clients, with days until auto-purge."""
     async with get_session() as session:
-        from sqlalchemy import select
-
-        now = utc_now()
-        items = []
-
-        # Column-only selects: whole entities would pull in each invoice's
-        # selectin-loaded line items and client just to render a name and a date.
-        client_rows = await session.execute(
-            select(Client.id, Client.name, Client.business_name, Client.deleted_at).where(
-                Client.deleted_at.is_not(None)
-            )
-        )
-        for row in client_rows:
-            deleted_at = ensure_utc(row.deleted_at)
-            if not deleted_at:
-                continue
-            days_left = settings.trash_retention_days - int(
-                (now - deleted_at).total_seconds() / 86400
-            )
-            items.append(
-                {
-                    "type": "client",
-                    "id": row.id,
-                    "name": row.business_name or row.name or "Unknown Client",
-                    "deleted_at": deleted_at.isoformat(),
-                    "days_until_purge": days_left,
-                }
-            )
-
-        invoice_rows = await session.execute(
-            select(Invoice.id, Invoice.invoice_number, Invoice.deleted_at).where(
-                Invoice.deleted_at.is_not(None)
-            )
-        )
-        for row in invoice_rows:
-            deleted_at = ensure_utc(row.deleted_at)
-            if not deleted_at:
-                continue
-            days_left = settings.trash_retention_days - int(
-                (now - deleted_at).total_seconds() / 86400
-            )
-            items.append(
-                {
-                    "type": "invoice",
-                    "id": row.id,
-                    "name": row.invoice_number,
-                    "deleted_at": deleted_at.isoformat(),
-                    "days_until_purge": days_left,
-                }
-            )
-
-        items.sort(key=lambda x: x["deleted_at"], reverse=True)
-        return items
+        items = await list_trashed(session)
+    return [{**item, "deleted_at": item["deleted_at"].isoformat()} for item in items]
 
 
 # Note: empty_trash is intentionally not exposed via MCP for security reasons.

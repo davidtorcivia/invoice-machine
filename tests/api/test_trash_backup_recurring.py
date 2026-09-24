@@ -62,7 +62,7 @@ class TestBackupEndpoints:
         import tempfile
         from pathlib import Path
 
-        from invoice_machine.services import BackupService
+        from invoice_machine.service.backups import BackupService
 
         with tempfile.TemporaryDirectory() as tmpdir:
             service = BackupService(backup_dir=Path(tmpdir))

@@ -8,9 +8,8 @@ from sqlalchemy import func, select
 
 from invoice_machine.config import get_settings
 from invoice_machine.database import Client, Invoice, InvoiceItem
-from invoice_machine.services import (
-    ClientService,
-    InvoiceService,
+from invoice_machine.service.clients import ClientService
+from invoice_machine.service.common import (
     calculate_due_date,
     format_currency,
     generate_invoice_number,
@@ -18,6 +17,7 @@ from invoice_machine.services import (
     recalculate_invoice_totals,
     snapshot_client_info,
 )
+from invoice_machine.service.invoices import InvoiceService
 from invoice_machine.utils import utc_now
 
 
@@ -178,7 +178,7 @@ class TestClientSnapshot:
         db_session.add(invoice)
         await db_session.flush()
 
-        await snapshot_client_info(db_session, test_client, invoice)
+        snapshot_client_info(test_client, invoice)
 
         assert invoice.client_name == test_client.name
         assert invoice.client_business == test_client.business_name
@@ -200,7 +200,7 @@ class TestClientSnapshot:
         db_session.add(invoice)
         await db_session.flush()
 
-        await snapshot_client_info(db_session, client, invoice)
+        snapshot_client_info(client, invoice)
 
         assert invoice.client_name == "Minimal Client"
         assert invoice.client_business is None
@@ -221,6 +221,15 @@ class TestFormatCurrency:
 
     def test_format_non_usd(self):
         assert format_currency(Decimal("500"), "EUR") == "500.00 EUR"
+
+    def test_format_accepts_int_float_and_str(self):
+        assert format_currency(100) == "$100.00"
+        assert format_currency(1234.56) == "$1,234.56"
+        assert format_currency("99.99") == "$99.99"
+        assert format_currency(1000, "GBP") == "1,000.00 GBP"
+
+    def test_format_negative(self):
+        assert format_currency(-100) == "$-100.00"
 
 
 class TestClientService:

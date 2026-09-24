@@ -564,14 +564,3 @@ class BackupService:
             backup_path.unlink()
             return True
         return False
-
-
-def get_backup_service(
-    retention_days: int | None = None,
-    s3_config: dict | None = None,
-) -> BackupService:
-    """Get a BackupService instance with optional configuration."""
-    return BackupService(
-        retention_days=retention_days or 30,
-        s3_config=s3_config,
-    )

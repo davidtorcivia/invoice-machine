@@ -49,6 +49,9 @@ class ClientService:
                     func.sum(case((Invoice.status == "paid", Invoice.total), else_=0)), 0
                 ).label("total_paid"),
                 func.count(Invoice.id).label("invoice_count"),
+                func.coalesce(
+                    func.sum(case((Invoice.status.in_(BILLED_STATUSES), 1), else_=0)), 0
+                ).label("billed_invoice_count"),
                 func.coalesce(func.sum(case((Invoice.status == "paid", 1), else_=0)), 0).label(
                     "paid_invoice_count"
                 ),
@@ -63,12 +66,14 @@ class ClientService:
                     Invoice.deleted_at.is_(None),
                 ),
             )
-            .where(Client.deleted_at.is_(None))
             .group_by(Client.id, Invoice.currency_code)
         )
 
+        # A client asked for by id is reported even from the trash, like get_client.
         if client_id:
             query = query.where(Client.id == client_id)
+        else:
+            query = query.where(Client.deleted_at.is_(None))
 
         rows = (await session.execute(query)).all()
 
@@ -106,6 +111,7 @@ class ClientService:
                     "invoiced": str(invoiced),
                     "paid": str(paid),
                     "invoice_count": row.invoice_count or 0,
+                    "billed_invoice_count": row.billed_invoice_count or 0,
                     "paid_invoice_count": row.paid_invoice_count or 0,
                 }
                 entry["invoice_count"] += row.invoice_count or 0

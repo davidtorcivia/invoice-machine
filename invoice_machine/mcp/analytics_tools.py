@@ -2,21 +2,15 @@
 
 from __future__ import annotations
 
-from collections import Counter
 from datetime import date
 from decimal import Decimal
 
 from mcp.server.mcpserver.exceptions import ToolError
 
 from invoice_machine.service import analytics as analytics_service
-from invoice_machine.service.common import BILLED_STATUSES, format_quantity
-from invoice_machine.services import (
-    ClientService,
-    InvoiceService,
-    format_currency,
-    is_invoice_document,
-    quantize_money,
-)
+from invoice_machine.service.clients import ClientService
+from invoice_machine.service.common import format_currency, format_quantity, quantize_money
+from invoice_machine.service.invoices import InvoiceService
 from invoice_machine.utils import utc_now
 
 from .annotations import READ_ONLY
@@ -84,34 +78,17 @@ async def get_client_invoice_context(
             raise ToolError(f"Client {client_id} not found")
 
         invoices = await InvoiceService.list_invoices(
-            session,
-            client_id=client_id,
-            limit=limit,
+            session, client_id=client_id, document_type="invoice", limit=limit
         )
-        invoices = [inv for inv in invoices if is_invoice_document(inv)]
-
-        all_invoices = await InvoiceService.list_invoices(
-            session,
-            client_id=client_id,
-            limit=10000,
-        )
-
-        all_invoices = [inv for inv in all_invoices if is_invoice_document(inv)]
-
-        # Scope statistics to the client's dominant currency so totals/averages
-        # are never a mix of currencies.
-        cur_counts = Counter(inv.currency_code for inv in all_invoices)
-        dominant_currency = (
-            cur_counts.most_common(1)[0][0] if cur_counts else (client.preferred_currency or "USD")
-        )
-        scoped = [inv for inv in all_invoices if inv.currency_code == dominant_currency]
-        billable = [inv for inv in scoped if inv.status in BILLED_STATUSES]
-        total_billed = sum((inv.total for inv in billable), Decimal("0"))
-        paid_invoices = [inv for inv in scoped if inv.status == "paid"]
-        total_paid = sum((inv.total for inv in paid_invoices), Decimal("0"))
-        # Average over BILLABLE invoices (not drafts/cancelled, not all docs).
+        # SQL aggregates in the client's dominant currency, the same figures REST reports.
+        (stats,) = await ClientService.get_client_invoice_stats(session, client_id=client_id)
+        currency = stats["currency"]
+        scoped = stats["by_currency"].get(currency, {})
+        total_billed = stats["total_invoiced"]
+        total_paid = stats["total_paid"]
+        billed_count = scoped.get("billed_invoice_count", 0)
         average_invoice = (
-            quantize_money(total_billed / len(billable)) if billable else Decimal("0.00")
+            quantize_money(total_billed / billed_count) if billed_count else Decimal("0.00")
         )
 
         return {
@@ -145,15 +122,15 @@ async def get_client_invoice_context(
                 for inv in invoices
             ],
             "statistics": {
-                "currency": dominant_currency,
-                "total_billed": str(quantize_money(total_billed)),
-                "total_billed_formatted": format_currency(total_billed, dominant_currency),
-                "total_paid": str(quantize_money(total_paid)),
-                "total_paid_formatted": format_currency(total_paid, dominant_currency),
-                "invoice_count": len(scoped),
-                "paid_count": len(paid_invoices),
+                "currency": currency,
+                "total_billed": str(total_billed),
+                "total_billed_formatted": format_currency(total_billed, currency),
+                "total_paid": str(total_paid),
+                "total_paid_formatted": format_currency(total_paid, currency),
+                "invoice_count": scoped.get("invoice_count", 0),
+                "paid_count": scoped.get("paid_invoice_count", 0),
                 "average_invoice": str(average_invoice),
-                "average_invoice_formatted": format_currency(average_invoice, dominant_currency),
+                "average_invoice_formatted": format_currency(average_invoice, currency),
             },
         }
 

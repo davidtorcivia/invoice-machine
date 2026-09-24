@@ -12,7 +12,7 @@ from invoice_machine.api.schemas import LineItemCreate
 from invoice_machine.database import RecurringSchedule, get_session
 from invoice_machine.presenters import serialize_recurring_schedule
 from invoice_machine.rate_limit import limiter
-from invoice_machine.services import RecurringService
+from invoice_machine.service.recurring import RecurringService
 
 router = APIRouter(prefix="/api/recurring", tags=["recurring"])
 

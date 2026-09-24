@@ -4,26 +4,13 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from invoice_machine.crypto import encrypt_credential
 from invoice_machine.database import BusinessProfile, get_session
-from invoice_machine.email import EmailService, require_password_for_new_smtp_destination
+from invoice_machine.email import EmailService
 from invoice_machine.rate_limit import limiter
 from invoice_machine.service.email import send_invoice_email as send_invoice_email_service
+from invoice_machine.service.profile import SMTPSettingsUpdate, apply_profile_updates
 
 router = APIRouter(tags=["email"])
-
-
-class SMTPSettingsUpdate(BaseModel):
-    """SMTP settings update request."""
-
-    smtp_enabled: bool | None = None
-    smtp_host: str | None = Field(None, max_length=255)
-    smtp_port: int | None = Field(None, ge=1, le=65535)
-    smtp_username: str | None = Field(None, max_length=255)
-    smtp_password: str | None = Field(None, max_length=255)
-    smtp_from_email: str | None = Field(None, max_length=255)
-    smtp_from_name: str | None = Field(None, max_length=255)
-    smtp_use_tls: bool | None = None
 
 
 class SendEmailRequest(BaseModel):
@@ -69,23 +56,10 @@ async def update_smtp_settings(
     """Update SMTP settings."""
     profile = await BusinessProfile.get_or_create(session)
 
-    update_data = data.model_dump(exclude_unset=True)
     try:
-        require_password_for_new_smtp_destination(profile, update_data)
+        apply_profile_updates(profile, data.model_dump(exclude_unset=True))
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from None
-
-    # Convert booleans to integers for SQLite
-    if "smtp_enabled" in update_data:
-        update_data["smtp_enabled"] = int(update_data["smtp_enabled"])
-    if "smtp_use_tls" in update_data:
-        update_data["smtp_use_tls"] = int(update_data["smtp_use_tls"])
-
-    if "smtp_password" in update_data and update_data["smtp_password"]:
-        update_data["smtp_password"] = encrypt_credential(update_data["smtp_password"])
-
-    for key, value in update_data.items():
-        setattr(profile, key, value)
 
     await session.commit()
     await session.refresh(profile)

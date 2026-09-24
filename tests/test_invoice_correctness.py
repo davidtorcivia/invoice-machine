@@ -5,8 +5,10 @@ from decimal import Decimal
 
 import pytest
 
+from invoice_machine.service.clients import ClientService
 from invoice_machine.service.email import send_invoice_email
-from invoice_machine.services import ClientService, InvoiceService, PaymentService
+from invoice_machine.service.invoices import InvoiceService
+from invoice_machine.service.payments import PaymentService
 from invoice_machine.utils import utc_now
 
 

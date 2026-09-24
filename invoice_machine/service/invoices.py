@@ -8,6 +8,7 @@ from sqlalchemy import and_, asc, desc, func, select, update
 from sqlalchemy.engine import CursorResult
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.sql.elements import ColumnElement
 
 from invoice_machine.database import BusinessProfile, Client, Invoice, InvoiceItem, Payment
 from invoice_machine.service.common import (
@@ -58,11 +59,6 @@ async def _drop_marked_paid_placeholder(session: AsyncSession, invoice: Invoice)
 
 # How many times to retry invoice-number allocation under a concurrent-create race.
 _NUMBER_ALLOCATION_ATTEMPTS = 6
-
-
-def _coerce_quantity(value):
-    """Coerce a line-item quantity to a positive Decimal (tolerant of str/float)."""
-    return quantize_quantity(value)
 
 
 def _resolve_tax_settings(tax_enabled, tax_rate, tax_name, client, business):
@@ -170,7 +166,7 @@ async def _insert_with_unique_number(
         )
         invoice = Invoice(invoice_number=invoice_number, **fields)
         if client:
-            await snapshot_client_info(session, client, invoice)
+            snapshot_client_info(client, invoice)
 
         session.add(invoice)
         try:
@@ -333,6 +329,30 @@ async def _flush_invoice_with_items(
         await session.flush()
 
 
+def _invoice_filters(
+    status: str | None,
+    document_type: str | None,
+    client_id: int | None,
+    from_date: date | None,
+    to_date: date | None,
+    include_deleted: bool,
+) -> list[ColumnElement[bool]]:
+    conditions: list[ColumnElement[bool]] = []
+    if not include_deleted:
+        conditions.append(Invoice.deleted_at.is_(None))
+    if status:
+        conditions.append(Invoice.status == status)
+    if document_type:
+        conditions.append(Invoice.document_type == document_type)
+    if client_id:
+        conditions.append(Invoice.client_id == client_id)
+    if from_date:
+        conditions.append(Invoice.issue_date >= from_date)
+    if to_date:
+        conditions.append(Invoice.issue_date <= to_date)
+    return conditions
+
+
 class InvoiceService:
     """Service for invoice operations."""
 
@@ -351,20 +371,9 @@ class InvoiceService:
         offset: int = 0,
     ) -> list[Invoice]:
         """List invoices with filters, sorting, and pagination controls."""
-        query = select(Invoice)
-
-        if not include_deleted:
-            query = query.where(Invoice.deleted_at.is_(None))
-        if status:
-            query = query.where(Invoice.status == status)
-        if document_type:
-            query = query.where(Invoice.document_type == document_type)
-        if client_id:
-            query = query.where(Invoice.client_id == client_id)
-        if from_date:
-            query = query.where(Invoice.issue_date >= from_date)
-        if to_date:
-            query = query.where(Invoice.issue_date <= to_date)
+        query = select(Invoice).where(
+            *_invoice_filters(status, document_type, client_id, from_date, to_date, include_deleted)
+        )
 
         sort_columns = {
             "created_at": Invoice.created_at,
@@ -401,24 +410,12 @@ class InvoiceService:
         per_page: int = 25,
     ) -> tuple[list[Invoice], int]:
         """List invoices with pagination metadata."""
-        conditions = []
-        if not include_deleted:
-            conditions.append(Invoice.deleted_at.is_(None))
-        if status:
-            conditions.append(Invoice.status == status)
-        if document_type:
-            conditions.append(Invoice.document_type == document_type)
-        if client_id:
-            conditions.append(Invoice.client_id == client_id)
-        if from_date:
-            conditions.append(Invoice.issue_date >= from_date)
-        if to_date:
-            conditions.append(Invoice.issue_date <= to_date)
-
-        count_query = select(func.count(Invoice.id))
-        if conditions:
-            count_query = count_query.where(*conditions)
-        total = int((await session.execute(count_query)).scalar() or 0)
+        conditions = _invoice_filters(
+            status, document_type, client_id, from_date, to_date, include_deleted
+        )
+        total = int(
+            (await session.execute(select(func.count(Invoice.id)).where(*conditions))).scalar() or 0
+        )
 
         safe_page = max(1, int(page))
         safe_per_page = max(1, min(int(per_page), 100))
@@ -568,7 +565,7 @@ class InvoiceService:
         # keeps the details captured at creation, so editing a client record (or
         # merely marking an old invoice paid) never rewrites historical documents.
         if client and client_changed:
-            await snapshot_client_info(session, client, invoice)
+            snapshot_client_info(client, invoice)
 
         invoice.updated_at = utc_now()
         # Read before the commit: a rollback expires the instance and reading
@@ -602,7 +599,7 @@ class InvoiceService:
         is not a quote or has already been converted.
         """
         quote = await InvoiceService.get_invoice(session, quote_id)
-        if quote is None or quote.deleted_at is not None:
+        if quote is None:
             return None
 
         if quote.document_type != "quote":
@@ -693,7 +690,7 @@ class InvoiceService:
         unit_type: str = "qty",
     ) -> InvoiceItem | None:
         """Add a line item to an invoice. Returns None if the invoice is missing."""
-        quantity = _coerce_quantity(quantity)
+        quantity = quantize_quantity(quantity)
 
         unit_price = quantize_money(Decimal(str(unit_price)))
         if unit_price < 0:
@@ -740,13 +737,11 @@ class InvoiceService:
     ) -> InvoiceItem | None:
         """Update a line item and keep parent invoice totals in sync."""
         item = await session.get(InvoiceItem, item_id)
-        if not item:
+        # An item on another invoice is not found on this one.
+        if not item or (invoice_id is not None and item.invoice_id != invoice_id):
             return None
-
-        if invoice_id is not None and item.invoice_id != invoice_id:
-            raise ValueError("Item does not belong to the specified invoice")
         if quantity is not None:
-            quantity = _coerce_quantity(quantity)
+            quantity = quantize_quantity(quantity)
         if unit_price is not None and Decimal(str(unit_price)) < 0:
             raise ValueError("Unit price cannot be negative")
         if unit_type is not None:
@@ -766,7 +761,9 @@ class InvoiceService:
             item.unit_type = unit_type
 
         item.total = line_item_total(item.unit_price, item.quantity)
-        await _sync_invoice_money(session, item.invoice)
+        invoice = await session.get(Invoice, item.invoice_id)
+        if invoice is not None:
+            await _sync_invoice_money(session, invoice)
 
         await session.commit()
         await session.refresh(item)
@@ -780,11 +777,8 @@ class InvoiceService:
     ) -> bool:
         """Remove a line item and keep parent invoice totals in sync."""
         item = await session.get(InvoiceItem, item_id)
-        if not item:
+        if not item or (invoice_id is not None and item.invoice_id != invoice_id):
             return False
-
-        if invoice_id is not None and item.invoice_id != invoice_id:
-            raise ValueError("Item does not belong to the specified invoice")
 
         item_invoice_id = item.invoice_id
         await session.delete(item)
@@ -881,26 +875,7 @@ class InvoiceService:
                     invoices[invoice_id].updated_at = now
             elif action == "mark_paid":
                 for invoice_id in valid_ids:
-                    invoice = invoices[invoice_id]
-                    remaining = invoice.amount_due
-                    if remaining > 0:
-                        session.add(
-                            Payment(
-                                invoice_id=invoice.id,
-                                amount=remaining,
-                                currency_code=invoice.currency_code,
-                                payment_date=now.date(),
-                                method=_MARKED_PAID_METHOD,
-                                notes=_MARKED_PAID_NOTE,
-                            )
-                        )
-                await session.flush()
-                for invoice_id in valid_ids:
-                    invoice = invoices[invoice_id]
-                    await recalculate_invoice_payments(session, invoice)
-                    invoice.status = "paid"
-                    if invoice.paid_at is None:
-                        invoice.paid_at = now
+                    await apply_status(session, invoices[invoice_id], "paid")
             else:
                 await session.execute(
                     update(Invoice)

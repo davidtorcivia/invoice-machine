@@ -80,7 +80,7 @@ async def post_event(client, event, **header_kwargs):
 @pytest.mark.asyncio
 async def test_valid_event_records_a_payment(test_client, paid_invoice_id):
     import invoice_machine.database as db
-    from invoice_machine.services import PaymentService
+    from invoice_machine.service.payments import PaymentService
 
     response = await post_event(test_client, checkout_event(paid_invoice_id, event_id="evt_1"))
 
@@ -95,7 +95,7 @@ async def test_valid_event_records_a_payment(test_client, paid_invoice_id):
 @pytest.mark.asyncio
 async def test_replayed_event_id_is_a_duplicate_no_op(test_client, paid_invoice_id):
     import invoice_machine.database as db
-    from invoice_machine.services import PaymentService
+    from invoice_machine.service.payments import PaymentService
 
     event = checkout_event(paid_invoice_id, event_id="evt_dup")
     await post_event(test_client, event)
@@ -193,7 +193,7 @@ async def test_unrecordable_payment_is_acknowledged_not_retried(
     async def refuse(*args, **kwargs):
         raise ValueError("payment refused")
 
-    monkeypatch.setattr("invoice_machine.services.PaymentService.record_payment", refuse)
+    monkeypatch.setattr("invoice_machine.service.payments.PaymentService.record_payment", refuse)
 
     response = await post_event(
         test_client, checkout_event(paid_invoice_id, event_id="evt_bad_amt")

@@ -17,7 +17,7 @@ from invoice_machine.presenters import (
     serialize_client,
     serialize_invoice,
 )
-from invoice_machine.services import ClientService, InvoiceService
+from invoice_machine.service.clients import ClientService
 
 from .context import get_session, mcp
 
@@ -83,22 +83,31 @@ async def client_resource(client_id: str) -> str:
     title="Outstanding invoices",
     description=(
         "Every invoice still awaiting payment (sent, overdue, or partially "
-        "paid), newest first. The working list for chasing money."
+        "paid), earliest due first. The working list for chasing money."
     ),
     mime_type=_JSON,
 )
 async def outstanding_invoices_resource() -> str:
     """List the invoices that are still owed."""
     async with get_session() as session:
-        invoices = []
-        for status in ("sent", "overdue", "partially_paid"):
-            invoices.extend(
-                await InvoiceService.list_invoices(
-                    session, status=status, document_type="invoice", limit=200
+        # Partial payment is not a status: a partly paid invoice is still sent or overdue.
+        invoices = (
+            await session.execute(
+                select(Invoice)
+                .where(
+                    Invoice.status.in_(("sent", "overdue")),
+                    Invoice.document_type == "invoice",
+                    Invoice.deleted_at.is_(None),
                 )
+                .order_by(
+                    Invoice.due_date.is_(None),
+                    Invoice.due_date,
+                    Invoice.created_at.desc(),
+                    Invoice.id.desc(),
+                )
+                .limit(400)
             )
-
-        invoices.sort(key=lambda inv: (inv.due_date is None, inv.due_date))
+        ).scalars()
 
         return _dump(
             [

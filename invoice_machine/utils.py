@@ -120,3 +120,25 @@ def confined_file(directory: Path, name: str) -> Path | None:
     except (OSError, ValueError):
         return None
     return candidate
+
+
+# SVG is absent on purpose: it can carry script. WebP is matched on its full
+# RIFF....WEBP header below, since a bare RIFF prefix also matches AVI and WAV.
+_IMAGE_SIGNATURES = (
+    (b"\x89PNG\r\n\x1a\n", ".png", "image/png"),
+    (b"\xff\xd8\xff", ".jpg", "image/jpeg"),
+    (b"GIF87a", ".gif", "image/gif"),
+    (b"GIF89a", ".gif", "image/gif"),
+)
+
+
+def detect_image_type(content: bytes) -> tuple[str, str] | None:
+    """Return (extension, MIME type) implied by the content's magic bytes, or None."""
+    if len(content) < 8:
+        return None
+    for signature, extension, mime in _IMAGE_SIGNATURES:
+        if content.startswith(signature):
+            return extension, mime
+    if content[:4] == b"RIFF" and content[8:12] == b"WEBP":
+        return ".webp", "image/webp"
+    return None

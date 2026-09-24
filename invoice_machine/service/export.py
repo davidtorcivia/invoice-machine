@@ -15,6 +15,7 @@ from datetime import date
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import raiseload
 
 from invoice_machine.database import Client, Invoice, InvoiceItem, Payment
 from invoice_machine.service.common import format_quantity, quantize_money
@@ -102,7 +103,10 @@ async def _export_invoices(
     )
 
     conditions = _invoice_conditions(from_date, to_date, include_deleted, document_type)
-    query = select(Invoice).order_by(Invoice.issue_date, Invoice.id)
+    # Rows only read columns; the mapper's selectin items load would double the work.
+    query = (
+        select(Invoice).options(raiseload(Invoice.items)).order_by(Invoice.issue_date, Invoice.id)
+    )
     if conditions:
         query = query.where(*conditions)
 
@@ -164,6 +168,7 @@ async def _export_line_items(
     query = (
         select(InvoiceItem, Invoice)
         .join(Invoice, InvoiceItem.invoice_id == Invoice.id)
+        .options(raiseload(Invoice.items))
         .order_by(Invoice.issue_date, Invoice.id, InvoiceItem.sort_order)
     )
     if conditions:
@@ -223,6 +228,7 @@ async def _export_payments(
     query = (
         select(Payment, Invoice)
         .join(Invoice, Payment.invoice_id == Invoice.id)
+        .options(raiseload(Invoice.items))
         .order_by(Payment.payment_date, Payment.id)
     )
     if conditions:

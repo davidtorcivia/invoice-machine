@@ -5,12 +5,10 @@ from decimal import Decimal
 
 import pytest
 
-from invoice_machine.services import (
-    ClientService,
-    InvoiceService,
-    RecurringService,
-    SearchService,
-)
+from invoice_machine.service.clients import ClientService
+from invoice_machine.service.invoices import InvoiceService
+from invoice_machine.service.recurring import RecurringService
+from invoice_machine.service.search import SearchService
 from invoice_machine.utils import utc_now
 
 
@@ -845,7 +843,7 @@ class TestResumeSkipsMissedPeriods:
     async def test_restoring_a_client_advances_its_schedules(
         self, db_session, business_profile, test_client
     ):
-        from invoice_machine.services import ClientService
+        from invoice_machine.service.clients import ClientService
 
         schedule = await self._stale_schedule(db_session, test_client)
         await ClientService.delete_client(db_session, test_client.id)

@@ -11,7 +11,7 @@ from invoice_machine.api.schemas import LineItemCreate
 from invoice_machine.database import get_session
 from invoice_machine.presenters import serialize_invoice, serialize_invoice_item
 from invoice_machine.rate_limit import limiter
-from invoice_machine.services import InvoiceService
+from invoice_machine.service.invoices import InvoiceService
 from invoice_machine.utils import (
     INVOICE_NUMBER_REGEX,
     confined_file,
@@ -499,10 +499,7 @@ async def delete_invoice_item(
     session: AsyncSession = Depends(get_session),
 ):
     """Remove line item."""
-    try:
-        success = await InvoiceService.remove_item(session, item_id, invoice_id=invoice_id)
-    except ValueError as e:
-        raise HTTPException(status_code=403, detail=str(e))
+    success = await InvoiceService.remove_item(session, item_id, invoice_id=invoice_id)
     if not success:
         raise HTTPException(status_code=404, detail="Item not found")
 

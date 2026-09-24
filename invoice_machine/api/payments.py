@@ -9,9 +9,10 @@ from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from invoice_machine.database import get_session
-from invoice_machine.presenters import serialize_payment
+from invoice_machine.presenters import serialize_payment_ledger
 from invoice_machine.rate_limit import limiter
-from invoice_machine.services import InvoiceService, PaymentService
+from invoice_machine.service.invoices import InvoiceService
+from invoice_machine.service.payments import PaymentService
 
 router = APIRouter(tags=["payments"])
 
@@ -81,16 +82,9 @@ async def _payments_response(session: AsyncSession, invoice_id: int) -> dict:
     if not invoice:
         raise HTTPException(status_code=404, detail="Invoice not found")
 
-    payments = await PaymentService.list_payments(session, invoice_id)
-    return {
-        "invoice_id": invoice.id,
-        "currency_code": invoice.currency_code,
-        "total": str(invoice.total),
-        "amount_paid": str(invoice.amount_paid or 0),
-        "amount_due": str(invoice.amount_due),
-        "is_partially_paid": invoice.is_partially_paid,
-        "payments": [serialize_payment(payment) for payment in payments],
-    }
+    return serialize_payment_ledger(
+        invoice, await PaymentService.list_payments(session, invoice_id)
+    )
 
 
 @router.post(

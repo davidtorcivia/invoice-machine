@@ -15,7 +15,13 @@ from weasyprint.urls import URLFetcher
 
 from invoice_machine.config import get_settings
 from invoice_machine.database import BusinessProfile, Invoice, InvoiceItem
-from invoice_machine.utils import confined_file, sanitize_filename_component, utc_now
+from invoice_machine.service.common import format_currency, format_quantity
+from invoice_machine.utils import (
+    confined_file,
+    detect_image_type,
+    sanitize_filename_component,
+    utc_now,
+)
 
 settings = get_settings()
 
@@ -40,23 +46,9 @@ def zfill_filter(value, width):
     return str(value).zfill(width)
 
 
-def quantity_filter(value):
-    """Render a quantity without trailing zeros (2, 1.5, 0.25)."""
-    from invoice_machine.service.common import format_quantity
-
-    return format_quantity(value)
-
-
 env.filters["strftime"] = strftime_filter
 env.filters["zfill"] = zfill_filter
-env.filters["format_quantity"] = quantity_filter
-
-
-def format_money(amount: Decimal | str | float, currency_code: str = "USD") -> str:
-    """Format amount as currency string."""
-    from invoice_machine.service.common import format_currency
-
-    return format_currency(amount, currency_code)
+env.filters["format_quantity"] = format_quantity
 
 
 def invoice_pdf_filename(invoice: Invoice) -> str:
@@ -95,27 +87,6 @@ def _generate_pdf_sync(html: str, pdf_path: Path) -> None:
         tmp_path.unlink(missing_ok=True)
 
 
-# Magic-byte -> MIME map for the logo data: URI. The stored filename extension is
-# attacker-influenced (and the upload validator only checks content), so the MIME
-# type is derived from the bytes instead of hardcoded to image/png.
-_LOGO_MIME_SIGNATURES = (
-    (b"\x89PNG\r\n\x1a\n", "image/png"),
-    (b"\xff\xd8\xff", "image/jpeg"),
-    (b"GIF87a", "image/gif"),
-    (b"GIF89a", "image/gif"),
-)
-
-
-def _logo_mime_type(data: bytes) -> str:
-    """Detect the logo's MIME type from its magic bytes."""
-    for signature, mime in _LOGO_MIME_SIGNATURES:
-        if data.startswith(signature):
-            return mime
-    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
-        return "image/webp"
-    return "application/octet-stream"
-
-
 def _read_logo_bytes(business: BusinessProfile) -> bytes | None:
     """Read the configured logo, refusing anything outside the logo directory."""
     if not business.logo_path:
@@ -133,8 +104,11 @@ def get_logo_data_uri(business: BusinessProfile) -> str | None:
     data = _read_logo_bytes(business)
     if data is None:
         return None
+    # MIME from the bytes: the stored filename extension is attacker-influenced.
+    detected = detect_image_type(data)
+    mime = detected[1] if detected else "application/octet-stream"
     encoded = base64.b64encode(data).decode("ascii")
-    return f"data:{_logo_mime_type(data)};base64,{encoded}"
+    return f"data:{mime};base64,{encoded}"
 
 
 async def generate_pdf(session: AsyncSession, invoice: Invoice) -> str:
@@ -185,7 +159,7 @@ async def generate_pdf(session: AsyncSession, invoice: Invoice) -> str:
 
     template = env.get_template("template.html")
 
-    logo_data_uri = get_logo_data_uri(business)
+    logo_data_uri = await run_in_threadpool(get_logo_data_uri, business)
 
     show_payment_section = bool(
         payment_instructions and (selected_payment_methods or show_payment_instructions)
@@ -196,7 +170,7 @@ async def generate_pdf(session: AsyncSession, invoice: Invoice) -> str:
         invoice=invoice,
         items=items,
         logo_data_uri=logo_data_uri,
-        format_money=format_money,
+        format_money=format_currency,
         has_hours=has_hours,
         show_payment_instructions=show_payment_section,
         payment_instructions=payment_instructions,

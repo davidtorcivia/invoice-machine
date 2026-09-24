@@ -110,7 +110,7 @@ async def _trash_cleanup_job() -> None:
 async def _overdue_check_job() -> None:
     """Mark due invoices as overdue."""
     from invoice_machine.database import async_session_maker
-    from invoice_machine.services import InvoiceService
+    from invoice_machine.service.invoices import InvoiceService
 
     async with async_session_maker() as session:
         count = await InvoiceService.update_overdue_invoices(session)
@@ -121,7 +121,7 @@ async def _overdue_check_job() -> None:
 async def _recurring_invoice_job() -> None:
     """Process due recurring schedules."""
     from invoice_machine.database import async_session_maker
-    from invoice_machine.services import RecurringService
+    from invoice_machine.service.recurring import RecurringService
 
     async with async_session_maker() as session:
         results = await RecurringService.process_due_schedules(session)
@@ -164,7 +164,7 @@ async def _payment_reminder_job() -> None:
 async def _rebuild_search_indexes() -> None:
     """Rebuild FTS indexes on startup when required."""
     from invoice_machine.database import async_session_maker
-    from invoice_machine.services import SearchService
+    from invoice_machine.service.search import SearchService
 
     async with async_session_maker() as session:
         reindex_result = await SearchService.reindex_fts(session)

@@ -14,7 +14,7 @@ import pytest
 
 from invoice_machine.config import get_settings
 from invoice_machine.crypto import encrypt_credential
-from invoice_machine.services import BackupService
+from invoice_machine.service.backups import BackupService
 
 
 def _make_sqlite_db(path: Path) -> None:

@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from invoice_machine.database import get_session
 from invoice_machine.rate_limit import limiter
-from invoice_machine.services import SearchService
+from invoice_machine.service.search import SearchService
 
 router = APIRouter(prefix="/api/search", tags=["search"])
 

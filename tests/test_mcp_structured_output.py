@@ -102,12 +102,13 @@ async def test_unmodelled_keys_are_not_dropped(mcp_db):
 
 
 @pytest.mark.asyncio
-async def test_nullable_result_still_validates(mcp_db):
-    """A miss returns null rather than failing schema validation."""
+async def test_missing_record_is_a_tool_error(mcp_db):
+    """A miss is reported as a tool error, not a null the output schema must allow."""
     async with Client(_server()) as mcp_client:
         result = await mcp_client.call_tool("get_client", {"client_id": 999999})
 
-    assert not result.is_error
+    assert result.is_error
+    assert "Client 999999 not found" in result.content[0].text
 
 
 @pytest.mark.asyncio

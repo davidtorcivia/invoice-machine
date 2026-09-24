@@ -70,12 +70,3 @@ OUTWARD = ToolAnnotations(
     idempotent_hint=False,
     open_world_hint=True,
 )
-
-# Reverses money through a provider. Destructive *and* outward, but carries an
-# idempotency key, so a retry is safe.
-OUTWARD_REVERSAL = ToolAnnotations(
-    read_only_hint=False,
-    destructive_hint=True,
-    idempotent_hint=True,
-    open_world_hint=True,
-)
