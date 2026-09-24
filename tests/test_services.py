@@ -90,16 +90,16 @@ class TestDueDateCalculation:
         result = calculate_due_date(issue, explicit_due_date=due)
         assert result == due
 
-    def test_invoice_terms_override(self, business_profile, test_client):
+    def test_invoice_terms_override(self, business_profile, client_record):
         issue = date(2025, 1, 15)
         result = calculate_due_date(
-            issue, payment_terms_days=60, client=test_client, business=business_profile
+            issue, payment_terms_days=60, client=client_record, business=business_profile
         )
         assert result == issue + timedelta(days=60)
 
-    def test_uses_client_terms(self, business_profile, test_client):
+    def test_uses_client_terms(self, business_profile, client_record):
         issue = date(2025, 1, 15)
-        result = calculate_due_date(issue, client=test_client, business=business_profile)
+        result = calculate_due_date(issue, client=client_record, business=business_profile)
         assert result == issue + timedelta(days=30)
 
     def test_uses_business_default(self, business_profile):
@@ -168,22 +168,22 @@ class TestClientSnapshot:
     """Tests for client info snapshotting."""
 
     @pytest.mark.asyncio
-    async def test_snapshot_copies_client_fields(self, db_session, test_client):
+    async def test_snapshot_copies_client_fields(self, db_session, client_record):
         invoice = Invoice(
             invoice_number="20250115-1",
-            client_id=test_client.id,
+            client_id=client_record.id,
             issue_date=date.today(),
             status="draft",
         )
         db_session.add(invoice)
         await db_session.flush()
 
-        snapshot_client_info(test_client, invoice)
+        snapshot_client_info(client_record, invoice)
 
-        assert invoice.client_name == test_client.name
-        assert invoice.client_business == test_client.business_name
-        assert invoice.client_email == test_client.email
-        assert test_client.city in invoice.client_address
+        assert invoice.client_name == client_record.name
+        assert invoice.client_business == client_record.business_name
+        assert invoice.client_email == client_record.email
+        assert client_record.city in invoice.client_address
 
     @pytest.mark.asyncio
     async def test_snapshot_with_minimal_client(self, db_session):
@@ -241,24 +241,24 @@ class TestClientService:
         assert clients == []
 
     @pytest.mark.asyncio
-    async def test_list_clients_with_data(self, db_session, test_client):
+    async def test_list_clients_with_data(self, db_session, client_record):
         clients = await ClientService.list_clients(db_session)
         assert len(clients) == 1
-        assert clients[0].id == test_client.id
+        assert clients[0].id == client_record.id
 
     @pytest.mark.asyncio
-    async def test_list_clients_excludes_deleted(self, db_session, test_client):
-        test_client.deleted_at = date.today()
+    async def test_list_clients_excludes_deleted(self, db_session, client_record):
+        client_record.deleted_at = date.today()
         await db_session.commit()
 
         clients = await ClientService.list_clients(db_session)
         assert len(clients) == 0
 
     @pytest.mark.asyncio
-    async def test_list_clients_search(self, db_session, test_client):
+    async def test_list_clients_search(self, db_session, client_record):
         """Search filters by name or business name."""
-        test_client.name = "John Smith"
-        test_client.business_name = "Acme Corporation"
+        client_record.name = "John Smith"
+        client_record.business_name = "Acme Corporation"
         await db_session.commit()
 
         results = await ClientService.list_clients(db_session, search="John")
@@ -281,32 +281,32 @@ class TestClientService:
         assert client.business_name == "Jane's Company"
 
     @pytest.mark.asyncio
-    async def test_update_client(self, db_session, test_client):
+    async def test_update_client(self, db_session, client_record):
         updated = await ClientService.update_client(
-            db_session, test_client.id, name="Updated Name", phone="555-0000"
+            db_session, client_record.id, name="Updated Name", phone="555-0000"
         )
 
         assert updated.name == "Updated Name"
         assert updated.phone == "555-0000"
 
     @pytest.mark.asyncio
-    async def test_delete_client_soft(self, db_session, test_client):
-        success = await ClientService.delete_client(db_session, test_client.id)
+    async def test_delete_client_soft(self, db_session, client_record):
+        success = await ClientService.delete_client(db_session, client_record.id)
         assert success is True
 
-        await db_session.refresh(test_client)
-        assert test_client.deleted_at is not None
+        await db_session.refresh(client_record)
+        assert client_record.deleted_at is not None
 
     @pytest.mark.asyncio
-    async def test_restore_client(self, db_session, test_client):
-        test_client.deleted_at = date.today()
+    async def test_restore_client(self, db_session, client_record):
+        client_record.deleted_at = date.today()
         await db_session.commit()
 
-        success = await ClientService.restore_client(db_session, test_client.id)
+        success = await ClientService.restore_client(db_session, client_record.id)
         assert success is True
 
-        await db_session.refresh(test_client)
-        assert test_client.deleted_at is None
+        await db_session.refresh(client_record)
+        assert client_record.deleted_at is None
 
 
 class TestInvoiceService:
@@ -322,12 +322,12 @@ class TestInvoiceService:
         assert invoice.currency_code == "USD"
 
     @pytest.mark.asyncio
-    async def test_create_invoice_with_client(self, db_session, test_client):
-        invoice = await InvoiceService.create_invoice(db_session, client_id=test_client.id)
+    async def test_create_invoice_with_client(self, db_session, client_record):
+        invoice = await InvoiceService.create_invoice(db_session, client_id=client_record.id)
 
-        assert invoice.client_id == test_client.id
-        assert invoice.client_name == test_client.name
-        assert invoice.client_business == test_client.business_name
+        assert invoice.client_id == client_record.id
+        assert invoice.client_name == client_record.name
+        assert invoice.client_business == client_record.business_name
 
     @pytest.mark.asyncio
     async def test_create_invoice_with_items(self, db_session):
@@ -438,32 +438,32 @@ class TestTrashPurge:
 
     @pytest.mark.asyncio
     async def test_purge_trashed_records_keeps_client_with_active_invoice(
-        self, db_session, test_client
+        self, db_session, client_record
     ):
         """Trashed clients are retained while any live invoice still references them."""
-        invoice = await InvoiceService.create_invoice(db_session, client_id=test_client.id)
-        test_client.deleted_at = date.today()
+        invoice = await InvoiceService.create_invoice(db_session, client_id=client_record.id)
+        client_record.deleted_at = date.today()
         await db_session.commit()
 
         result = await purge_trashed_records(db_session)
         await db_session.commit()
 
         assert result["clients_deleted"] == 0
-        assert await db_session.get(Client, test_client.id) is not None
+        assert await db_session.get(Client, client_record.id) is not None
         assert await db_session.get(Invoice, invoice.id) is not None
 
     @pytest.mark.asyncio
     async def test_purge_trashed_records_deletes_invoice_items_before_invoices(
-        self, db_session, test_client
+        self, db_session, client_record
     ):
         """Purging trashed invoices also removes their line items and then the now-unreferenced client."""
         invoice = await InvoiceService.create_invoice(
             db_session,
-            client_id=test_client.id,
+            client_id=client_record.id,
             items=[{"description": "Service", "quantity": 1, "unit_price": 100}],
         )
         invoice.deleted_at = date.today()
-        test_client.deleted_at = date.today()
+        client_record.deleted_at = date.today()
         await db_session.commit()
 
         result = await purge_trashed_records(db_session)
@@ -476,7 +476,7 @@ class TestTrashPurge:
         assert result["invoices_deleted"] == 1
         assert result["clients_deleted"] == 1
         assert await db_session.get(Invoice, invoice.id) is None
-        assert await db_session.get(Client, test_client.id) is None
+        assert await db_session.get(Client, client_record.id) is None
         assert item_count == 0
 
 
@@ -536,14 +536,14 @@ class TestPurgeDeletesGeneratedFiles:
         assert Invoice is not None
 
     @pytest.mark.asyncio
-    async def test_purge_clears_recurring_last_invoice_id(self, db_session, test_client):
+    async def test_purge_clears_recurring_last_invoice_id(self, db_session, client_record):
         """A schedule pointing at a trashed invoice must not block the purge."""
         from invoice_machine.database import Invoice, RecurringSchedule
 
         invoice = Invoice(
             invoice_number="REC-1",
             issue_date=date(2026, 1, 1),
-            client_id=test_client.id,
+            client_id=client_record.id,
             deleted_at=utc_now(),
         )
         db_session.add(invoice)
@@ -551,7 +551,7 @@ class TestPurgeDeletesGeneratedFiles:
         await db_session.refresh(invoice)
 
         schedule = RecurringSchedule(
-            client_id=test_client.id,
+            client_id=client_record.id,
             name="Retainer",
             frequency="monthly",
             schedule_day=1,
@@ -569,19 +569,19 @@ class TestPurgeDeletesGeneratedFiles:
         assert schedule.last_invoice_id is None
 
     @pytest.mark.asyncio
-    async def test_purge_deletes_the_schedules_of_a_purged_client(self, db_session, test_client):
+    async def test_purge_deletes_the_schedules_of_a_purged_client(self, db_session, client_record):
         """recurring_schedules.client_id is NOT NULL, so the schedule goes with the client."""
         from invoice_machine.database import RecurringSchedule
 
         schedule = RecurringSchedule(
-            client_id=test_client.id,
+            client_id=client_record.id,
             name="Retainer",
             frequency="monthly",
             schedule_day=1,
             next_invoice_date=date(2026, 2, 1),
         )
         db_session.add(schedule)
-        test_client.deleted_at = utc_now()
+        client_record.deleted_at = utc_now()
         await db_session.commit()
         schedule_id = schedule.id
 
@@ -593,11 +593,11 @@ class TestPurgeDeletesGeneratedFiles:
 
     @pytest.mark.asyncio
     async def test_purging_the_converted_invoice_frees_the_quote(
-        self, db_session, business_profile, test_client
+        self, db_session, business_profile, client_record
     ):
         quote = await InvoiceService.create_invoice(
             db_session,
-            client_id=test_client.id,
+            client_id=client_record.id,
             document_type="quote",
             items=[{"description": "Proposal", "quantity": 1, "unit_price": 100}],
         )
@@ -613,10 +613,10 @@ class TestPurgeDeletesGeneratedFiles:
 
     @pytest.mark.asyncio
     async def test_purging_the_quote_clears_the_invoice_back_link(
-        self, db_session, business_profile, test_client
+        self, db_session, business_profile, client_record
     ):
         quote = await InvoiceService.create_invoice(
-            db_session, client_id=test_client.id, document_type="quote"
+            db_session, client_id=client_record.id, document_type="quote"
         )
         converted = await InvoiceService.convert_quote_to_invoice(db_session, quote.id)
         await InvoiceService.delete_invoice(db_session, quote.id)

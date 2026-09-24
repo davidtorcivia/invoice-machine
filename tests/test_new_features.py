@@ -49,19 +49,19 @@ class TestTaxCascade:
         assert invoice.total == Decimal("108.25")
 
     @pytest.mark.asyncio
-    async def test_tax_from_client_override(self, db_session, business_profile, test_client):
+    async def test_tax_from_client_override(self, db_session, business_profile, client_record):
         business_profile.default_tax_enabled = 1
         business_profile.default_tax_rate = Decimal("8.25")
         await db_session.commit()
 
-        test_client.tax_enabled = 1
-        test_client.tax_rate = Decimal("10.00")
-        test_client.tax_name = "VAT"
+        client_record.tax_enabled = 1
+        client_record.tax_rate = Decimal("10.00")
+        client_record.tax_name = "VAT"
         await db_session.commit()
 
         invoice = await InvoiceService.create_invoice(
             db_session,
-            client_id=test_client.id,
+            client_id=client_record.id,
             items=[{"description": "Service", "quantity": 1, "unit_price": 100}],
         )
 
@@ -71,16 +71,18 @@ class TestTaxCascade:
         assert invoice.total == Decimal("110.00")
 
     @pytest.mark.asyncio
-    async def test_tax_from_invoice_param_override(self, db_session, business_profile, test_client):
+    async def test_tax_from_invoice_param_override(
+        self, db_session, business_profile, client_record
+    ):
         """Invoice parameter overrides both client and global."""
         business_profile.default_tax_enabled = 1
         business_profile.default_tax_rate = Decimal("8.25")
-        test_client.tax_rate = Decimal("10.00")
+        client_record.tax_rate = Decimal("10.00")
         await db_session.commit()
 
         invoice = await InvoiceService.create_invoice(
             db_session,
-            client_id=test_client.id,
+            client_id=client_record.id,
             tax_enabled=True,
             tax_rate=Decimal("5.00"),
             tax_name="Special Tax",
@@ -129,10 +131,10 @@ class TestRecurringInvoices:
     """Tests for recurring invoice schedules."""
 
     @pytest.mark.asyncio
-    async def test_create_monthly_schedule(self, db_session, test_client):
+    async def test_create_monthly_schedule(self, db_session, client_record):
         schedule = await RecurringService.create_schedule(
             db_session,
-            client_id=test_client.id,
+            client_id=client_record.id,
             name="Monthly Retainer",
             frequency="monthly",
             schedule_day=15,
@@ -147,7 +149,7 @@ class TestRecurringInvoices:
 
     @pytest.mark.asyncio
     async def test_create_monthly_schedule_preserves_31st_when_available(
-        self, db_session, test_client, monkeypatch
+        self, db_session, client_record, monkeypatch
     ):
         """Initial monthly scheduling keeps day 31 when the target month supports it."""
 
@@ -157,7 +159,7 @@ class TestRecurringInvoices:
 
         schedule = await RecurringService.create_schedule(
             db_session,
-            client_id=test_client.id,
+            client_id=client_record.id,
             name="Month End",
             frequency="monthly",
             schedule_day=31,
@@ -166,10 +168,10 @@ class TestRecurringInvoices:
         assert schedule.next_invoice_date == date(2025, 7, 31)
 
     @pytest.mark.asyncio
-    async def test_create_weekly_schedule(self, db_session, test_client):
+    async def test_create_weekly_schedule(self, db_session, client_record):
         schedule = await RecurringService.create_schedule(
             db_session,
-            client_id=test_client.id,
+            client_id=client_record.id,
             name="Weekly Report",
             frequency="weekly",
             schedule_day=0,  # Monday
@@ -180,43 +182,43 @@ class TestRecurringInvoices:
         assert schedule.schedule_day == 0
 
     @pytest.mark.asyncio
-    async def test_invalid_frequency(self, db_session, test_client):
+    async def test_invalid_frequency(self, db_session, client_record):
         with pytest.raises(ValueError, match="Invalid frequency"):
             await RecurringService.create_schedule(
                 db_session,
-                client_id=test_client.id,
+                client_id=client_record.id,
                 name="Invalid",
                 frequency="biweekly",
             )
 
     @pytest.mark.asyncio
-    async def test_invalid_schedule_day_weekly(self, db_session, test_client):
+    async def test_invalid_schedule_day_weekly(self, db_session, client_record):
         with pytest.raises(ValueError, match="schedule_day must be 0-6"):
             await RecurringService.create_schedule(
                 db_session,
-                client_id=test_client.id,
+                client_id=client_record.id,
                 name="Invalid",
                 frequency="weekly",
                 schedule_day=7,
             )
 
     @pytest.mark.asyncio
-    async def test_invalid_schedule_day_monthly(self, db_session, test_client):
+    async def test_invalid_schedule_day_monthly(self, db_session, client_record):
         with pytest.raises(ValueError, match="schedule_day must be 1-31"):
             await RecurringService.create_schedule(
                 db_session,
-                client_id=test_client.id,
+                client_id=client_record.id,
                 name="Invalid",
                 frequency="monthly",
                 schedule_day=32,
             )
 
     @pytest.mark.asyncio
-    async def test_update_schedule_validates_schedule_day(self, db_session, test_client):
+    async def test_update_schedule_validates_schedule_day(self, db_session, client_record):
         """Updating a schedule enforces frequency-specific schedule day rules."""
         schedule = await RecurringService.create_schedule(
             db_session,
-            client_id=test_client.id,
+            client_id=client_record.id,
             name="Weekly",
             frequency="weekly",
             schedule_day=1,
@@ -229,7 +231,7 @@ class TestRecurringInvoices:
 
     @pytest.mark.asyncio
     async def test_update_schedule_recalculates_next_date(
-        self, db_session, test_client, monkeypatch
+        self, db_session, client_record, monkeypatch
     ):
         """Changing schedule cadence recalculates the stored next invoice date."""
 
@@ -237,7 +239,7 @@ class TestRecurringInvoices:
 
         schedule = await RecurringService.create_schedule(
             db_session,
-            client_id=test_client.id,
+            client_id=client_record.id,
             name="Monthly Retainer",
             frequency="monthly",
             schedule_day=15,
@@ -251,10 +253,10 @@ class TestRecurringInvoices:
         assert updated.next_invoice_date == date(2025, 1, 20)
 
     @pytest.mark.asyncio
-    async def test_trigger_schedule(self, db_session, business_profile, test_client):
+    async def test_trigger_schedule(self, db_session, business_profile, client_record):
         schedule = await RecurringService.create_schedule(
             db_session,
-            client_id=test_client.id,
+            client_id=client_record.id,
             name="Test Schedule",
             frequency="monthly",
             schedule_day=1,
@@ -269,14 +271,14 @@ class TestRecurringInvoices:
 
         invoice = await InvoiceService.get_invoice(db_session, result["invoice_id"])
         assert invoice is not None
-        assert invoice.client_id == test_client.id
+        assert invoice.client_id == client_record.id
         assert invoice.total == Decimal("100.00")
 
     @pytest.mark.asyncio
-    async def test_pause_and_resume_schedule(self, db_session, test_client):
+    async def test_pause_and_resume_schedule(self, db_session, client_record):
         schedule = await RecurringService.create_schedule(
             db_session,
-            client_id=test_client.id,
+            client_id=client_record.id,
             name="Test",
             frequency="monthly",
         )
@@ -292,17 +294,17 @@ class TestRecurringInvoices:
         assert schedule.is_active == 1
 
     @pytest.mark.asyncio
-    async def test_list_schedules_active_only(self, db_session, test_client):
+    async def test_list_schedules_active_only(self, db_session, client_record):
         _active = await RecurringService.create_schedule(
             db_session,
-            client_id=test_client.id,
+            client_id=client_record.id,
             name="Active",
             frequency="monthly",
         )
 
         paused = await RecurringService.create_schedule(
             db_session,
-            client_id=test_client.id,
+            client_id=client_record.id,
             name="Paused",
             frequency="monthly",
         )
@@ -316,10 +318,10 @@ class TestRecurringInvoices:
         assert len(schedules) == 2
 
     @pytest.mark.asyncio
-    async def test_delete_schedule(self, db_session, test_client):
+    async def test_delete_schedule(self, db_session, client_record):
         schedule = await RecurringService.create_schedule(
             db_session,
-            client_id=test_client.id,
+            client_id=client_record.id,
             name="To Delete",
             frequency="monthly",
         )
@@ -357,17 +359,17 @@ class TestSearch:
     """Tests for FTS5 search functionality."""
 
     @pytest.mark.asyncio
-    async def test_search_clients_by_name(self, db_session, test_client):
-        test_client.name = "John Doe"
-        test_client.business_name = "Acme Corporation"
+    async def test_search_clients_by_name(self, db_session, client_record):
+        client_record.name = "John Doe"
+        client_record.business_name = "Acme Corporation"
         await db_session.commit()
 
         results = await SearchService.search(db_session, "John")
         assert len(results["clients"]) >= 1
 
     @pytest.mark.asyncio
-    async def test_search_clients_by_business_name(self, db_session, test_client):
-        test_client.business_name = "Acme Corporation"
+    async def test_search_clients_by_business_name(self, db_session, client_record):
+        client_record.business_name = "Acme Corporation"
         await db_session.commit()
 
         results = await SearchService.search(db_session, "Acme")
@@ -424,7 +426,7 @@ class TestSearch:
         assert isinstance(results, dict)
 
     @pytest.mark.asyncio
-    async def test_search_only_invoices(self, db_session, test_client):
+    async def test_search_only_invoices(self, db_session, client_record):
         results = await SearchService.search(
             db_session, "test", search_invoices=True, search_clients=False
         )
@@ -433,7 +435,7 @@ class TestSearch:
         assert results["clients"] == []
 
     @pytest.mark.asyncio
-    async def test_search_only_clients(self, db_session, test_client):
+    async def test_search_only_clients(self, db_session, client_record):
         results = await SearchService.search(
             db_session, "test", search_invoices=False, search_clients=True
         )
@@ -510,10 +512,10 @@ class TestClientTaxSettings:
         assert client.tax_name == "State Tax"
 
     @pytest.mark.asyncio
-    async def test_update_client_tax_settings(self, db_session, test_client):
+    async def test_update_client_tax_settings(self, db_session, client_record):
         updated = await ClientService.update_client(
             db_session,
-            test_client.id,
+            client_record.id,
             tax_enabled=1,
             tax_rate=Decimal("5.00"),
         )
@@ -522,16 +524,16 @@ class TestClientTaxSettings:
         assert updated.tax_rate == Decimal("5.00")
 
     @pytest.mark.asyncio
-    async def test_client_null_tax_uses_global(self, db_session, business_profile, test_client):
+    async def test_client_null_tax_uses_global(self, db_session, business_profile, client_record):
         business_profile.default_tax_enabled = 1
         business_profile.default_tax_rate = Decimal("8.00")
         await db_session.commit()
 
-        assert test_client.tax_enabled is None
+        assert client_record.tax_enabled is None
 
         invoice = await InvoiceService.create_invoice(
             db_session,
-            client_id=test_client.id,
+            client_id=client_record.id,
             items=[{"description": "Service", "quantity": 1, "unit_price": 100}],
         )
 
@@ -543,7 +545,7 @@ class TestRecurringScheduleFields:
 
     @pytest.mark.asyncio
     async def test_unrelated_edit_does_not_reset_next_invoice_date(
-        self, db_session, test_client, monkeypatch
+        self, db_session, client_record, monkeypatch
     ):
         """Renaming a schedule must not move the next billing date.
 
@@ -553,7 +555,7 @@ class TestRecurringScheduleFields:
         _freeze_recurring_clock(monkeypatch, 2025, 3, 10)
         schedule = await RecurringService.create_schedule(
             db_session,
-            client_id=test_client.id,
+            client_id=client_record.id,
             name="Retainer",
             frequency="monthly",
             schedule_day=15,
@@ -572,11 +574,11 @@ class TestRecurringScheduleFields:
         assert updated.next_invoice_date == date(2025, 3, 15)
 
     @pytest.mark.asyncio
-    async def test_yearly_schedule_honours_configured_month(self, db_session, test_client):
+    async def test_yearly_schedule_honours_configured_month(self, db_session, client_record):
         """A "yearly in March" schedule must bill in March, not its creation month."""
         schedule = await RecurringService.create_schedule(
             db_session,
-            client_id=test_client.id,
+            client_id=client_record.id,
             name="Annual",
             frequency="yearly",
             schedule_day=15,
@@ -597,11 +599,11 @@ class TestRecurringScheduleFields:
         assert from_july == date(2026, 3, 15)
 
     @pytest.mark.asyncio
-    async def test_quarterly_schedule_honours_month_in_quarter(self, db_session, test_client):
+    async def test_quarterly_schedule_honours_month_in_quarter(self, db_session, client_record):
         """ "2nd month of the quarter" must mean Feb/May/Aug/Nov."""
         schedule = await RecurringService.create_schedule(
             db_session,
-            client_id=test_client.id,
+            client_id=client_record.id,
             name="Quarterly Hosting",
             frequency="quarterly",
             schedule_day=10,
@@ -617,12 +619,12 @@ class TestRecurringScheduleFields:
 
     @pytest.mark.asyncio
     async def test_generated_invoice_inherits_payment_instruction_settings(
-        self, db_session, business_profile, test_client
+        self, db_session, business_profile, client_record
     ):
         """Payment-method selections configured on a schedule reach its invoices."""
         schedule = await RecurringService.create_schedule(
             db_session,
-            client_id=test_client.id,
+            client_id=client_record.id,
             name="Retainer",
             frequency="monthly",
             schedule_day=1,
@@ -640,7 +642,7 @@ class TestRecurringScheduleFields:
 
     @pytest.mark.asyncio
     async def test_use_default_notes_pulls_from_business_profile(
-        self, db_session, business_profile, test_client
+        self, db_session, business_profile, client_record
     ):
         """use_default_notes makes generated invoices use the profile's notes."""
         business_profile.default_notes = "Thanks for your business."
@@ -648,7 +650,7 @@ class TestRecurringScheduleFields:
 
         schedule = await RecurringService.create_schedule(
             db_session,
-            client_id=test_client.id,
+            client_id=client_record.id,
             name="Retainer",
             frequency="monthly",
             schedule_day=1,
@@ -675,13 +677,13 @@ class TestRecurringScheduleFields:
 
     @pytest.mark.asyncio
     async def test_malformed_line_items_do_not_abort_the_whole_run(
-        self, db_session, business_profile, test_client
+        self, db_session, business_profile, client_record
     ):
         """One schedule with corrupt stored JSON must not kill the other schedules."""
         today = utc_now().date()
         broken = await RecurringService.create_schedule(
             db_session,
-            client_id=test_client.id,
+            client_id=client_record.id,
             name="Broken",
             frequency="monthly",
             schedule_day=1,
@@ -690,7 +692,7 @@ class TestRecurringScheduleFields:
         broken.line_items = "{not valid json"
         healthy = await RecurringService.create_schedule(
             db_session,
-            client_id=test_client.id,
+            client_id=client_record.id,
             name="Healthy",
             frequency="monthly",
             schedule_day=1,
@@ -727,10 +729,12 @@ class TestSearchFallbackRobustness:
         assert len(notes_found) <= 1, f"wildcard leaked, matched {notes_found}"
 
     @pytest.mark.asyncio
-    async def test_underscore_in_query_is_literal(self, db_session, business_profile, test_client):
+    async def test_underscore_in_query_is_literal(
+        self, db_session, business_profile, client_record
+    ):
         from invoice_machine.service.search import SearchService
 
-        await ClientService.update_client(db_session, test_client.id, notes="ref a_b")
+        await ClientService.update_client(db_session, client_record.id, notes="ref a_b")
         matches = await SearchService._fallback_client_search(db_session, "a_b", 20)
         assert len(matches) == 1
 
@@ -800,10 +804,10 @@ class TestFtsRebuildAtomicity:
 class TestResumeSkipsMissedPeriods:
     """Resuming never back-fills (and auto-emails) the periods missed while paused."""
 
-    async def _stale_schedule(self, db_session, test_client):
+    async def _stale_schedule(self, db_session, client_record):
         schedule = await RecurringService.create_schedule(
             db_session,
-            client_id=test_client.id,
+            client_id=client_record.id,
             name="Retainer",
             frequency="weekly",
             schedule_day=0,
@@ -814,9 +818,9 @@ class TestResumeSkipsMissedPeriods:
 
     @pytest.mark.asyncio
     async def test_resume_advances_a_past_next_date(
-        self, db_session, business_profile, test_client
+        self, db_session, business_profile, client_record
     ):
-        schedule = await self._stale_schedule(db_session, test_client)
+        schedule = await self._stale_schedule(db_session, client_record)
         await RecurringService.pause_schedule(db_session, schedule.id)
 
         await RecurringService.resume_schedule(db_session, schedule.id)
@@ -829,9 +833,9 @@ class TestResumeSkipsMissedPeriods:
 
     @pytest.mark.asyncio
     async def test_activating_through_update_advances_a_past_next_date(
-        self, db_session, business_profile, test_client
+        self, db_session, business_profile, client_record
     ):
-        schedule = await self._stale_schedule(db_session, test_client)
+        schedule = await self._stale_schedule(db_session, client_record)
         await RecurringService.pause_schedule(db_session, schedule.id)
 
         await RecurringService.update_schedule(db_session, schedule.id, is_active=1)
@@ -841,14 +845,14 @@ class TestResumeSkipsMissedPeriods:
 
     @pytest.mark.asyncio
     async def test_restoring_a_client_advances_its_schedules(
-        self, db_session, business_profile, test_client
+        self, db_session, business_profile, client_record
     ):
         from invoice_machine.service.clients import ClientService
 
-        schedule = await self._stale_schedule(db_session, test_client)
-        await ClientService.delete_client(db_session, test_client.id)
+        schedule = await self._stale_schedule(db_session, client_record)
+        await ClientService.delete_client(db_session, client_record.id)
 
-        await ClientService.restore_client(db_session, test_client.id)
+        await ClientService.restore_client(db_session, client_record.id)
         await db_session.refresh(schedule)
 
         assert schedule.next_invoice_date >= utc_now().date()

@@ -12,10 +12,10 @@ from invoice_machine.service.payments import PaymentService
 from invoice_machine.utils import utc_now
 
 
-async def _draft(db_session, test_client, total="100.00", **kwargs):
+async def _draft(db_session, client_record, total="100.00", **kwargs):
     return await InvoiceService.create_invoice(
         db_session,
-        client_id=test_client.id,
+        client_id=client_record.id,
         items=[{"description": "Service", "quantity": 1, "unit_price": total}],
         **kwargs,
     )
@@ -26,30 +26,30 @@ class TestDueOnReceipt:
 
     @pytest.mark.asyncio
     async def test_zero_terms_make_the_invoice_due_on_issue(
-        self, db_session, business_profile, test_client
+        self, db_session, business_profile, client_record
     ):
-        invoice = await _draft(db_session, test_client, payment_terms_days=0)
+        invoice = await _draft(db_session, client_record, payment_terms_days=0)
 
         assert invoice.payment_terms_days == 0
         assert invoice.due_date == invoice.issue_date
 
     @pytest.mark.asyncio
     async def test_zero_terms_on_the_client_are_inherited(
-        self, db_session, business_profile, test_client
+        self, db_session, business_profile, client_record
     ):
-        test_client.payment_terms_days = 0
+        client_record.payment_terms_days = 0
         await db_session.commit()
 
-        invoice = await _draft(db_session, test_client)
+        invoice = await _draft(db_session, client_record)
 
         assert invoice.payment_terms_days == 0
         assert invoice.due_date == invoice.issue_date
 
     @pytest.mark.asyncio
     async def test_quote_conversion_keeps_zero_terms(
-        self, db_session, business_profile, test_client
+        self, db_session, business_profile, client_record
     ):
-        quote = await _draft(db_session, test_client, document_type="quote", payment_terms_days=0)
+        quote = await _draft(db_session, client_record, document_type="quote", payment_terms_days=0)
 
         invoice = await InvoiceService.convert_quote_to_invoice(db_session, quote.id)
 
@@ -61,16 +61,16 @@ class TestDueOnReceipt:
 class TestPaidDraftLeavesDraft:
     """A draft paid in full settles to paid once it is issued."""
 
-    async def _paid_draft(self, db_session, test_client):
-        invoice = await _draft(db_session, test_client)
+    async def _paid_draft(self, db_session, client_record):
+        invoice = await _draft(db_session, client_record)
         await PaymentService.record_payment(db_session, invoice.id, amount="100.00")
         await db_session.refresh(invoice)
         assert invoice.status == "draft"
         return invoice
 
     @pytest.mark.asyncio
-    async def test_status_update_to_sent(self, db_session, business_profile, test_client):
-        invoice = await self._paid_draft(db_session, test_client)
+    async def test_status_update_to_sent(self, db_session, business_profile, client_record):
+        invoice = await self._paid_draft(db_session, client_record)
 
         updated = await InvoiceService.update_invoice(db_session, invoice.id, status="sent")
 
@@ -78,8 +78,8 @@ class TestPaidDraftLeavesDraft:
         assert updated.paid_at is not None
 
     @pytest.mark.asyncio
-    async def test_bulk_mark_sent(self, db_session, business_profile, test_client):
-        invoice = await self._paid_draft(db_session, test_client)
+    async def test_bulk_mark_sent(self, db_session, business_profile, client_record):
+        invoice = await self._paid_draft(db_session, client_record)
 
         result = await InvoiceService.bulk_action(db_session, "mark_sent", [invoice.id])
         await db_session.refresh(invoice)
@@ -89,10 +89,10 @@ class TestPaidDraftLeavesDraft:
         assert invoice.paid_at is not None
 
     @pytest.mark.asyncio
-    async def test_email_send(self, db_session, business_profile, test_client, monkeypatch):
+    async def test_email_send(self, db_session, business_profile, client_record, monkeypatch):
         from unittest.mock import AsyncMock
 
-        invoice = await self._paid_draft(db_session, test_client)
+        invoice = await self._paid_draft(db_session, client_record)
         business_profile.smtp_enabled = 1
         await db_session.commit()
         monkeypatch.setattr(
@@ -125,9 +125,9 @@ class TestServiceLayerBounds:
         ],
     )
     async def test_update_invoice_rejects_out_of_range(
-        self, db_session, business_profile, test_client, kwargs
+        self, db_session, business_profile, client_record, kwargs
     ):
-        invoice = await _draft(db_session, test_client)
+        invoice = await _draft(db_session, client_record)
 
         with pytest.raises(ValueError):
             await InvoiceService.update_invoice(db_session, invoice.id, **kwargs)
@@ -138,28 +138,28 @@ class TestServiceLayerBounds:
         [{"payment_terms_days": -5}, {"document_type": "memo"}, {"tax_rate": Decimal("101")}],
     )
     async def test_create_invoice_rejects_out_of_range(
-        self, db_session, business_profile, test_client, kwargs
+        self, db_session, business_profile, client_record, kwargs
     ):
         with pytest.raises(ValueError):
-            await _draft(db_session, test_client, **kwargs)
+            await _draft(db_session, client_record, **kwargs)
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize("kwargs", [{"tax_rate": Decimal("101")}, {"payment_terms_days": -1}])
     async def test_client_create_and_update_reject_out_of_range(
-        self, db_session, test_client, kwargs
+        self, db_session, client_record, kwargs
     ):
         with pytest.raises(ValueError):
             await ClientService.create_client(db_session, name="Bad", **kwargs)
         with pytest.raises(ValueError):
-            await ClientService.update_client(db_session, test_client.id, **kwargs)
+            await ClientService.update_client(db_session, client_record.id, **kwargs)
 
 
 class TestUpdateOrdering:
     @pytest.mark.asyncio
     async def test_paid_with_a_tax_change_settles_the_new_total(
-        self, db_session, business_profile, test_client
+        self, db_session, business_profile, client_record
     ):
-        invoice = await _draft(db_session, test_client, tax_enabled=False)
+        invoice = await _draft(db_session, client_record, tax_enabled=False)
         await InvoiceService.update_invoice(db_session, invoice.id, status="sent")
 
         updated = await InvoiceService.update_invoice(
@@ -176,9 +176,9 @@ class TestUpdateOrdering:
 
     @pytest.mark.asyncio
     async def test_unpaying_with_a_tax_change_drops_the_marked_paid_row(
-        self, db_session, business_profile, test_client
+        self, db_session, business_profile, client_record
     ):
-        invoice = await _draft(db_session, test_client, tax_enabled=False)
+        invoice = await _draft(db_session, client_record, tax_enabled=False)
         await InvoiceService.update_invoice(db_session, invoice.id, status="paid")
 
         updated = await InvoiceService.update_invoice(
@@ -195,12 +195,12 @@ class TestUpdateOrdering:
 
     @pytest.mark.asyncio
     async def test_overdue_moved_to_a_future_due_date_is_sent_again(
-        self, db_session, business_profile, test_client
+        self, db_session, business_profile, client_record
     ):
         today = utc_now().date()
         invoice = await _draft(
             db_session,
-            test_client,
+            client_record,
             issue_date=today - timedelta(days=40),
             due_date=today - timedelta(days=10),
         )

@@ -128,8 +128,8 @@ async def business_profile(db_session: AsyncSession) -> BusinessProfile:
 
 
 @pytest.fixture
-async def test_client(db_session: AsyncSession) -> Client:
-    """Create a test client."""
+async def client_record(db_session: AsyncSession) -> Client:
+    """A client row (the HTTP client fixture in tests/api is test_client)."""
     client = Client(
         name="John Doe",
         business_name="Acme Corp",
@@ -148,15 +148,15 @@ async def test_client(db_session: AsyncSession) -> Client:
 
 
 @pytest.fixture
-async def invoice_with_client(db_session: AsyncSession, test_client: Client) -> Invoice:
+async def invoice_with_client(db_session: AsyncSession, client_record: Client) -> Invoice:
     """Create a test invoice with client data for email preview testing."""
     invoice = Invoice(
         invoice_number="20250120-1",
         document_type="invoice",
-        client_id=test_client.id,
-        client_name=test_client.name,
-        client_business=test_client.business_name,
-        client_email=test_client.email,
+        client_id=client_record.id,
+        client_name=client_record.name,
+        client_business=client_record.business_name,
+        client_email=client_record.email,
         issue_date=date.today(),
         due_date=date.today() + timedelta(days=30),
         subtotal=Decimal("100.00"),
@@ -171,15 +171,15 @@ async def invoice_with_client(db_session: AsyncSession, test_client: Client) -> 
 
 
 @pytest.fixture
-async def invoice_with_items(db_session: AsyncSession, test_client: Client) -> Invoice:
+async def invoice_with_items(db_session: AsyncSession, client_record: Client) -> Invoice:
     """Create a test invoice with line items for email preview testing."""
     invoice = Invoice(
         invoice_number="20250120-ITEMS",
         document_type="invoice",
-        client_id=test_client.id,
-        client_name=test_client.name,
-        client_business=test_client.business_name,
-        client_email=test_client.email,
+        client_id=client_record.id,
+        client_name=client_record.name,
+        client_business=client_record.business_name,
+        client_email=client_record.email,
         issue_date=date.today(),
         due_date=date.today() + timedelta(days=30),
         subtotal=Decimal("350.00"),
@@ -216,15 +216,15 @@ async def invoice_with_items(db_session: AsyncSession, test_client: Client) -> I
 
 
 @pytest.fixture
-async def quote_with_client(db_session: AsyncSession, test_client: Client) -> Invoice:
+async def quote_with_client(db_session: AsyncSession, client_record: Client) -> Invoice:
     """Create a test quote with client data for email preview testing."""
     quote = Invoice(
         invoice_number="Q-20250120-1",
         document_type="quote",
-        client_id=test_client.id,
-        client_name=test_client.name,
-        client_business=test_client.business_name,
-        client_email=test_client.email,
+        client_id=client_record.id,
+        client_name=client_record.name,
+        client_business=client_record.business_name,
+        client_email=client_record.email,
         issue_date=date.today(),
         due_date=date.today() + timedelta(days=30),
         subtotal=Decimal("250.00"),

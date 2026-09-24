@@ -34,6 +34,7 @@
   // Plaintext of a key just created or rotated, by key id. Never fetched again,
   // so it is held here rather than in the collapsible section's children.
   let revealed = $state<Record<number, string>>({});
+  let busy = $state<Record<string, boolean>>({ mcp: false, bot: false });
 
   const mcpKeys = $derived(keys.filter((key) => key.kind === 'mcp'));
   const botKeys = $derived(keys.filter((key) => key.kind === 'bot'));
@@ -96,6 +97,7 @@
     placeholder="Key name (e.g. Laptop)"
     {drafts}
     {revealed}
+    {busy}
     onchanged={load}
   />
 
@@ -156,6 +158,7 @@
     placeholder="Key name (e.g. CI runner)"
     {drafts}
     {revealed}
+    {busy}
     onchanged={load}
   />
 

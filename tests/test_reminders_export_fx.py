@@ -40,8 +40,8 @@ class TestReminderSchedule:
             validate_reminder_offsets(["soon"])
 
     @pytest.mark.asyncio
-    async def test_offset_fires_on_its_day(self, db_session, business_profile, test_client):
-        invoice = await InvoiceService.create_invoice(db_session, client_id=test_client.id)
+    async def test_offset_fires_on_its_day(self, db_session, business_profile, client_record):
+        invoice = await InvoiceService.create_invoice(db_session, client_id=client_record.id)
         today = utc_now().date()
         invoice.due_date = today - timedelta(days=7)
 
@@ -50,9 +50,9 @@ class TestReminderSchedule:
 
     @pytest.mark.asyncio
     async def test_already_sent_offsets_do_not_refire(
-        self, db_session, business_profile, test_client
+        self, db_session, business_profile, client_record
     ):
-        invoice = await InvoiceService.create_invoice(db_session, client_id=test_client.id)
+        invoice = await InvoiceService.create_invoice(db_session, client_id=client_record.id)
         today = utc_now().date()
         invoice.due_date = today - timedelta(days=7)
         invoice.reminders_sent = json.dumps([-3, 1, 7])
@@ -61,10 +61,10 @@ class TestReminderSchedule:
 
     @pytest.mark.asyncio
     async def test_enabling_reminders_late_sends_only_the_latest(
-        self, db_session, business_profile, test_client
+        self, db_session, business_profile, client_record
     ):
         """Turning reminders on for an old invoice must not send a burst of four."""
-        invoice = await InvoiceService.create_invoice(db_session, client_id=test_client.id)
+        invoice = await InvoiceService.create_invoice(db_session, client_id=client_record.id)
         today = utc_now().date()
         invoice.due_date = today - timedelta(days=90)
 
@@ -72,9 +72,9 @@ class TestReminderSchedule:
 
     @pytest.mark.asyncio
     async def test_invoice_without_due_date_is_skipped(
-        self, db_session, business_profile, test_client
+        self, db_session, business_profile, client_record
     ):
-        invoice = await InvoiceService.create_invoice(db_session, client_id=test_client.id)
+        invoice = await InvoiceService.create_invoice(db_session, client_id=client_record.id)
         invoice.due_date = None
         assert due_offsets_for(invoice, [1, 7], utc_now().date()) == []
 
@@ -82,7 +82,7 @@ class TestReminderSchedule:
 class TestReminderSending:
     """The daily sweep."""
 
-    async def _reminder_setup(self, db_session, business_profile, test_client, days_overdue=7):
+    async def _reminder_setup(self, db_session, business_profile, client_record, days_overdue=7):
         business_profile.reminders_enabled = 1
         business_profile.smtp_enabled = 1
         business_profile.reminder_offsets = json.dumps([-3, 1, 7, 14])
@@ -90,7 +90,7 @@ class TestReminderSending:
 
         invoice = await InvoiceService.create_invoice(
             db_session,
-            client_id=test_client.id,
+            client_id=client_record.id,
             items=[{"description": "Service", "quantity": 1, "unit_price": 500}],
         )
         await InvoiceService.update_invoice(db_session, invoice.id, status="sent")
@@ -101,8 +101,8 @@ class TestReminderSending:
         return invoice
 
     @pytest.mark.asyncio
-    async def test_reminder_is_sent_and_recorded(self, db_session, business_profile, test_client):
-        invoice = await self._reminder_setup(db_session, business_profile, test_client)
+    async def test_reminder_is_sent_and_recorded(self, db_session, business_profile, client_record):
+        invoice = await self._reminder_setup(db_session, business_profile, client_record)
 
         with patch(
             "invoice_machine.service.email.send_invoice_email",
@@ -117,8 +117,8 @@ class TestReminderSending:
         assert invoice.last_reminder_sent_at is not None
 
     @pytest.mark.asyncio
-    async def test_running_twice_sends_once(self, db_session, business_profile, test_client):
-        await self._reminder_setup(db_session, business_profile, test_client)
+    async def test_running_twice_sends_once(self, db_session, business_profile, client_record):
+        await self._reminder_setup(db_session, business_profile, client_record)
 
         sender = AsyncMock(return_value={"success": True, "recipient": "client@example.com"})
         with patch("invoice_machine.service.email.send_invoice_email", new=sender):
@@ -129,9 +129,9 @@ class TestReminderSending:
 
     @pytest.mark.asyncio
     async def test_failed_send_is_not_recorded_so_it_retries(
-        self, db_session, business_profile, test_client
+        self, db_session, business_profile, client_record
     ):
-        invoice = await self._reminder_setup(db_session, business_profile, test_client)
+        invoice = await self._reminder_setup(db_session, business_profile, client_record)
 
         with patch(
             "invoice_machine.service.email.send_invoice_email",
@@ -145,10 +145,10 @@ class TestReminderSending:
 
     @pytest.mark.asyncio
     async def test_one_failing_reminder_does_not_abort_the_sweep(
-        self, db_session, business_profile, test_client
+        self, db_session, business_profile, client_record
     ):
-        first = await self._reminder_setup(db_session, business_profile, test_client)
-        second = await self._reminder_setup(db_session, business_profile, test_client)
+        first = await self._reminder_setup(db_session, business_profile, client_record)
+        second = await self._reminder_setup(db_session, business_profile, client_record)
         first_id = first.id
         updated_before = second.updated_at
 
@@ -168,9 +168,9 @@ class TestReminderSending:
 
     @pytest.mark.asyncio
     async def test_fully_paid_invoice_is_not_chased(
-        self, db_session, business_profile, test_client
+        self, db_session, business_profile, client_record
     ):
-        invoice = await self._reminder_setup(db_session, business_profile, test_client)
+        invoice = await self._reminder_setup(db_session, business_profile, client_record)
         await PaymentService.record_payment(db_session, invoice.id, amount="500.00")
 
         sender = AsyncMock(return_value={"success": True})
@@ -182,9 +182,9 @@ class TestReminderSending:
 
     @pytest.mark.asyncio
     async def test_partially_paid_invoice_is_still_chased(
-        self, db_session, business_profile, test_client
+        self, db_session, business_profile, client_record
     ):
-        invoice = await self._reminder_setup(db_session, business_profile, test_client)
+        invoice = await self._reminder_setup(db_session, business_profile, client_record)
         await PaymentService.record_payment(db_session, invoice.id, amount="100.00")
 
         with patch(
@@ -196,8 +196,8 @@ class TestReminderSending:
         assert len(results) == 1
 
     @pytest.mark.asyncio
-    async def test_disabled_reminders_do_nothing(self, db_session, business_profile, test_client):
-        await self._reminder_setup(db_session, business_profile, test_client)
+    async def test_disabled_reminders_do_nothing(self, db_session, business_profile, client_record):
+        await self._reminder_setup(db_session, business_profile, client_record)
         business_profile.reminders_enabled = 0
         await db_session.commit()
 
@@ -205,9 +205,9 @@ class TestReminderSending:
 
     @pytest.mark.asyncio
     async def test_reminder_body_reports_the_outstanding_balance(
-        self, db_session, business_profile, test_client
+        self, db_session, business_profile, client_record
     ):
-        invoice = await self._reminder_setup(db_session, business_profile, test_client)
+        invoice = await self._reminder_setup(db_session, business_profile, client_record)
         await PaymentService.record_payment(db_session, invoice.id, amount="200.00")
         await db_session.refresh(invoice)
 
@@ -221,11 +221,11 @@ class TestCsvExport:
 
     @pytest.mark.asyncio
     async def test_invoice_export_has_header_and_rows(
-        self, db_session, business_profile, test_client
+        self, db_session, business_profile, client_record
     ):
         invoice = await InvoiceService.create_invoice(
             db_session,
-            client_id=test_client.id,
+            client_id=client_record.id,
             items=[{"description": "Consulting", "quantity": 2, "unit_price": 250}],
         )
         await PaymentService.record_payment(db_session, invoice.id, amount="100.00")
@@ -243,11 +243,11 @@ class TestCsvExport:
 
     @pytest.mark.asyncio
     async def test_line_item_export_is_one_row_per_item(
-        self, db_session, business_profile, test_client
+        self, db_session, business_profile, client_record
     ):
         await InvoiceService.create_invoice(
             db_session,
-            client_id=test_client.id,
+            client_id=client_record.id,
             items=[
                 {"description": "Design", "quantity": 1, "unit_price": 100},
                 {"description": "Build", "quantity": 3, "unit_price": 200},
@@ -258,10 +258,10 @@ class TestCsvExport:
         assert "Design" in csv_text and "Build" in csv_text
 
     @pytest.mark.asyncio
-    async def test_payment_export(self, db_session, business_profile, test_client):
+    async def test_payment_export(self, db_session, business_profile, client_record):
         invoice = await InvoiceService.create_invoice(
             db_session,
-            client_id=test_client.id,
+            client_id=client_record.id,
             items=[{"description": "Service", "quantity": 1, "unit_price": 400}],
         )
         await PaymentService.record_payment(
@@ -274,10 +274,10 @@ class TestCsvExport:
         assert "150.00" in csv_text
 
     @pytest.mark.asyncio
-    async def test_fields_with_commas_are_quoted(self, db_session, business_profile, test_client):
+    async def test_fields_with_commas_are_quoted(self, db_session, business_profile, client_record):
         await InvoiceService.create_invoice(
             db_session,
-            client_id=test_client.id,
+            client_id=client_record.id,
             items=[{"description": 'Design, build, and "launch"', "quantity": 1, "unit_price": 1}],
         )
         csv_text = await export_csv_text(db_session, "line_items")
@@ -290,20 +290,22 @@ class TestCsvExport:
             await export_csv_text(db_session, "nonsense")
 
     @pytest.mark.asyncio
-    async def test_max_rows_truncates_and_says_so(self, db_session, business_profile, test_client):
+    async def test_max_rows_truncates_and_says_so(
+        self, db_session, business_profile, client_record
+    ):
         for _ in range(5):
-            await InvoiceService.create_invoice(db_session, client_id=test_client.id)
+            await InvoiceService.create_invoice(db_session, client_id=client_record.id)
 
         csv_text = await export_csv_text(db_session, "invoices", max_rows=2)
         assert "# truncated at 2 rows" in csv_text
 
     @pytest.mark.asyncio
     async def test_formula_text_is_escaped_but_negative_money_is_not(
-        self, db_session, business_profile, test_client
+        self, db_session, business_profile, client_record
     ):
         invoice = await InvoiceService.create_invoice(
             db_session,
-            client_id=test_client.id,
+            client_id=client_record.id,
             notes="@SUM(A1)",
             items=[{"description": '=HYPERLINK("http://x")', "quantity": 1, "unit_price": 1}],
         )
@@ -321,10 +323,10 @@ class TestCsvExport:
 class TestConsolidatedReporting:
     """Opt-in multi-currency roll-up, with explicit coverage reporting."""
 
-    async def _invoice(self, db_session, test_client, currency, amount, rate=None):
+    async def _invoice(self, db_session, client_record, currency, amount, rate=None):
         invoice = await InvoiceService.create_invoice(
             db_session,
-            client_id=test_client.id,
+            client_id=client_record.id,
             currency_code=currency,
             exchange_rate=rate,
             items=[{"description": "Service", "quantity": 1, "unit_price": amount}],
@@ -334,41 +336,41 @@ class TestConsolidatedReporting:
 
     @pytest.mark.asyncio
     async def test_base_currency_invoice_gets_rate_one(
-        self, db_session, business_profile, test_client
+        self, db_session, business_profile, client_record
     ):
-        invoice = await self._invoice(db_session, test_client, "USD", 100)
+        invoice = await self._invoice(db_session, client_record, "USD", 100)
         assert invoice.exchange_rate == Decimal("1")
         assert invoice.base_currency_code == "USD"
 
     @pytest.mark.asyncio
     async def test_profile_rate_table_is_applied_at_issue(
-        self, db_session, business_profile, test_client
+        self, db_session, business_profile, client_record
     ):
         business_profile.fx_rates = json.dumps({"EUR": "1.10"})
         await db_session.commit()
 
-        invoice = await self._invoice(db_session, test_client, "EUR", 100)
+        invoice = await self._invoice(db_session, client_record, "EUR", 100)
         assert invoice.exchange_rate == Decimal("1.10")
 
     @pytest.mark.asyncio
     async def test_explicit_rate_wins_over_the_table(
-        self, db_session, business_profile, test_client
+        self, db_session, business_profile, client_record
     ):
         business_profile.fx_rates = json.dumps({"EUR": "1.10"})
         await db_session.commit()
 
-        invoice = await self._invoice(db_session, test_client, "EUR", 100, rate=Decimal("1.25"))
+        invoice = await self._invoice(db_session, client_record, "EUR", 100, rate=Decimal("1.25"))
         assert invoice.exchange_rate == Decimal("1.25")
 
     @pytest.mark.asyncio
     async def test_consolidation_converts_and_reports_full_coverage(
-        self, db_session, business_profile, test_client
+        self, db_session, business_profile, client_record
     ):
         business_profile.fx_rates = json.dumps({"EUR": "1.10"})
         await db_session.commit()
 
-        await self._invoice(db_session, test_client, "USD", 100)
-        await self._invoice(db_session, test_client, "EUR", 100)
+        await self._invoice(db_session, client_record, "USD", 100)
+        await self._invoice(db_session, client_record, "EUR", 100)
 
         summary = await analytics_service.consolidated_summary(db_session)
         assert summary["currency"] == "USD"
@@ -378,11 +380,11 @@ class TestConsolidatedReporting:
 
     @pytest.mark.asyncio
     async def test_unconvertible_invoices_are_excluded_and_reported(
-        self, db_session, business_profile, test_client
+        self, db_session, business_profile, client_record
     ):
         """A missing rate must never be silently treated as 1:1."""
-        await self._invoice(db_session, test_client, "USD", 100)
-        await self._invoice(db_session, test_client, "GBP", 500)
+        await self._invoice(db_session, client_record, "USD", 100)
+        await self._invoice(db_session, client_record, "GBP", 500)
 
         summary = await analytics_service.consolidated_summary(db_session)
         assert summary["invoiced"] == "100.00"
@@ -392,12 +394,12 @@ class TestConsolidatedReporting:
 
     @pytest.mark.asyncio
     async def test_consolidation_includes_payments_and_outstanding(
-        self, db_session, business_profile, test_client
+        self, db_session, business_profile, client_record
     ):
         business_profile.fx_rates = json.dumps({"EUR": "2"})
         await db_session.commit()
 
-        invoice = await self._invoice(db_session, test_client, "EUR", 100)
+        invoice = await self._invoice(db_session, client_record, "EUR", 100)
         await PaymentService.record_payment(db_session, invoice.id, amount="40.00")
 
         summary = await analytics_service.consolidated_summary(db_session)
@@ -407,11 +409,11 @@ class TestConsolidatedReporting:
 
     @pytest.mark.asyncio
     async def test_paid_counts_only_billed_invoices(
-        self, db_session, business_profile, test_client
+        self, db_session, business_profile, client_record
     ):
         draft = await InvoiceService.create_invoice(
             db_session,
-            client_id=test_client.id,
+            client_id=client_record.id,
             items=[{"description": "Service", "quantity": 1, "unit_price": 100}],
         )
         await PaymentService.record_payment(db_session, draft.id, amount="40.00")
@@ -426,7 +428,7 @@ class TestSupersededReminders:
 
     @pytest.mark.asyncio
     async def test_older_offsets_are_marked_sent_not_queued(
-        self, db_session, business_profile, test_client
+        self, db_session, business_profile, client_record
     ):
         """Enabling reminders on a long-overdue invoice sends exactly one email."""
         business_profile.reminders_enabled = 1
@@ -436,7 +438,7 @@ class TestSupersededReminders:
 
         invoice = await InvoiceService.create_invoice(
             db_session,
-            client_id=test_client.id,
+            client_id=client_record.id,
             items=[{"description": "Service", "quantity": 1, "unit_price": 500}],
         )
         await InvoiceService.update_invoice(db_session, invoice.id, status="sent")
@@ -498,7 +500,7 @@ class TestReminderTimezone:
 
     @pytest.mark.asyncio
     async def test_days_overdue_counted_in_local_time(
-        self, db_session, business_profile, test_client
+        self, db_session, business_profile, client_record
     ):
         """An invoice due locally today is not yet overdue, whatever UTC says."""
         from invoice_machine.service.reminders import business_now, due_offsets_for
@@ -506,7 +508,7 @@ class TestReminderTimezone:
         business_profile.business_timezone = "Pacific/Auckland"
         await db_session.commit()
 
-        invoice = await InvoiceService.create_invoice(db_session, client_id=test_client.id)
+        invoice = await InvoiceService.create_invoice(db_session, client_id=client_record.id)
         local_today = business_now(business_profile).date()
         invoice.due_date = local_today
 

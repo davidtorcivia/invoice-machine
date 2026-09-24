@@ -6,6 +6,16 @@ Notable changes to Invoice Machine. Format based on
 
 ## [Unreleased]
 
+### Fixed
+
+- Payment reminders were skipped for the day when the send hour was missed, by
+  a DST change skipping that hour or a restart during it. The hourly check now
+  sweeps once a day, at the first run at or after the send hour.
+- An email the server accepted but whose connection close (QUIT) failed was
+  reported as not sent, so a reminder could be sent again.
+- Collapsing the MCP or bot key section while a key was being created or
+  rotated re-enabled its buttons on reopening, allowing a second request.
+
 ## [0.4.0]
 
 ### Added

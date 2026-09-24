@@ -10,10 +10,10 @@ from invoice_machine.service.payments import PaymentService
 from invoice_machine.utils import utc_now
 
 
-async def _invoice(db_session, test_client, total=Decimal("1000.00"), status="sent", due_days=30):
+async def _invoice(db_session, client_record, total=Decimal("1000.00"), status="sent", due_days=30):
     invoice = await InvoiceService.create_invoice(
         db_session,
-        client_id=test_client.id,
+        client_id=client_record.id,
         items=[{"description": "Service", "quantity": 1, "unit_price": total}],
         payment_terms_days=due_days,
     )
@@ -28,9 +28,9 @@ class TestPartialPayments:
 
     @pytest.mark.asyncio
     async def test_partial_payment_leaves_balance_and_status(
-        self, db_session, business_profile, test_client
+        self, db_session, business_profile, client_record
     ):
-        invoice = await _invoice(db_session, test_client)
+        invoice = await _invoice(db_session, client_record)
 
         await PaymentService.record_payment(db_session, invoice.id, amount="400.00")
         await db_session.refresh(invoice)
@@ -43,11 +43,11 @@ class TestPartialPayments:
 
     @pytest.mark.asyncio
     async def test_payment_against_a_quote_is_refused(
-        self, db_session, business_profile, test_client
+        self, db_session, business_profile, client_record
     ):
         quote = await InvoiceService.create_invoice(
             db_session,
-            client_id=test_client.id,
+            client_id=client_record.id,
             document_type="quote",
             items=[{"description": "Proposal", "quantity": 1, "unit_price": "500.00"}],
         )
@@ -61,9 +61,9 @@ class TestPartialPayments:
 
     @pytest.mark.asyncio
     async def test_payments_totalling_the_invoice_mark_it_paid(
-        self, db_session, business_profile, test_client
+        self, db_session, business_profile, client_record
     ):
-        invoice = await _invoice(db_session, test_client)
+        invoice = await _invoice(db_session, client_record)
 
         await PaymentService.record_payment(db_session, invoice.id, amount="400.00")
         await PaymentService.record_payment(db_session, invoice.id, amount="600.00")
@@ -76,9 +76,9 @@ class TestPartialPayments:
 
     @pytest.mark.asyncio
     async def test_deleting_a_payment_reverts_a_paid_invoice(
-        self, db_session, business_profile, test_client
+        self, db_session, business_profile, client_record
     ):
-        invoice = await _invoice(db_session, test_client)
+        invoice = await _invoice(db_session, client_record)
         payment = await PaymentService.record_payment(db_session, invoice.id, amount="1000.00")
         await db_session.refresh(invoice)
         assert invoice.status == "paid"
@@ -92,9 +92,9 @@ class TestPartialPayments:
 
     @pytest.mark.asyncio
     async def test_reverted_payment_returns_to_overdue_when_past_due(
-        self, db_session, business_profile, test_client
+        self, db_session, business_profile, client_record
     ):
-        invoice = await _invoice(db_session, test_client)
+        invoice = await _invoice(db_session, client_record)
         invoice.due_date = utc_now().date() - timedelta(days=5)
         await db_session.commit()
 
@@ -106,9 +106,9 @@ class TestPartialPayments:
 
     @pytest.mark.asyncio
     async def test_overpayment_is_refused_without_opt_in(
-        self, db_session, business_profile, test_client
+        self, db_session, business_profile, client_record
     ):
-        invoice = await _invoice(db_session, test_client)
+        invoice = await _invoice(db_session, client_record)
 
         with pytest.raises(ValueError, match="exceeds the outstanding balance"):
             await PaymentService.record_payment(db_session, invoice.id, amount="1500.00")
@@ -124,9 +124,9 @@ class TestPartialPayments:
 
     @pytest.mark.asyncio
     async def test_non_positive_amounts_are_rejected(
-        self, db_session, business_profile, test_client
+        self, db_session, business_profile, client_record
     ):
-        invoice = await _invoice(db_session, test_client)
+        invoice = await _invoice(db_session, client_record)
         for bad in ("0", "-10", "abc"):
             with pytest.raises(ValueError):
                 await PaymentService.record_payment(db_session, invoice.id, amount=bad)
@@ -137,20 +137,20 @@ class TestPartialPayments:
 
     @pytest.mark.asyncio
     async def test_cancelled_invoice_rejects_payments(
-        self, db_session, business_profile, test_client
+        self, db_session, business_profile, client_record
     ):
-        invoice = await _invoice(db_session, test_client, status="cancelled")
+        invoice = await _invoice(db_session, client_record, status="cancelled")
 
         with pytest.raises(ValueError, match="cancelled"):
             await PaymentService.record_payment(db_session, invoice.id, amount="10")
 
     @pytest.mark.asyncio
     async def test_payment_snapshots_the_invoice_currency(
-        self, db_session, business_profile, test_client
+        self, db_session, business_profile, client_record
     ):
         invoice = await InvoiceService.create_invoice(
             db_session,
-            client_id=test_client.id,
+            client_id=client_record.id,
             currency_code="EUR",
             items=[{"description": "Service", "quantity": 1, "unit_price": 100}],
         )
@@ -159,10 +159,10 @@ class TestPartialPayments:
 
     @pytest.mark.asyncio
     async def test_duplicate_external_id_records_once(
-        self, db_session, business_profile, test_client
+        self, db_session, business_profile, client_record
     ):
         """Webhook idempotency: the same provider event must land only once."""
-        invoice = await _invoice(db_session, test_client)
+        invoice = await _invoice(db_session, client_record)
 
         first = await PaymentService.record_payment(
             db_session, invoice.id, amount="100", provider="stripe", external_id="evt_1"
@@ -177,12 +177,12 @@ class TestPartialPayments:
 
     @pytest.mark.asyncio
     async def test_external_id_unique_race_returns_existing(
-        self, db_session, business_profile, test_client
+        self, db_session, business_profile, client_record
     ):
         """If the pre-check misses a concurrent insert, the unique index still wins."""
         from unittest.mock import patch
 
-        invoice = await _invoice(db_session, test_client)
+        invoice = await _invoice(db_session, client_record)
         invoice_id = invoice.id
         first = await PaymentService.record_payment(
             db_session, invoice_id, amount="100", provider="stripe", external_id="evt_race"
@@ -209,10 +209,10 @@ class TestPartialPayments:
 
     @pytest.mark.asyncio
     async def test_adding_a_line_item_reverts_a_fully_paid_invoice(
-        self, db_session, business_profile, test_client
+        self, db_session, business_profile, client_record
     ):
         """Raising the total above amount_paid must revert a paid invoice."""
-        invoice = await _invoice(db_session, test_client, total=Decimal("100.00"))
+        invoice = await _invoice(db_session, client_record, total=Decimal("100.00"))
         await PaymentService.record_payment(db_session, invoice.id, amount="100.00")
         await db_session.refresh(invoice)
         assert invoice.status == "paid"
@@ -229,9 +229,9 @@ class TestPartialPayments:
 
     @pytest.mark.asyncio
     async def test_marking_paid_records_the_outstanding_balance(
-        self, db_session, business_profile, test_client
+        self, db_session, business_profile, client_record
     ):
-        invoice = await _invoice(db_session, test_client, total=Decimal("250.00"))
+        invoice = await _invoice(db_session, client_record, total=Decimal("250.00"))
         updated = await InvoiceService.update_invoice(db_session, invoice.id, status="paid")
 
         assert updated.status == "paid"
@@ -250,9 +250,9 @@ class TestPartialPayments:
 
     @pytest.mark.asyncio
     async def test_overdue_sweep_skips_a_fully_prepaid_invoice(
-        self, db_session, business_profile, test_client
+        self, db_session, business_profile, client_record
     ):
-        invoice = await _invoice(db_session, test_client, total=Decimal("80.00"), status="draft")
+        invoice = await _invoice(db_session, client_record, total=Decimal("80.00"), status="draft")
         await PaymentService.record_payment(db_session, invoice.id, amount="80.00")
         invoice = await InvoiceService.update_invoice(db_session, invoice.id, status="sent")
         assert invoice.status == "paid"
@@ -271,13 +271,13 @@ class TestAgingReport:
     """A/R aging buckets."""
 
     @pytest.mark.asyncio
-    async def test_buckets_by_days_overdue(self, db_session, business_profile, test_client):
+    async def test_buckets_by_days_overdue(self, db_session, business_profile, client_record):
         today = utc_now().date()
         expectations = {0: "current", 10: "1_30", 45: "31_60", 75: "61_90", 200: "over_90"}
 
         created = {}
         for days, bucket in expectations.items():
-            invoice = await _invoice(db_session, test_client, total=Decimal("100.00"))
+            invoice = await _invoice(db_session, client_record, total=Decimal("100.00"))
             invoice.due_date = today - timedelta(days=days)
             await db_session.commit()
             created[invoice.id] = bucket
@@ -290,9 +290,9 @@ class TestAgingReport:
 
     @pytest.mark.asyncio
     async def test_aging_uses_outstanding_not_total(
-        self, db_session, business_profile, test_client
+        self, db_session, business_profile, client_record
     ):
-        invoice = await _invoice(db_session, test_client, total=Decimal("1000.00"))
+        invoice = await _invoice(db_session, client_record, total=Decimal("1000.00"))
         invoice.due_date = utc_now().date() - timedelta(days=10)
         await db_session.commit()
         await PaymentService.record_payment(db_session, invoice.id, amount="250.00")
@@ -303,11 +303,11 @@ class TestAgingReport:
         assert report["by_currency"]["USD"]["buckets"]["1_30"] == "750.00"
 
     @pytest.mark.asyncio
-    async def test_aging_never_mixes_currencies(self, db_session, business_profile, test_client):
+    async def test_aging_never_mixes_currencies(self, db_session, business_profile, client_record):
         for currency in ("USD", "EUR"):
             invoice = await InvoiceService.create_invoice(
                 db_session,
-                client_id=test_client.id,
+                client_id=client_record.id,
                 currency_code=currency,
                 items=[{"description": "Service", "quantity": 1, "unit_price": 100}],
             )
@@ -320,14 +320,14 @@ class TestAgingReport:
 
     @pytest.mark.asyncio
     async def test_paid_draft_and_quote_are_excluded(
-        self, db_session, business_profile, test_client
+        self, db_session, business_profile, client_record
     ):
-        paid = await _invoice(db_session, test_client)
+        paid = await _invoice(db_session, client_record)
         await PaymentService.record_payment(db_session, paid.id, amount="1000.00")
-        await _invoice(db_session, test_client, status="draft")
+        await _invoice(db_session, client_record, status="draft")
         quote = await InvoiceService.create_invoice(
             db_session,
-            client_id=test_client.id,
+            client_id=client_record.id,
             document_type="quote",
             items=[{"description": "Service", "quantity": 1, "unit_price": 500}],
         )
@@ -342,11 +342,11 @@ class TestQuoteConversion:
 
     @pytest.mark.asyncio
     async def test_conversion_creates_a_linked_invoice(
-        self, db_session, business_profile, test_client
+        self, db_session, business_profile, client_record
     ):
         quote = await InvoiceService.create_invoice(
             db_session,
-            client_id=test_client.id,
+            client_id=client_record.id,
             document_type="quote",
             notes="As discussed",
             items=[
@@ -372,11 +372,11 @@ class TestQuoteConversion:
 
     @pytest.mark.asyncio
     async def test_conversion_carries_the_accepted_tax_snapshot(
-        self, db_session, business_profile, test_client
+        self, db_session, business_profile, client_record
     ):
         quote = await InvoiceService.create_invoice(
             db_session,
-            client_id=test_client.id,
+            client_id=client_record.id,
             document_type="quote",
             tax_enabled=True,
             tax_rate=Decimal("10.00"),
@@ -395,9 +395,9 @@ class TestQuoteConversion:
         assert invoice.total == Decimal("1100.00")
 
     @pytest.mark.asyncio
-    async def test_double_conversion_is_refused(self, db_session, business_profile, test_client):
+    async def test_double_conversion_is_refused(self, db_session, business_profile, client_record):
         quote = await InvoiceService.create_invoice(
-            db_session, client_id=test_client.id, document_type="quote"
+            db_session, client_id=client_record.id, document_type="quote"
         )
         await InvoiceService.convert_quote_to_invoice(db_session, quote.id)
 
@@ -406,9 +406,9 @@ class TestQuoteConversion:
 
     @pytest.mark.asyncio
     async def test_converting_an_invoice_is_refused(
-        self, db_session, business_profile, test_client
+        self, db_session, business_profile, client_record
     ):
-        invoice = await InvoiceService.create_invoice(db_session, client_id=test_client.id)
+        invoice = await InvoiceService.create_invoice(db_session, client_id=client_record.id)
 
         with pytest.raises(ValueError, match="Only quotes"):
             await InvoiceService.convert_quote_to_invoice(db_session, invoice.id)
@@ -423,9 +423,9 @@ class TestPaymentIdempotency:
 
     @pytest.mark.asyncio
     async def test_replaying_a_key_returns_the_same_payment(
-        self, db_session, business_profile, test_client
+        self, db_session, business_profile, client_record
     ):
-        invoice = await _invoice(db_session, test_client)
+        invoice = await _invoice(db_session, client_record)
 
         first = await PaymentService.record_payment(
             db_session, invoice.id, amount="400.00", idempotency_key="deposit-1"
@@ -445,10 +445,10 @@ class TestPaymentIdempotency:
 
     @pytest.mark.asyncio
     async def test_distinct_keys_still_record_separate_payments(
-        self, db_session, business_profile, test_client
+        self, db_session, business_profile, client_record
     ):
         """A client really can pay the same amount twice."""
-        invoice = await _invoice(db_session, test_client)
+        invoice = await _invoice(db_session, client_record)
 
         await PaymentService.record_payment(
             db_session, invoice.id, amount="400.00", idempotency_key="instalment-1"
@@ -462,10 +462,10 @@ class TestPaymentIdempotency:
 
     @pytest.mark.asyncio
     async def test_replay_does_not_depend_on_matching_amount(
-        self, db_session, business_profile, test_client
+        self, db_session, business_profile, client_record
     ):
         """The key identifies the payment; the rest of the call is ignored."""
-        invoice = await _invoice(db_session, test_client)
+        invoice = await _invoice(db_session, client_record)
 
         first = await PaymentService.record_payment(
             db_session, invoice.id, amount="400.00", idempotency_key="wobbly"
@@ -478,8 +478,10 @@ class TestPaymentIdempotency:
         assert second.amount == Decimal("400.00"), "the original amount stands"
 
     @pytest.mark.asyncio
-    async def test_unkeyed_payments_are_unaffected(self, db_session, business_profile, test_client):
-        invoice = await _invoice(db_session, test_client)
+    async def test_unkeyed_payments_are_unaffected(
+        self, db_session, business_profile, client_record
+    ):
+        invoice = await _invoice(db_session, client_record)
 
         await PaymentService.record_payment(db_session, invoice.id, amount="400.00")
         await PaymentService.record_payment(db_session, invoice.id, amount="300.00")
@@ -488,9 +490,9 @@ class TestPaymentIdempotency:
         assert invoice.amount_paid == Decimal("700.00")
 
     @pytest.mark.asyncio
-    async def test_blank_key_is_rejected(self, db_session, business_profile, test_client):
+    async def test_blank_key_is_rejected(self, db_session, business_profile, client_record):
         """Whitespace is not an idempotency key."""
-        invoice = await _invoice(db_session, test_client)
+        invoice = await _invoice(db_session, client_record)
 
         with pytest.raises(ValueError, match="blank"):
             await PaymentService.record_payment(
@@ -499,9 +501,9 @@ class TestPaymentIdempotency:
 
     @pytest.mark.asyncio
     async def test_duplicate_full_payment_is_still_rejected(
-        self, db_session, business_profile, test_client
+        self, db_session, business_profile, client_record
     ):
-        invoice = await _invoice(db_session, test_client)
+        invoice = await _invoice(db_session, client_record)
 
         await PaymentService.record_payment(
             db_session, invoice.id, amount="1000.00", idempotency_key="paid-in-full"
@@ -515,8 +517,8 @@ class TestPaymentIdempotency:
 
 class TestAuditRegressionsSeptember2026:
     @pytest.mark.asyncio
-    async def test_paid_at_is_the_payment_date(self, db_session, business_profile, test_client):
-        invoice = await _invoice(db_session, test_client, total=Decimal("100.00"))
+    async def test_paid_at_is_the_payment_date(self, db_session, business_profile, client_record):
+        invoice = await _invoice(db_session, client_record, total=Decimal("100.00"))
         paid_on = (utc_now() - timedelta(days=40)).date()
 
         await PaymentService.record_payment(
@@ -528,8 +530,10 @@ class TestAuditRegressionsSeptember2026:
         assert invoice.paid_at.date() == paid_on
 
     @pytest.mark.asyncio
-    async def test_stale_amount_due_cannot_overpay(self, db_session, business_profile, test_client):
-        invoice = await _invoice(db_session, test_client, total=Decimal("100.00"))
+    async def test_stale_amount_due_cannot_overpay(
+        self, db_session, business_profile, client_record
+    ):
+        invoice = await _invoice(db_session, client_record, total=Decimal("100.00"))
         await PaymentService.record_payment(db_session, invoice.id, amount="60.00")
         # Simulate a second request that read amount_due before the first committed.
         invoice.amount_paid = Decimal("0.00")
@@ -543,10 +547,10 @@ class TestAuditRegressionsSeptember2026:
 
     @pytest.mark.asyncio
     async def test_idempotency_key_is_scoped_to_the_invoice(
-        self, db_session, business_profile, test_client
+        self, db_session, business_profile, client_record
     ):
-        first = await _invoice(db_session, test_client)
-        second = await _invoice(db_session, test_client)
+        first = await _invoice(db_session, client_record)
+        second = await _invoice(db_session, client_record)
         await PaymentService.record_payment(
             db_session, first.id, amount="10.00", idempotency_key="shared-key-1"
         )
