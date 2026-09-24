@@ -11,6 +11,7 @@ from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.concurrency import run_in_threadpool
 from weasyprint import HTML
+from weasyprint.urls import URLFetcher
 
 from invoice_machine.config import get_settings
 from invoice_machine.database import BusinessProfile, Invoice, InvoiceItem
@@ -73,21 +74,6 @@ def invoice_pdf_filename(invoice: Invoice) -> str:
     return f"{safe_invoice_number}-{invoice.id}.pdf"
 
 
-def _pdf_url_fetcher(url: str):
-    """Restrict WeasyPrint to inline ``data:`` URIs during rendering.
-
-    The template embeds the logo as a base64 ``data:`` URI and needs no network or
-    filesystem access. Refusing everything else neutralizes any CSS/HTML injection
-    (e.g. a crafted ``accent_color``) that tries ``url(file://...)`` or
-    ``url(http://...)`` to read local files or reach internal services (SSRF).
-    """
-    if url.startswith("data:"):
-        from weasyprint.urls import default_url_fetcher
-
-        return default_url_fetcher(url)
-    raise ValueError(f"Blocked non-data resource during PDF render: {url[:64]}")
-
-
 def _generate_pdf_sync(html: str, pdf_path: Path) -> None:
     """Render the PDF synchronously; call it off the event loop.
 
@@ -100,7 +86,10 @@ def _generate_pdf_sync(html: str, pdf_path: Path) -> None:
     os.close(fd)
     tmp_path = Path(tmp_name)
     try:
-        HTML(string=html, url_fetcher=_pdf_url_fetcher).write_pdf(tmp_path)
+        # Only inline data: URIs (the logo). Refusing file: and http: stops CSS or
+        # HTML injection from reading local files or reaching internal hosts.
+        fetcher = URLFetcher(allowed_protocols={"data"})
+        HTML(string=html, url_fetcher=fetcher).write_pdf(tmp_path)
         os.replace(tmp_path, pdf_path)
     finally:
         tmp_path.unlink(missing_ok=True)
