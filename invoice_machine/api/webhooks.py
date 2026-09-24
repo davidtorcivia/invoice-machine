@@ -23,20 +23,9 @@ router = APIRouter(prefix="/api/webhooks", tags=["webhooks"])
 MAX_WEBHOOK_BODY_BYTES = 512 * 1024
 
 
-@router.post("/stripe")
-@limiter.limit("120/minute")
-async def stripe_webhook(
-    request: Request,
-    session: AsyncSession = Depends(get_session),
-) -> dict:
-    """Record payments completed through a Stripe Checkout Session.
-
-    Always returns 2xx for events that verify but that this app does not act on —
-    a non-2xx tells Stripe to retry, and retrying an event we intend to ignore
-    accomplishes nothing.
-    """
+async def _verify_stripe_event(request: Request, session: AsyncSession) -> dict:
+    """Return the Stripe event once its signature verifies, else raise HTTPException."""
     from invoice_machine.service.stripe_links import (
-        extract_payment_from_event,
         get_stripe_webhook_secret,
         verify_webhook_signature,
     )
@@ -55,7 +44,7 @@ async def stripe_webhook(
         raise HTTPException(status_code=413, detail="Webhook payload too large")
 
     try:
-        event = verify_webhook_signature(
+        return verify_webhook_signature(
             raw_body, request.headers.get("Stripe-Signature"), webhook_secret
         )
     except ValueError as exc:
@@ -64,10 +53,9 @@ async def stripe_webhook(
         logger.warning("Rejected Stripe webhook: %s", exc)
         raise HTTPException(status_code=400, detail="Invalid signature")
 
-    details = extract_payment_from_event(event)
-    if details is None:
-        return {"received": True, "handled": False, "reason": "event not actionable"}
 
+async def _record_stripe_payment(session: AsyncSession, details: dict) -> dict:
+    """Record the payment an actionable event describes, returning the webhook reply."""
     # Idempotency: Stripe retries until it gets a 2xx, so the same event id can
     # arrive several times. The unique (provider, external_id) index and this
     # pre-check together ensure one event records at most one payment.
@@ -124,3 +112,24 @@ async def stripe_webhook(
         details["invoice_id"],
     )
     return {"received": True, "handled": True, "payment_id": payment.id}
+
+
+@router.post("/stripe")
+@limiter.limit("120/minute")
+async def stripe_webhook(
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """Record payments completed through a Stripe Checkout Session.
+
+    Always returns 2xx for events that verify but that this app does not act on —
+    a non-2xx tells Stripe to retry, and retrying an event we intend to ignore
+    accomplishes nothing.
+    """
+    from invoice_machine.service.stripe_links import extract_payment_from_event
+
+    event = await _verify_stripe_event(request, session)
+    details = extract_payment_from_event(event)
+    if details is None:
+        return {"received": True, "handled": False, "reason": "event not actionable"}
+    return await _record_stripe_payment(session, details)

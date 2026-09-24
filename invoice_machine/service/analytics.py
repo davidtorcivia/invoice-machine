@@ -14,7 +14,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import Integer, Row, and_, case, func, or_, select
+from sqlalchemy import ColumnElement, Integer, Row, and_, case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from invoice_machine.database import BusinessProfile, Invoice
@@ -44,14 +44,65 @@ def pick_primary_currency(per_currency: dict[str, dict], default_cur: str) -> st
     return default_cur
 
 
-async def dashboard_summary(session: AsyncSession) -> dict:
-    """Dashboard totals (outstanding, paid-this-month) grouped by currency."""
-    today = utc_now().date()
+def _current_month_window(today: date) -> tuple[datetime, datetime]:
+    """Start of this month and of the next, as naive datetimes for paid_at bounds."""
     month_start = datetime(today.year, today.month, 1)
     if today.month == 12:
         next_month_start = datetime(today.year + 1, 1, 1)
     else:
         next_month_start = datetime(today.year, today.month + 1, 1)
+    return month_start, next_month_start
+
+
+def _dashboard_money_query(
+    base_filter: ColumnElement[bool], month_start: datetime, next_month_start: datetime
+):
+    """Outstanding balance and paid-this-month totals, one row per currency."""
+    return (
+        select(
+            Invoice.currency_code.label("currency"),
+            func.coalesce(
+                func.sum(
+                    case(
+                        (
+                            Invoice.status.in_(["sent", "overdue"]),
+                            # The balance actually owed, not the paper total:
+                            # a partially-paid sent invoice is only owed its
+                            # remainder (floored at 0 for overpayments).
+                            func.max(Invoice.total - func.coalesce(Invoice.amount_paid, 0), 0),
+                        ),
+                        else_=0,
+                    )
+                ),
+                0,
+            ).label("outstanding"),
+            func.coalesce(
+                func.sum(
+                    case(
+                        (
+                            and_(
+                                Invoice.status == "paid",
+                                Invoice.paid_at.is_not(None),
+                                Invoice.paid_at >= month_start,
+                                Invoice.paid_at < next_month_start,
+                            ),
+                            Invoice.total,
+                        ),
+                        else_=0,
+                    )
+                ),
+                0,
+            ).label("paid_this_month"),
+            func.count(Invoice.id).label("invoice_count"),
+        )
+        .where(base_filter)
+        .group_by(Invoice.currency_code)
+    )
+
+
+async def dashboard_summary(session: AsyncSession) -> dict:
+    """Dashboard totals (outstanding, paid-this-month) grouped by currency."""
+    month_start, next_month_start = _current_month_window(utc_now().date())
 
     base_filter = and_(
         Invoice.document_type == "invoice",
@@ -59,46 +110,7 @@ async def dashboard_summary(session: AsyncSession) -> dict:
     )
 
     money_rows = (
-        await session.execute(
-            select(
-                Invoice.currency_code.label("currency"),
-                func.coalesce(
-                    func.sum(
-                        case(
-                            (
-                                Invoice.status.in_(["sent", "overdue"]),
-                                # The balance actually owed, not the paper total:
-                                # a partially-paid sent invoice is only owed its
-                                # remainder (floored at 0 for overpayments).
-                                func.max(Invoice.total - func.coalesce(Invoice.amount_paid, 0), 0),
-                            ),
-                            else_=0,
-                        )
-                    ),
-                    0,
-                ).label("outstanding"),
-                func.coalesce(
-                    func.sum(
-                        case(
-                            (
-                                and_(
-                                    Invoice.status == "paid",
-                                    Invoice.paid_at.is_not(None),
-                                    Invoice.paid_at >= month_start,
-                                    Invoice.paid_at < next_month_start,
-                                ),
-                                Invoice.total,
-                            ),
-                            else_=0,
-                        )
-                    ),
-                    0,
-                ).label("paid_this_month"),
-                func.count(Invoice.id).label("invoice_count"),
-            )
-            .where(base_filter)
-            .group_by(Invoice.currency_code)
-        )
+        await session.execute(_dashboard_money_query(base_filter, month_start, next_month_start))
     ).all()
 
     counts = (

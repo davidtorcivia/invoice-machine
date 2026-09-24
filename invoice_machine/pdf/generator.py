@@ -111,21 +111,12 @@ def get_logo_data_uri(business: BusinessProfile) -> str | None:
     return f"data:{mime};base64,{encoded}"
 
 
-async def generate_pdf(session: AsyncSession, invoice: Invoice) -> str:
-    """Render the invoice PDF and return its path relative to the data directory."""
-    business = await BusinessProfile.get_or_create(session)
+def _payment_instructions(invoice: Invoice, business: BusinessProfile) -> tuple[str | None, bool]:
+    """Resolve the invoice's payment instructions and whether to print them.
 
-    from sqlalchemy import select
-
-    result = await session.execute(
-        select(InvoiceItem)
-        .where(InvoiceItem.invoice_id == invoice.id)
-        .order_by(InvoiceItem.sort_order)
-    )
-    items = result.scalars().all()
-
-    has_hours = any(getattr(item, "unit_type", "qty") == "hours" for item in items)
-
+    The chosen payment methods win; the business default fills in only when the
+    invoice asks for instructions and no chosen method supplied any.
+    """
     show_payment_instructions = bool(getattr(invoice, "show_payment_instructions", True))
     payment_instructions = None
     selected_payment_methods = getattr(invoice, "selected_payment_methods_list", [])
@@ -157,13 +148,32 @@ async def generate_pdf(session: AsyncSession, invoice: Invoice) -> str:
     if show_payment_instructions and not payment_instructions:
         payment_instructions = getattr(business, "default_payment_instructions", None)
 
-    template = env.get_template("template.html")
-
-    logo_data_uri = await run_in_threadpool(get_logo_data_uri, business)
-
     show_payment_section = bool(
         payment_instructions and (selected_payment_methods or show_payment_instructions)
     )
+    return payment_instructions, show_payment_section
+
+
+async def generate_pdf(session: AsyncSession, invoice: Invoice) -> str:
+    """Render the invoice PDF and return its path relative to the data directory."""
+    business = await BusinessProfile.get_or_create(session)
+
+    from sqlalchemy import select
+
+    result = await session.execute(
+        select(InvoiceItem)
+        .where(InvoiceItem.invoice_id == invoice.id)
+        .order_by(InvoiceItem.sort_order)
+    )
+    items = result.scalars().all()
+
+    has_hours = any(getattr(item, "unit_type", "qty") == "hours" for item in items)
+
+    payment_instructions, show_payment_section = _payment_instructions(invoice, business)
+
+    template = env.get_template("template.html")
+
+    logo_data_uri = await run_in_threadpool(get_logo_data_uri, business)
 
     html = template.render(
         business=business,

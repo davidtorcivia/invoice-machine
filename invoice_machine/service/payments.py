@@ -87,6 +87,59 @@ async def recalculate_invoice_payments(session: AsyncSession, invoice: Invoice) 
     return invoice
 
 
+_AGING_BUCKETS = ("current", "1_30", "31_60", "61_90", "over_90")
+
+
+def _aging_bucket(days_overdue: int) -> str:
+    """Name of the aging bucket an invoice this many days past due falls in."""
+    if days_overdue <= 0:
+        return "current"
+    if days_overdue <= 30:
+        return "1_30"
+    if days_overdue <= 60:
+        return "31_60"
+    if days_overdue <= 90:
+        return "61_90"
+    return "over_90"
+
+
+def _add_to_aging_totals(
+    by_currency: dict[str, dict], currency: str, bucket: str, outstanding: Decimal
+) -> None:
+    """Add one invoice's outstanding balance to its currency's bucket totals."""
+    entry = by_currency.setdefault(
+        currency,
+        {
+            "buckets": {name: Decimal("0.00") for name in _AGING_BUCKETS},
+            "counts": dict.fromkeys(_AGING_BUCKETS, 0),
+            "total_outstanding": Decimal("0.00"),
+            "invoice_count": 0,
+        },
+    )
+    entry["buckets"][bucket] += outstanding
+    entry["counts"][bucket] += 1
+    entry["total_outstanding"] += outstanding
+    entry["invoice_count"] += 1
+
+
+async def _find_racing_winner(
+    session: AsyncSession,
+    idempotency_key: str | None,
+    provider: str | None,
+    external_id: str | None,
+) -> Payment | None:
+    """The payment a concurrent call committed under the same key or provider event."""
+    if idempotency_key is not None:
+        existing = await PaymentService._find_by_idempotency_key(session, idempotency_key)
+        if existing is not None:
+            return existing
+    if provider and external_id:
+        existing = await PaymentService.find_by_external_id(session, provider, external_id)
+        if existing is not None:
+            return existing
+    return None
+
+
 class PaymentService:
     """Service for recording and querying invoice payments."""
 
@@ -201,14 +254,9 @@ class PaymentService:
             # Return the winner rather than failing the caller. The same
             # applies to (provider, external_id) from a retried Stripe webhook.
             await session.rollback()
-            if idempotency_key is not None:
-                existing = await PaymentService._find_by_idempotency_key(session, idempotency_key)
-                if existing is not None:
-                    return existing
-            if provider and external_id:
-                existing = await PaymentService.find_by_external_id(session, provider, external_id)
-                if existing is not None:
-                    return existing
+            existing = await _find_racing_winner(session, idempotency_key, provider, external_id)
+            if existing is not None:
+                return existing
             raise
 
         await recalculate_invoice_payments(session, invoice)
@@ -329,7 +377,6 @@ class PaymentService:
             )
         ).all()
 
-        bucket_names = ("current", "1_30", "31_60", "61_90", "over_90")
         by_currency: dict[str, dict] = {}
         invoices: list[dict] = []
 
@@ -339,31 +386,10 @@ class PaymentService:
                 continue
 
             days_overdue = (today - row.due_date).days if row.due_date else 0
-            if days_overdue <= 0:
-                bucket = "current"
-            elif days_overdue <= 30:
-                bucket = "1_30"
-            elif days_overdue <= 60:
-                bucket = "31_60"
-            elif days_overdue <= 90:
-                bucket = "61_90"
-            else:
-                bucket = "over_90"
+            bucket = _aging_bucket(days_overdue)
 
             currency = row.currency_code or "USD"
-            entry = by_currency.setdefault(
-                currency,
-                {
-                    "buckets": {name: Decimal("0.00") for name in bucket_names},
-                    "counts": dict.fromkeys(bucket_names, 0),
-                    "total_outstanding": Decimal("0.00"),
-                    "invoice_count": 0,
-                },
-            )
-            entry["buckets"][bucket] += outstanding
-            entry["counts"][bucket] += 1
-            entry["total_outstanding"] += outstanding
-            entry["invoice_count"] += 1
+            _add_to_aging_totals(by_currency, currency, bucket, outstanding)
 
             invoices.append(
                 {
@@ -385,7 +411,7 @@ class PaymentService:
 
         return {
             "as_of": today.isoformat(),
-            "buckets": bucket_names,
+            "buckets": _AGING_BUCKETS,
             "by_currency": {
                 currency: {
                     "buckets": {name: str(value) for name, value in data["buckets"].items()},

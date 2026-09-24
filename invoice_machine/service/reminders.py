@@ -146,6 +146,24 @@ def due_offsets_for(invoice: Invoice, offsets: list[int], today: date) -> list[i
     return [offset for offset in offsets if offset not in already_sent and offset <= days_relative]
 
 
+async def _mark_reminders_sent(session: AsyncSession, invoice: Invoice, offsets: list[int]) -> None:
+    """Add ``offsets`` to the invoice's sent reminders and commit."""
+    sent = sorted({*invoice.reminders_sent_list, *offsets})
+    # Core UPDATE with updated_at pinned: the column's onupdate would
+    # otherwise mark the invoice stale and force a PDF re-render.
+    await session.execute(
+        update(Invoice)
+        .where(Invoice.id == invoice.id)
+        .values(
+            reminders_sent=json.dumps(sent),
+            last_reminder_sent_at=utc_now(),
+            updated_at=invoice.updated_at,
+        )
+    )
+    await session.commit()
+    session.expire(invoice)
+
+
 async def send_due_reminders(session: AsyncSession, today: date | None = None) -> list[dict]:
     """Send every reminder that is due today. Returns one result dict per attempt.
 
@@ -214,20 +232,7 @@ async def send_due_reminders(session: AsyncSession, today: date | None = None) -
         if result.get("success"):
             # Record the offsets only on a confirmed send, so a transient SMTP
             # failure retries tomorrow instead of being silently swallowed.
-            # Core UPDATE with updated_at pinned: the column's onupdate would
-            # otherwise mark the invoice stale and force a PDF re-render.
-            sent = sorted({*invoice.reminders_sent_list, offset, *superseded})
-            await session.execute(
-                update(Invoice)
-                .where(Invoice.id == invoice_id)
-                .values(
-                    reminders_sent=json.dumps(sent),
-                    last_reminder_sent_at=utc_now(),
-                    updated_at=invoice.updated_at,
-                )
-            )
-            await session.commit()
-            session.expire(invoice)
+            await _mark_reminders_sent(session, invoice, [offset, *superseded])
 
         results.append(
             {
