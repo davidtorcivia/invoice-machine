@@ -21,6 +21,7 @@ from invoice_machine.api import (
     export,
     invoices,
     mcp,
+    pay,
     payment_settings,
     payments,
     profile,
@@ -96,6 +97,7 @@ app.include_router(payments.router)
 app.include_router(payment_settings.router)
 app.include_router(export.router)
 app.include_router(webhooks.router)
+app.include_router(pay.router)
 app.include_router(system.router)
 
 # Streamable HTTP is the primary MCP transport. It must be an exact "/mcp"

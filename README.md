@@ -132,7 +132,7 @@ Settings > Online payments connects a Stripe account so clients can pay by card.
 2. Add a webhook in Stripe pointing at `https://your-server.com/api/webhooks/stripe`, subscribed to `checkout.session.completed`.
 3. Paste the webhook signing secret back into Settings.
 
-Each invoice then gets a **Create payment link** button. The link covers the outstanding balance, appears on the PDF and in emails via the `{payment_link}` placeholder, and completed payments are recorded automatically. Webhook requests are rejected unless they carry a valid Stripe signature within a five-minute window, and each Stripe event is recorded at most once.
+Set the app base URL too. Each invoice then gets a **Create payment link** button. The link is `https://your-server.com/pay/<token>`: it never expires, and each click opens a fresh Stripe checkout for whatever is still outstanding. It appears on the PDF and in emails via the `{payment_link}` placeholder, and completed payments are recorded automatically. The pay page needs no login, so if the app sits behind Cloudflare Access or another login wall, let `/pay/*` through, as you already must for `/api/webhooks/stripe`. Webhook requests are rejected unless they carry a valid Stripe signature within a five-minute window, and each Stripe event is recorded at most once.
 
 Which card and wallet types appear at checkout is controlled from your Stripe dashboard.
 

@@ -10,7 +10,7 @@ export const placeholderDescriptions = [
   { code: '{subtotal}', description: 'Formatted subtotal' },
   { code: '{amount_due}', description: 'Formatted outstanding balance' },
   { code: '{amount_paid}', description: 'Formatted amount already paid' },
-  { code: '{payment_link}', description: 'Hosted payment URL, if one exists' },
+  { code: '{payment_link}', description: 'Permanent pay link, if one was created' },
   { code: '{due_date}', description: 'Due date as "Month DD, YYYY"' },
   { code: '{issue_date}', description: 'Issue date as "Month DD, YYYY"' },
   { code: '{your_name}', description: 'Your name from the business profile' },
