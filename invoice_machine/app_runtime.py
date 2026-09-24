@@ -6,7 +6,7 @@ import asyncio
 import io
 import logging
 from contextlib import asynccontextmanager
-from datetime import timedelta
+from datetime import date, timedelta
 from typing import IO
 
 from fastapi import FastAPI
@@ -134,13 +134,20 @@ async def _recurring_invoice_job() -> None:
             )
 
 
+# Process-local, so a restart sweeps once more that day; offsets already sent
+# are recorded and skipped.
+_last_reminder_sweep: date | None = None
+
+
 async def _payment_reminder_job() -> None:
-    """Send payment reminders when the business's local clock reaches its send hour.
+    """Send payment reminders once a day, at the first hourly run at or after the send hour.
 
     Checked hourly rather than at a fixed UTC hour so the mail lands during the
-    user's working day wherever they are. Running twice in the same local day is
-    harmless: each offset is recorded once per invoice, so a repeat is a no-op.
+    user's working day wherever they are, and so a send hour skipped by a DST
+    change or a restart is caught up the same day. One sweep per local day: a
+    failed send retries tomorrow rather than hourly.
     """
+    global _last_reminder_sweep
     from invoice_machine.database import BusinessProfile, async_session_maker
     from invoice_machine.service.reminders import business_now, send_due_reminders
 
@@ -151,10 +158,11 @@ async def _payment_reminder_job() -> None:
 
         local = business_now(profile)
         send_hour = profile.reminder_send_hour if profile.reminder_send_hour is not None else 9
-        if local.hour != send_hour:
+        if local.hour < send_hour or _last_reminder_sweep == local.date():
             return
 
         results = await send_due_reminders(session, today=local.date())
+        _last_reminder_sweep = local.date()
         if results:
             sent = sum(1 for result in results if result.get("success"))
             failed = len(results) - sent

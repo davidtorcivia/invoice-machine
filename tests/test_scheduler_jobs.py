@@ -311,6 +311,11 @@ async def test_trash_cleanup_job_purges_expired_trash(scheduler_db):
         assert await session.get(Client, client_id) is None
 
 
+@pytest.fixture(autouse=True)
+def _fresh_reminder_day(monkeypatch):
+    monkeypatch.setattr(app_runtime, "_last_reminder_sweep", None)
+
+
 @pytest.mark.asyncio
 async def test_reminder_job_sends_at_the_local_send_hour(scheduler_db, monkeypatch):
     from unittest.mock import AsyncMock
@@ -336,6 +341,34 @@ async def test_reminder_job_sends_at_the_local_send_hour(scheduler_db, monkeypat
 
 
 @pytest.mark.asyncio
+async def test_reminder_job_catches_up_after_a_missed_send_hour(scheduler_db, monkeypatch):
+    """A send hour skipped by DST or downtime still sends later the same day."""
+    from unittest.mock import AsyncMock
+
+    from invoice_machine.database import BusinessProfile
+
+    async with scheduler_db() as session:
+        profile = await BusinessProfile.get_or_create(session)
+        profile.reminders_enabled = 1
+        profile.reminder_send_hour = 2
+        await session.commit()
+
+    sender = AsyncMock(return_value=[])
+    monkeypatch.setattr("invoice_machine.service.reminders.send_due_reminders", sender)
+    monkeypatch.setattr(
+        "invoice_machine.service.reminders.business_now",
+        lambda profile: utc_now().replace(hour=3),
+    )
+
+    await app_runtime._payment_reminder_job()
+    # Later hours the same day do not sweep again, so an ambiguous send is not
+    # repeated every hour.
+    await app_runtime._payment_reminder_job()
+
+    assert sender.await_count == 1
+
+
+@pytest.mark.asyncio
 async def test_reminder_job_waits_for_the_send_hour(scheduler_db, monkeypatch):
     from unittest.mock import AsyncMock
 
@@ -351,7 +384,7 @@ async def test_reminder_job_waits_for_the_send_hour(scheduler_db, monkeypatch):
     monkeypatch.setattr("invoice_machine.service.reminders.send_due_reminders", sender)
     monkeypatch.setattr(
         "invoice_machine.service.reminders.business_now",
-        lambda profile: utc_now().replace(hour=10),
+        lambda profile: utc_now().replace(hour=8),
     )
 
     await app_runtime._payment_reminder_job()

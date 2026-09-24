@@ -467,13 +467,10 @@ class TestEmailService:
 
         service = EmailService(mock_profile)
         server = MagicMock()
-        smtp_cm = MagicMock()
-        smtp_cm.__enter__.return_value = server
-        smtp_cm.__exit__.return_value = False
 
         with (
             patch("invoice_machine.email._validate_smtp_target"),
-            patch("smtplib.SMTP", return_value=smtp_cm) as smtp_cls,
+            patch("smtplib.SMTP", return_value=server) as smtp_cls,
         ):
             service._send_email_sync("to@example.com", "Subject", "Body")
 
@@ -482,6 +479,39 @@ class TestEmailService:
         context = server.starttls.call_args.kwargs.get("context")
         assert context is not None
         assert context.verify_mode == ssl.CERT_REQUIRED
+
+    def test_a_failed_quit_after_an_accepted_message_is_still_a_send(self, mock_profile):
+        """Reporting it unsent would make the reminder sweep send it again."""
+        import smtplib
+
+        service = EmailService(mock_profile)
+        server = MagicMock()
+        server.quit.side_effect = smtplib.SMTPResponseException(421, b"closing")
+
+        with (
+            patch("invoice_machine.email._validate_smtp_target"),
+            patch("smtplib.SMTP", return_value=server),
+        ):
+            assert service._send_email_sync("to@example.com", "Subject", "Body") is True
+
+        server.send_message.assert_called_once()
+        server.close.assert_called_once()
+
+    def test_a_refused_message_still_raises_and_closes(self, mock_profile):
+        import smtplib
+
+        service = EmailService(mock_profile)
+        server = MagicMock()
+        server.send_message.side_effect = smtplib.SMTPRecipientsRefused({})
+
+        with (
+            patch("invoice_machine.email._validate_smtp_target"),
+            patch("smtplib.SMTP", return_value=server),
+            pytest.raises(smtplib.SMTPRecipientsRefused),
+        ):
+            service._send_email_sync("to@example.com", "Subject", "Body")
+
+        server.quit.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_send_invoice_rejects_path_escape(self, mock_profile, mock_invoice):
@@ -539,6 +569,9 @@ class TestFromHeaderConstruction:
             def send_message(self, msg):
                 captured["msg"] = msg
 
+            def quit(self):
+                pass
+
         with (
             patch("invoice_machine.email._validate_smtp_target"),
             patch("invoice_machine.email.smtplib.SMTP", return_value=_FakeServer()),
@@ -583,13 +616,13 @@ class TestSendInvoiceEmailFlow:
         monkeypatch.setattr("invoice_machine.pdf.generator.store_invoice_pdf", AsyncMock())
 
     @pytest.mark.asyncio
-    async def test_refuses_when_smtp_is_disabled(self, db_session, business_profile, test_client):
+    async def test_refuses_when_smtp_is_disabled(self, db_session, business_profile, client_record):
         from invoice_machine.service.email import send_invoice_email
         from invoice_machine.service.invoices import InvoiceService
 
         invoice = await InvoiceService.create_invoice(
             db_session,
-            client_id=test_client.id,
+            client_id=client_record.id,
             items=[{"description": "x", "quantity": 1, "unit_price": "10"}],
         )
         result = await send_invoice_email(db_session, invoice.id)

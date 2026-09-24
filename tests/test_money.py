@@ -30,11 +30,11 @@ def test_line_item_total_is_quantized():
 
 
 @pytest.mark.asyncio
-async def test_invoice_totals_reconcile_to_cents(db_session, test_client):
+async def test_invoice_totals_reconcile_to_cents(db_session, client_record):
     """subtotal + tax == total, all at 2 decimal places, no sub-cent drift."""
     invoice = await InvoiceService.create_invoice(
         db_session,
-        client_id=test_client.id,
+        client_id=client_record.id,
         items=[
             {"description": "A", "quantity": 3, "unit_price": "10.999"},
             {"description": "B", "quantity": 1, "unit_price": "0.1"},
@@ -52,11 +52,11 @@ async def test_invoice_totals_reconcile_to_cents(db_session, test_client):
 
 
 @pytest.mark.asyncio
-async def test_fractional_hours_quantity(db_session, test_client):
+async def test_fractional_hours_quantity(db_session, client_record):
     """1.5 hours at $100 must bill $150."""
     invoice = await InvoiceService.create_invoice(
         db_session,
-        client_id=test_client.id,
+        client_id=client_record.id,
         items=[
             {
                 "description": "Consulting",
@@ -72,19 +72,19 @@ async def test_fractional_hours_quantity(db_session, test_client):
 
 
 @pytest.mark.asyncio
-async def test_client_stats_do_not_mix_currencies(db_session, test_client):
+async def test_client_stats_do_not_mix_currencies(db_session, client_record):
     """A client's USD and EUR invoices are reported per-currency, never summed."""
     from invoice_machine.service.clients import ClientService
 
     usd_invoice = await InvoiceService.create_invoice(
         db_session,
-        client_id=test_client.id,
+        client_id=client_record.id,
         currency_code="USD",
         items=[{"description": "usd", "quantity": 1, "unit_price": "1000"}],
     )
     eur_invoice = await InvoiceService.create_invoice(
         db_session,
-        client_id=test_client.id,
+        client_id=client_record.id,
         currency_code="EUR",
         items=[{"description": "eur", "quantity": 1, "unit_price": "500"}],
     )
@@ -92,7 +92,7 @@ async def test_client_stats_do_not_mix_currencies(db_session, test_client):
     await InvoiceService.update_invoice(db_session, usd_invoice.id, status="sent")
     await InvoiceService.update_invoice(db_session, eur_invoice.id, status="sent")
 
-    stats = await ClientService.get_client_invoice_stats(db_session, client_id=test_client.id)
+    stats = await ClientService.get_client_invoice_stats(db_session, client_id=client_record.id)
     assert len(stats) == 1
     stat = stats[0]
     assert set(stat["by_currency"].keys()) == {"USD", "EUR"}

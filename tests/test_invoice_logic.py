@@ -21,9 +21,9 @@ def _items():
 
 
 @pytest.mark.asyncio
-async def test_auto_number_regenerated_on_date_change(db_session, test_client):
+async def test_auto_number_regenerated_on_date_change(db_session, client_record):
     inv = await InvoiceService.create_invoice(
-        db_session, client_id=test_client.id, issue_date=date(2026, 1, 1), items=_items()
+        db_session, client_id=client_record.id, issue_date=date(2026, 1, 1), items=_items()
     )
     assert inv.invoice_number == "20260101-1"
 
@@ -32,10 +32,10 @@ async def test_auto_number_regenerated_on_date_change(db_session, test_client):
 
 
 @pytest.mark.asyncio
-async def test_custom_number_preserved_on_date_change(db_session, test_client):
+async def test_custom_number_preserved_on_date_change(db_session, client_record):
     inv = await InvoiceService.create_invoice(
         db_session,
-        client_id=test_client.id,
+        client_id=client_record.id,
         issue_date=date(2026, 1, 1),
         invoice_number_override="INV-ACME-007",
         items=_items(),
@@ -47,10 +47,10 @@ async def test_custom_number_preserved_on_date_change(db_session, test_client):
 
 
 @pytest.mark.asyncio
-async def test_quote_to_invoice_regenerates_number(db_session, test_client):
+async def test_quote_to_invoice_regenerates_number(db_session, client_record):
     quote = await InvoiceService.create_invoice(
         db_session,
-        client_id=test_client.id,
+        client_id=client_record.id,
         issue_date=date(2026, 3, 3),
         document_type="quote",
         items=_items(),
@@ -63,22 +63,24 @@ async def test_quote_to_invoice_regenerates_number(db_session, test_client):
 
 
 @pytest.mark.asyncio
-async def test_duplicate_override_number_raises(db_session, test_client):
+async def test_duplicate_override_number_raises(db_session, client_record):
     await InvoiceService.create_invoice(
-        db_session, client_id=test_client.id, invoice_number_override="DUP-1", items=_items()
+        db_session, client_id=client_record.id, invoice_number_override="DUP-1", items=_items()
     )
     with pytest.raises(ValueError, match="already exists"):
         await InvoiceService.create_invoice(
-            db_session, client_id=test_client.id, invoice_number_override="DUP-1", items=_items()
+            db_session, client_id=client_record.id, invoice_number_override="DUP-1", items=_items()
         )
 
 
 @pytest.mark.asyncio
-async def test_update_kwargs_cannot_set_computed_totals(db_session, test_client):
+async def test_update_kwargs_cannot_set_computed_totals(db_session, client_record):
     """The kwargs allow-list must not let callers overwrite computed money fields."""
     from decimal import Decimal
 
-    inv = await InvoiceService.create_invoice(db_session, client_id=test_client.id, items=_items())
+    inv = await InvoiceService.create_invoice(
+        db_session, client_id=client_record.id, items=_items()
+    )
     assert inv.total == Decimal("100.00")
 
     updated = await InvoiceService.update_invoice(db_session, inv.id, total=Decimal("99999.00"))
@@ -86,7 +88,7 @@ async def test_update_kwargs_cannot_set_computed_totals(db_session, test_client)
 
 
 @pytest.mark.asyncio
-async def test_recurring_catches_up_missed_periods(db_session, test_client, monkeypatch):
+async def test_recurring_catches_up_missed_periods(db_session, client_record, monkeypatch):
     """A monthly schedule months overdue generates one invoice per missed period."""
     frozen = _fixed_now(2026, 4, 15)
     monkeypatch.setattr("invoice_machine.service.recurring.utc_now", frozen)
@@ -94,7 +96,7 @@ async def test_recurring_catches_up_missed_periods(db_session, test_client, monk
 
     schedule = await RecurringService.create_schedule(
         db_session,
-        client_id=test_client.id,
+        client_id=client_record.id,
         name="Monthly Retainer",
         frequency="monthly",
         schedule_day=1,
@@ -124,7 +126,7 @@ async def test_recurring_catches_up_missed_periods(db_session, test_client, monk
 
 @pytest.mark.asyncio
 async def test_trigger_consumes_business_due_date_so_sweep_cannot_double_bill(
-    db_session, business_profile, test_client, monkeypatch
+    db_session, business_profile, client_record, monkeypatch
 ):
     """Generate-now on the local due morning must advance the schedule."""
     # 23:00 UTC is 08:00 next day in Asia/Tokyo; dating the invoice off UTC today
@@ -142,7 +144,7 @@ async def test_trigger_consumes_business_due_date_so_sweep_cannot_double_bill(
 
     schedule = await RecurringService.create_schedule(
         db_session,
-        client_id=test_client.id,
+        client_id=client_record.id,
         name="Tokyo retainer",
         frequency="monthly",
         schedule_day=18,
@@ -164,16 +166,16 @@ async def test_trigger_consumes_business_due_date_so_sweep_cannot_double_bill(
 
 
 @pytest.mark.asyncio
-async def test_unknown_client_is_rejected_without_retrying(db_session, test_client):
+async def test_unknown_client_is_rejected_without_retrying(db_session, client_record):
     with pytest.raises(ValueError, match="Client 99999 not found"):
         await InvoiceService.create_invoice(db_session, client_id=99999, items=_items())
 
 
 @pytest.mark.asyncio
-async def test_unit_price_is_quantized_so_lines_add_up(db_session, test_client):
+async def test_unit_price_is_quantized_so_lines_add_up(db_session, client_record):
     inv = await InvoiceService.create_invoice(
         db_session,
-        client_id=test_client.id,
+        client_id=client_record.id,
         items=[{"description": "x", "quantity": 3, "unit_price": "12.345"}],
     )
     item = inv.items[0]
@@ -182,8 +184,10 @@ async def test_unit_price_is_quantized_so_lines_add_up(db_session, test_client):
 
 
 @pytest.mark.asyncio
-async def test_paid_invoice_cannot_become_a_quote(db_session, test_client):
-    inv = await InvoiceService.create_invoice(db_session, client_id=test_client.id, items=_items())
+async def test_paid_invoice_cannot_become_a_quote(db_session, client_record):
+    inv = await InvoiceService.create_invoice(
+        db_session, client_id=client_record.id, items=_items()
+    )
     await InvoiceService.update_invoice(db_session, inv.id, status="paid")
 
     with pytest.raises(ValueError, match="document type"):
@@ -191,9 +195,9 @@ async def test_paid_invoice_cannot_become_a_quote(db_session, test_client):
 
 
 @pytest.mark.asyncio
-async def test_sent_quotes_are_never_overdue(db_session, test_client):
+async def test_sent_quotes_are_never_overdue(db_session, client_record):
     quote = await InvoiceService.create_invoice(
-        db_session, client_id=test_client.id, items=_items(), document_type="quote"
+        db_session, client_id=client_record.id, items=_items(), document_type="quote"
     )
     await InvoiceService.update_invoice(db_session, quote.id, status="sent")
     quote.due_date = date(2000, 1, 1)
@@ -205,14 +209,14 @@ async def test_sent_quotes_are_never_overdue(db_session, test_client):
 
 
 @pytest.mark.asyncio
-async def test_one_failing_schedule_does_not_abort_the_rest(db_session, test_client, monkeypatch):
+async def test_one_failing_schedule_does_not_abort_the_rest(db_session, client_record, monkeypatch):
     frozen = _fixed_now(2026, 4, 15)
     monkeypatch.setattr("invoice_machine.service.recurring.utc_now", frozen)
     monkeypatch.setattr("invoice_machine.service.reminders.utc_now", frozen)
     items = [{"description": "Retainer", "quantity": 1, "unit_price": "100"}]
     broken = await RecurringService.create_schedule(
         db_session,
-        client_id=test_client.id,
+        client_id=client_record.id,
         name="Broken",
         frequency="monthly",
         schedule_day=1,
@@ -221,7 +225,7 @@ async def test_one_failing_schedule_does_not_abort_the_rest(db_session, test_cli
     )
     healthy = await RecurringService.create_schedule(
         db_session,
-        client_id=test_client.id,
+        client_id=client_record.id,
         name="Healthy",
         frequency="monthly",
         schedule_day=1,

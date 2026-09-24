@@ -255,21 +255,26 @@ class EmailService:
 
         smtp_password = self._get_smtp_password()
 
-        if use_tls and port == 465:
-            context = ssl.create_default_context()
-            with smtplib.SMTP_SSL(host, port, context=context) as server:
-                if self.profile.smtp_username and smtp_password:
-                    server.login(self.profile.smtp_username, smtp_password)
-                server.send_message(msg)
-        else:
-            # STARTTLS (port 587 or other). Pass a verifying context: the
-            # smtplib default is CERT_NONE, which accepts any certificate.
-            with smtplib.SMTP(host, port) as server:
-                if use_tls:
-                    server.starttls(context=ssl.create_default_context())
-                if self.profile.smtp_username and smtp_password:
-                    server.login(self.profile.smtp_username, smtp_password)
-                server.send_message(msg)
+        implicit_tls = use_tls and port == 465
+        server = (
+            smtplib.SMTP_SSL(host, port, context=ssl.create_default_context())
+            if implicit_tls
+            else smtplib.SMTP(host, port)
+        )
+        try:
+            if use_tls and not implicit_tls:
+                # A verifying context: the smtplib default is CERT_NONE.
+                server.starttls(context=ssl.create_default_context())
+            if self.profile.smtp_username and smtp_password:
+                server.login(self.profile.smtp_username, smtp_password)
+            server.send_message(msg)
+        finally:
+            # Not `with`: its QUIT raises on a non-221 reply after the message was
+            # accepted, and reporting that as a failure makes callers resend it.
+            try:
+                server.quit()
+            except (smtplib.SMTPException, OSError):
+                server.close()
 
         return True
 

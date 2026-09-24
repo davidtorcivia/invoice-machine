@@ -142,7 +142,7 @@ Subject and body templates live in Settings > Email templates and accept placeho
 
 ### Payment reminders
 
-Settings > Payment reminders chases unpaid invoices for you. Pick a schedule as day offsets around the due date, for example three days before, then one, seven, and fourteen days after. The sweep checks every hour and sends when the business timezone reaches the send hour (09:00 local by default), both set on the same page.
+Settings > Payment reminders chases unpaid invoices for you. Pick a schedule as day offsets around the due date, for example three days before, then one, seven, and fourteen days after. The sweep checks every hour and sends when the business timezone reaches the send hour (09:00 local by default), both set on the same page. A send hour missed by a restart or a DST change is caught up later that day.
 
 Each offset is sent at most once per invoice. Fully paid invoices are never chased, partially paid ones are chased for the balance, and turning reminders on for an already-overdue invoice sends a single current reminder rather than the whole backlog.
 
