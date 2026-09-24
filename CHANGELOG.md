@@ -6,6 +6,8 @@ Notable changes to Invoice Machine. Format based on
 
 ## [Unreleased]
 
+## [0.4.0]
+
 ### Added
 
 - Request ids: every response carries `X-Request-ID`, every log line for that
