@@ -48,6 +48,10 @@ Notable changes to Invoice Machine. Format based on
 
 ### Fixed
 
+- WeasyPrint 70 (clears PYSEC-2026-3940). It removed the function-style URL
+  fetcher the PDF renderer used, so the renderer now uses WeasyPrint's own
+  fetcher limited to `data:` URIs; `file:` and `http:` resources are still
+  refused. The minimum version is now 70.
 - Locked dependencies upgraded (starlette 1.6, fastapi 0.141, mcp 2.1.1,
   pydantic 2.13, pillow 12.3, urllib3 2.7); the previous lock carried 53 known
   advisories. The CI dependency audit now blocks a merge instead of warning.

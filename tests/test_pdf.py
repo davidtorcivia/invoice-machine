@@ -1,5 +1,6 @@
 """Tests for PDF generation functionality."""
 
+import base64
 import tempfile
 from datetime import date
 from decimal import Decimal
@@ -12,6 +13,7 @@ from invoice_machine.database import BusinessProfile, Invoice, InvoiceItem
 
 try:
     from invoice_machine.pdf.generator import (
+        _generate_pdf_sync,
         format_money,
         generate_pdf,
         get_logo_data_uri,
@@ -117,8 +119,6 @@ class TestGetLogoBase64:
                 assert result is not None
                 # A complete data: URI, with the payload still valid base64.
                 assert result.startswith("data:")
-                import base64
-
                 decoded = base64.b64decode(result.split(",", 1)[1])
                 assert decoded == b"PNG fake image data"
 
@@ -513,3 +513,34 @@ class TestLogoDataUri:
             with patch("invoice_machine.pdf.generator.settings") as mock_settings:
                 mock_settings.logo_dir = logo_dir
                 assert get_logo_data_uri(profile).startswith("data:image/webp;base64,")
+
+
+class TestRenderResourceFetching:
+    """Real renders, no mocks: the logo must load and nothing else may."""
+
+    # 1x1 transparent PNG.
+    PNG = base64.b64decode(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
+    )
+
+    def test_data_logo_renders_and_file_and_http_are_refused(self, tmp_path, caplog):
+        local_png = tmp_path / "secret.png"
+        local_png.write_bytes(self.PNG)
+        data_uri = "data:image/png;base64," + base64.b64encode(self.PNG).decode()
+        html = (
+            f'<img src="{data_uri}">'
+            f'<img src="{local_png.as_uri()}">'
+            '<img src="http://127.0.0.1:9/x.png">'
+        )
+        out = tmp_path / "out.pdf"
+
+        with caplog.at_level("WARNING", logger="weasyprint"):
+            _generate_pdf_sync(html, out)
+
+        assert out.read_bytes().startswith(b"%PDF-")
+        refused = [
+            r.getMessage() for r in caplog.records if "disallowed protocol" in r.getMessage()
+        ]
+        assert any(local_png.as_uri() in m for m in refused)
+        assert any("http://127.0.0.1:9/x.png" in m for m in refused)
+        assert not any("data:" in r.getMessage() for r in caplog.records)
