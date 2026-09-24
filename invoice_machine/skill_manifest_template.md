@@ -347,6 +347,8 @@ GET /api/settings/smtp
 ```
 PUT /api/settings/smtp
 ```
+Changing `smtp_host`, `smtp_port`, `smtp_username`, or turning `smtp_use_tls` off
+requires `smtp_password` in the same request.
 ```json
 {
   "smtp_enabled": true,

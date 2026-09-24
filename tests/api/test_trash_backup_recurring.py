@@ -294,6 +294,8 @@ async def test_restore_reports_a_failed_schema_upgrade(test_client, monkeypatch)
     from invoice_machine.api import backup as backup_api
 
     class FakeService:
+        reset = []
+
         def restore_backup(self, filename):
             return {
                 "restored_from": filename,
@@ -301,6 +303,9 @@ async def test_restore_reports_a_failed_schema_upgrade(test_client, monkeypatch)
                 "timestamp": "2026-09-01T00:00:00",
                 "message": "ok",
             }
+
+        def keep_live_credentials(self, pre_restore_filename):
+            FakeService.reset.append(pre_restore_filename)
 
     async def fake_service(session):
         return FakeService()
@@ -320,6 +325,46 @@ async def test_restore_reports_a_failed_schema_upgrade(test_client, monkeypatch)
 
     assert response.status_code == 500
     assert "predates Alembic" in response.json()["detail"]
+    # The swapped-in file keeps no sessions or keys even though its schema is stuck.
+    assert FakeService.reset == [None]
     from invoice_machine.main import app
 
     assert app.state.restore_in_progress is False
+
+
+@pytest.mark.asyncio
+async def test_restore_keeps_live_credentials_after_the_schema_upgrade(test_client, monkeypatch):
+    from invoice_machine.api import backup as backup_api
+
+    calls = []
+
+    class FakeService:
+        def restore_backup(self, filename):
+            calls.append("restore")
+            return {
+                "restored_from": filename,
+                "pre_restore_backup": "pre_restore_x.db",
+                "timestamp": "2026-09-01T00:00:00",
+                "message": "ok",
+            }
+
+        def keep_live_credentials(self, pre_restore_filename):
+            calls.append(("keep", pre_restore_filename))
+
+    async def fake_service(session):
+        return FakeService()
+
+    async def noop():
+        return None
+
+    async def schema(*, apply_migrations):
+        calls.append("schema")
+
+    monkeypatch.setattr(backup_api, "get_backup_service", fake_service)
+    monkeypatch.setattr(backup_api, "close_db", noop)
+    monkeypatch.setattr(backup_api, "ensure_database_schema", schema)
+
+    response = await test_client.post("/api/backups/restore/x.db")
+
+    assert response.status_code == 200
+    assert calls == ["restore", "schema", ("keep", "pre_restore_x.db")]

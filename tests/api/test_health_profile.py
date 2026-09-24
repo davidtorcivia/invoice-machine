@@ -405,7 +405,8 @@ async def test_mcp_status_reports_protocol_versions(test_client):
     response = await test_client.get("/mcp/status")
     assert response.status_code == 200
     body = response.json()
-    assert body["enabled"] is False
+    # Unauthenticated, so it must not reveal whether any MCP key exists.
+    assert "enabled" not in body
     assert body["protocol_version"] == LATEST_PROTOCOL_VERSION
     assert body["supported_protocol_versions"] == [
         DEFAULT_NEGOTIATED_VERSION,

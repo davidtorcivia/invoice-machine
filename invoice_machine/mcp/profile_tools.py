@@ -6,6 +6,7 @@ import re
 from decimal import Decimal
 
 from invoice_machine.database import BusinessProfile
+from invoice_machine.email import require_password_for_new_smtp_destination
 from invoice_machine.presenters import dump_json_list, serialize_business_profile
 from invoice_machine.utils import utc_now
 
@@ -134,6 +135,7 @@ async def update_business_profile(
                 continue
             coerce = _PROFILE_FIELD_COERCIONS.get(key)
             updates[key] = coerce(value) if coerce else value
+        require_password_for_new_smtp_destination(profile, updates)
 
         for key, value in updates.items():
             setattr(profile, key, value)

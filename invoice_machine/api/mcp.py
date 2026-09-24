@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 from starlette.requests import Request
 from starlette.responses import Response as StarletteResponse
 
-from invoice_machine.api_keys import authenticate_api_key, count_api_keys
+from invoice_machine.api_keys import authenticate_api_key
 from invoice_machine.rate_limit import bearer_auth_throttle, get_client_ip
 
 if TYPE_CHECKING:  # imported lazily at runtime to keep startup light
@@ -163,7 +163,6 @@ class MCPStatusHandler:
 
         body = json.dumps(
             {
-                "enabled": await count_api_keys("mcp") > 0,
                 "endpoint": "/mcp",
                 "transport": "streamable-http",
                 "legacy_sse_endpoint": "/mcp/sse",

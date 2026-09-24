@@ -304,6 +304,7 @@ async def restore_backup(
 
     async with restore_state.restore_lock:
         restore_state.restore_in_progress = True
+        restored = None
 
         try:
             # Wait (bounded) for in-flight requests to drain before closing the
@@ -327,6 +328,7 @@ async def restore_backup(
                 await asyncio.to_thread(backup_service.download_from_s3, filename)
 
             result = await asyncio.to_thread(backup_service.restore_backup, filename)
+            restored = result
             return RestoreResult(**result)
         except FileNotFoundError:
             raise HTTPException(status_code=404, detail="Backup file not found")
@@ -352,6 +354,13 @@ async def restore_backup(
                 await ensure_database_schema(apply_migrations=True)
             except Exception as exc:
                 logger.error("Post-restore schema upgrade failed", exc_info=True)
+                if restored is not None:
+                    try:
+                        await asyncio.to_thread(
+                            backup_service.keep_live_credentials, restored["pre_restore_backup"]
+                        )
+                    except Exception:
+                        logger.error("Post-restore credential reset failed", exc_info=True)
                 # Still get connections back so the app can report the problem.
                 try:
                     await init_db()
@@ -363,6 +372,18 @@ async def restore_backup(
                     status_code=500,
                     detail=f"Database file restored but its schema could not be upgraded: {exc}",
                 )
+            else:
+                if restored is not None:
+                    try:
+                        await asyncio.to_thread(
+                            backup_service.keep_live_credentials, restored["pre_restore_backup"]
+                        )
+                    except Exception as exc:
+                        logger.error("Post-restore credential reset failed", exc_info=True)
+                        raise HTTPException(
+                            status_code=500,
+                            detail=f"Database restored but sessions and keys were not reset: {exc}",
+                        )
             finally:
                 restore_state.restore_in_progress = False
 

@@ -429,18 +429,85 @@ class BackupService:
 
         # Logos only after the database is in place: if the swap fails there is
         # nothing to point at them, and the originals are still where they were.
-        logos_restored = self._restore_logos(backup_path)
-
-        # Keep the pre-restore copies bounded.
-        self._cleanup_pre_restore_backups()
+        # Past the swap nothing may raise: the caller must still reach
+        # keep_live_credentials for the database that is now live.
+        try:
+            logos_restored = self._restore_logos(backup_path)
+        except (OSError, tarfile.TarError):
+            logger.error("Database restored but its logos were not", exc_info=True)
+            logos_restored = 0
+        try:
+            self._cleanup_pre_restore_backups()
+        except OSError:
+            logger.warning("Could not prune old pre-restore backups", exc_info=True)
 
         return {
             "restored_from": backup_filename,
             "pre_restore_backup": pre_restore_filename,
             "logos_restored": logos_restored,
             "timestamp": utc_now().isoformat(),
-            "message": "Database restored. Please restart the application for changes to take effect.",
+            "message": "Database restored. Every session was ended, so sign in again.",
         }
+
+    def keep_live_credentials(self, pre_restore_filename: str | None) -> None:
+        """After a restore, reinstate the pre-restore login and API keys and end every session.
+
+        A backup carries the password hash, sessions and API keys of its day, so
+        restoring one would revive a changed password, a stolen session or a
+        revoked key. Runs after the schema upgrade, and best effort after a failed
+        one. Without a readable pre-restore copy the restored keys are dropped.
+        Cached PDFs are marked stale because the pdfs/ directory is not restored.
+        """
+        db_path = get_settings().data_dir / "invoice_machine.db"
+        conn = sqlite3.connect(db_path, timeout=30)
+        try:
+            live_attached = False
+            if pre_restore_filename:
+                try:
+                    conn.execute(
+                        "ATTACH DATABASE ? AS live",
+                        (str(self.backup_dir / pre_restore_filename),),
+                    )
+                    conn.execute("SELECT 1 FROM live.users LIMIT 1")
+                    live_attached = True
+                except sqlite3.DatabaseError:
+                    logger.warning("Pre-restore database unreadable; keeping restored credentials")
+
+            def columns_of(schema: str, table: str) -> list[str]:
+                return [row[1] for row in conn.execute(f"PRAGMA {schema}.table_info({table})")]
+
+            # After a failed upgrade an old backup can lack any of these tables.
+            with conn:
+                if columns_of("main", "sessions"):
+                    conn.execute("DELETE FROM main.sessions")
+                if "pdf_generated_at" in columns_of("main", "invoices"):
+                    conn.execute("UPDATE main.invoices SET pdf_generated_at = NULL")
+                # A backup from before migration 021 keeps its keys in these
+                # columns until a later upgrade turns them into api_keys rows.
+                legacy = set(columns_of("main", "business_profile")) & {
+                    "mcp_api_key",
+                    "bot_api_key",
+                }
+                for column in sorted(legacy):
+                    conn.execute(f"UPDATE main.business_profile SET {column} = NULL")
+                for table in ("users", "api_keys"):
+                    restored_columns = columns_of("main", table)
+                    if not restored_columns:
+                        continue
+                    if not live_attached:
+                        # Nothing to carry over; a restored key must not outlive the restore.
+                        if table == "api_keys":
+                            conn.execute("DELETE FROM main.api_keys")
+                        continue
+                    live_columns = set(columns_of("live", table))
+                    # An old backup whose schema upgrade failed can lack newer columns.
+                    columns = ", ".join(c for c in restored_columns if c in live_columns)
+                    conn.execute(f"DELETE FROM main.{table}")
+                    conn.execute(
+                        f"INSERT INTO main.{table} ({columns}) SELECT {columns} FROM live.{table}"
+                    )
+        finally:
+            conn.close()
 
     def download_from_s3(self, filename: str) -> Path:
         """Download a backup from S3-compatible storage to the local backup directory."""

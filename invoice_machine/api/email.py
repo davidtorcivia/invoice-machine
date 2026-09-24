@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from invoice_machine.crypto import encrypt_credential
 from invoice_machine.database import BusinessProfile, get_session
-from invoice_machine.email import EmailService
+from invoice_machine.email import EmailService, require_password_for_new_smtp_destination
 from invoice_machine.rate_limit import limiter
 from invoice_machine.service.email import send_invoice_email as send_invoice_email_service
 
@@ -70,6 +70,10 @@ async def update_smtp_settings(
     profile = await BusinessProfile.get_or_create(session)
 
     update_data = data.model_dump(exclude_unset=True)
+    try:
+        require_password_for_new_smtp_destination(profile, update_data)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from None
 
     # Convert booleans to integers for SQLite
     if "smtp_enabled" in update_data:

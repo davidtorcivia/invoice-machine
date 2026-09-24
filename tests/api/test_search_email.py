@@ -101,6 +101,43 @@ class TestEmailEndpoints:
         assert "smtp_password" not in data
 
     @pytest.mark.asyncio
+    async def test_stored_password_is_not_sent_to_a_new_destination(self, test_client):
+        """A caller that cannot read the password must not be able to redirect it."""
+        await test_client.put(
+            "/api/settings/smtp",
+            json={
+                "smtp_host": "smtp.example.com",
+                "smtp_port": 587,
+                "smtp_username": "me",
+                "smtp_password": "secret",
+                "smtp_use_tls": True,
+            },
+        )
+
+        for change in (
+            {"smtp_host": "mx.attacker.test"},
+            {"smtp_port": 25},
+            {"smtp_username": "other"},
+            {"smtp_use_tls": False},
+        ):
+            response = await test_client.put("/api/settings/smtp", json=change)
+            assert response.status_code == 400, change
+            assert "Re-enter the SMTP password" in response.json()["detail"]
+
+        # Resending unchanged values (what the settings form does) is fine.
+        unchanged = await test_client.put(
+            "/api/settings/smtp",
+            json={"smtp_host": "smtp.example.com", "smtp_port": 587, "smtp_use_tls": True},
+        )
+        assert unchanged.status_code == 200
+        moved = await test_client.put(
+            "/api/settings/smtp",
+            json={"smtp_host": "mx.new.test", "smtp_password": "new-secret"},
+        )
+        assert moved.status_code == 200
+        assert moved.json()["smtp_host"] == "mx.new.test"
+
+    @pytest.mark.asyncio
     async def test_send_invoice_email_no_smtp(self, test_client):
         create_response = await test_client.post("/api/invoices", json={})
         invoice_id = create_response.json()["id"]

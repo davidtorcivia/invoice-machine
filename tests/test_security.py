@@ -387,6 +387,19 @@ class TestClientIp:
         finally:
             get_settings.cache_clear()
 
+    def test_uses_the_proxy_appended_forwarded_for_hop(self, monkeypatch):
+        from invoice_machine.config import get_settings
+        from invoice_machine.rate_limit import get_client_ip
+
+        monkeypatch.setenv("TRUST_PROXY_HEADERS", "true")
+        get_settings.cache_clear()
+        try:
+            # nginx appends the peer it saw; the first hop is whatever the client sent.
+            req = self._request({"x-forwarded-for": "6.6.6.6, 5.6.7.8"})
+            assert get_client_ip(req) == "5.6.7.8"
+        finally:
+            get_settings.cache_clear()
+
     def test_docker_entrypoint_gates_uvicorn_proxy_headers(self):
         text = Path("docker-entrypoint.sh").read_text()
         assert "TRUST_PROXY_HEADERS" in text

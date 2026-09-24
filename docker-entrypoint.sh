@@ -12,8 +12,10 @@ fi
 # Apply database migrations before starting the app. `set -e` ensures the
 # container fails to start if migrations fail, rather than serving a broken
 # schema. Running here (single process) avoids multi-worker migration races.
+# prepare_runtime renames a legacy invoicely.db first, and run_alembic_migrations
+# remaps old revision ids and refuses a pre-Alembic database.
 echo "Running database migrations..."
-python -c "from alembic.config import Config; from alembic import command; command.upgrade(Config('alembic.ini'), 'head')"
+python -c "from invoice_machine.config import prepare_runtime; from invoice_machine.runtime_schema import run_alembic_migrations; prepare_runtime(); run_alembic_migrations()"
 
 # uvicorn rewrites request.client from X-Forwarded-For when proxy-headers are
 # on. That must track TRUST_PROXY_HEADERS or a client can pick its rate-limit key.
