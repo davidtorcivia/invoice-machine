@@ -37,6 +37,7 @@ MAX_PAYMENT = Decimal("99999999.99")
 MAX_QUANTITY = Decimal("10000")
 MAX_EXCHANGE_RATE = Decimal("1000000")
 MAX_DECIMAL = Decimal("1e12")
+MAX_DIGITS = 12  # integer digits below MAX_DECIMAL
 MAX_LOGO_BYTES = 5 * 1024 * 1024
 MAX_WARNINGS = 1000
 MAX_WARNING_LENGTH = 1000
@@ -97,7 +98,8 @@ def _decimal(value: Any, *, round_tiny: bool = True) -> Decimal | None:
     except (InvalidOperation, ValueError):
         return None
     # Larger values cannot be money here and overflow JavaScript's safe integers there.
-    if not result.is_finite() or abs(result) >= MAX_DECIMAL:
+    # adjusted(), not abs(): abs() applies the context and overflows on 1E+1000000.
+    if not result.is_finite() or (result and result.adjusted() >= MAX_DIGITS):
         return None
     # Digits past 12 places carry no money; unrounded they can exceed Books Machine's
     # 100-character decimal strings (a stored 1e-100 prints as 102 characters).
@@ -153,11 +155,12 @@ def _int(value: Any, default: int) -> int:
 def _clamped(value: Any, bounds: tuple[int, int], what: str, warnings: list[str]) -> int:
     low, high = bounds
     try:
-        number: int | None = int(value)
-    except (TypeError, ValueError, OverflowError):
-        number = None
+        exact: Decimal | None = Decimal(str(value).strip())
+        number: int | None = int(exact)
+    except (InvalidOperation, ValueError, OverflowError):
+        exact, number = None, None
     result = low if number is None else min(max(number, low), high)
-    if value is not None and number != result:
+    if value is not None and exact != result:
         warnings.append(f"{what} was {str(value)[:20]!r}; {result} was used.")
     return result
 
@@ -304,7 +307,7 @@ def _items(
         items.append(
             {
                 "description": description,
-                "quantity": _plain(quantity),
+                "quantity": _plain(quantity.quantize(Decimal("0.001"))),
                 "unitType": unit_type,
                 "unitPrice": _plain(price),
             }
@@ -845,7 +848,8 @@ async def build_books_machine_bundle(session: AsyncSession) -> dict[str, Any]:
         if row.get("tax_enabled") is None:
             bound_tax = "100"
         elif row["tax_enabled"]:
-            bound_tax = _tax_rate(row.get("tax_rate"), what, []) or "0"
+            # No readable rate means Books Machine inherits one, so assume the worst.
+            bound_tax = _tax_rate(row.get("tax_rate"), what, []) or "100"
         else:
             bound_tax = "0"
         schedule_month = row.get("schedule_month")

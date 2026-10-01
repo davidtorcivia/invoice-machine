@@ -16,7 +16,12 @@ from invoice_machine.database import (
     Payment,
     RecurringSchedule,
 )
-from invoice_machine.service.books_machine import build_books_machine_bundle
+from invoice_machine.service.books_machine import (
+    _clamped,
+    _decimal,
+    _items,
+    build_books_machine_bundle,
+)
 
 
 def _invoice(number: str, **fields) -> Invoice:
@@ -296,3 +301,12 @@ async def test_bundle_normalizes_what_books_machine_refuses(db_session: AsyncSes
     assert schedule["data"]["name"] == "Recurring schedule 1"
     assert schedule["lastInvoiceSourceId"] == "8"
     assert [item["description"] for item in schedule["data"]["items"]] == ["Retainer"]
+
+
+def test_helpers_survive_extreme_stored_values():
+    warnings: list[str] = []
+    assert _decimal("1E+1000000") is None
+    [item] = _items([{"unit_price": "10", "quantity": "1.5" + "0" * 99}], "S", warnings, False)
+    assert item["quantity"] == "1.500" and warnings == []
+    assert _clamped(3.7, (1, 31), "Day", warnings) == 3
+    assert warnings == ["Day was '3.7'; 3 was used."]
