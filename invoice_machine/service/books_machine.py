@@ -64,6 +64,11 @@ SUPPORTED_CURRENCIES = frozenset(
 )
 _ACCENT = re.compile(r"#[0-9a-fA-F]{6}")
 _DEFAULT_ACCENT = "#16a34a"
+# The characters JavaScript's String.prototype.trim removes; Python's strip keeps U+FEFF.
+_JS_WHITESPACE = (
+    " \t\n\v\f\r\u00a0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008"
+    "\u2009\u200a\u2028\u2029\u202f\u205f\u3000\ufeff"
+)
 
 
 def _utf16_length(value: str) -> int:
@@ -92,7 +97,16 @@ def _decimal(value: Any) -> Decimal | None:
     except (InvalidOperation, ValueError):
         return None
     # Larger values cannot be money here and overflow JavaScript's safe integers there.
-    return result if result.is_finite() and abs(result) < MAX_DECIMAL else None
+    if not result.is_finite() or abs(result) >= MAX_DECIMAL:
+        return None
+    # Digits past 12 places carry no money; unrounded they can exceed Books Machine's
+    # 100-character decimal strings (a stored 1e-100 prints as 102 characters).
+    exponent = result.as_tuple().exponent
+    return (
+        result.quantize(Decimal("1e-12"))
+        if isinstance(exponent, int) and exponent < -12
+        else result
+    )
 
 
 def _plain(value: Decimal) -> str:
@@ -134,8 +148,13 @@ def _bool(value: Any, default: bool) -> bool:
 def _int(value: Any, default: int) -> int:
     try:
         return int(value)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return default
+
+
+def _trimmed(value: Any) -> str | None:
+    """Text as JavaScript's trim() leaves it, or None when nothing is left."""
+    return (str(value).strip(_JS_WHITESPACE) or None) if value is not None else None
 
 
 def _json(value: Any) -> Any:
@@ -194,6 +213,8 @@ def _tax_rate(value: Any, what: str, warnings: list[str]) -> str | None:
 def _exchange_rate(value: Any, what: str, warnings: list[str]) -> str | None:
     rate = _decimal(value)
     if rate is None:
+        if value is not None:
+            warnings.append(f"{what} has an unreadable exchange rate; it was left unset.")
         return None
     if not Decimal(0) < rate <= MAX_EXCHANGE_RATE:
         warnings.append(
@@ -210,7 +231,13 @@ def _selected_methods(value: Any, what: str, warnings: list[str]) -> list[str] |
         return None
     if not isinstance(parsed, list):
         return None
-    methods = [str(method)[:100] for method in parsed if isinstance(method, (str, int))]
+    methods = [
+        _fit(method, 100, f"{what} selected payment method", warnings) or ""
+        for method in parsed
+        if isinstance(method, (str, int)) and not isinstance(method, bool)
+    ]
+    if len(methods) != len(parsed):
+        warnings.append(f"{what} has unreadable selected payment methods; those were left out.")
     if len(methods) > MAX_SELECTED_METHODS:
         warnings.append(
             f"{what} selected {len(methods)} payment methods; the first {MAX_SELECTED_METHODS} were kept."
@@ -302,6 +329,19 @@ def _items(
         )
         item["sortOrder"] = index
     return items
+
+
+def _bounded_total(
+    items: list[dict[str, Any]], tax_rate: str, what: str, warnings: list[str]
+) -> list[dict[str, Any]]:
+    """Leave the lines out when the taxed total would overflow Books Machine's integer cents."""
+    subtotal = sum((line_item_total(i["unitPrice"], i["quantity"]) for i in items), Decimal(0))
+    if subtotal * (1 + Decimal(tax_rate) / 100) < MAX_DECIMAL:
+        return items
+    warnings.append(
+        f"{what} totals {subtotal} before tax, too large to import; its lines were left out."
+    )
+    return []
 
 
 async def _rows(session: AsyncSession, query: str) -> list[dict[str, Any]]:
@@ -424,7 +464,7 @@ def _profile(profile: dict[str, Any], warnings: list[str]) -> dict[str, Any]:
     timezone = str(profile.get("business_timezone") or "UTC").strip() or "UTC"
     try:
         ZoneInfo(timezone)
-    except (ZoneInfoNotFoundError, ValueError):
+    except (ZoneInfoNotFoundError, ValueError, OSError):
         warnings.append(f"Time zone {timezone[:64]!r} is unknown; UTC was used.")
         timezone = "UTC"
 
@@ -481,8 +521,8 @@ def _client(row: dict[str, Any], now: str, warnings: list[str]) -> dict[str, Any
     what = (
         f"Client {row['id']} ({str(row.get('business_name') or row.get('name') or 'unnamed')[:60]})"
     )
-    name = (row.get("name") or "").strip() or None
-    business = (row.get("business_name") or "").strip() or None
+    name = _trimmed(row.get("name"))
+    business = _trimmed(row.get("business_name"))
     email = _email(row.get("email"), f"{what} email", warnings)
     if not name and not business:
         name = email or f"Client {row['id']}"
@@ -636,6 +676,12 @@ async def build_books_machine_bundle(session: AsyncSession) -> dict[str, Any]:
                 f"{what} has payments recorded in another currency; they were imported in {currency}."
             )
         exchange_rate = _exchange_rate(row.get("exchange_rate"), what, warnings)
+        if (
+            exchange_rate is not None
+            and str(row.get("currency_code") or "").strip().upper() != currency
+        ):
+            warnings.append(f"{what} had a rate for its original currency; it was left unset.")
+            exchange_rate = None
         if exchange_rate is None and currency != profile["currency"]:
             warnings.append(
                 f"{what} in {currency} has no recorded exchange rate; Books Machine applies "
@@ -748,8 +794,11 @@ async def build_books_machine_bundle(session: AsyncSession) -> dict[str, Any]:
                 "taxRate": tax_rate,
                 "taxName": _fit(row.get("tax_name"), 50, f"{what} tax name", warnings) or "Tax",
                 "exchangeRate": exchange_rate,
-                "items": _items(
-                    items_by_invoice.get(row["id"], []), what, warnings, stored_totals=True
+                "items": _bounded_total(
+                    _items(items_by_invoice.get(row["id"], []), what, warnings, stored_totals=True),
+                    tax_rate,
+                    what,
+                    warnings,
                 ),
             },
         }
@@ -760,7 +809,7 @@ async def build_books_machine_bundle(session: AsyncSession) -> dict[str, Any]:
 
     schedules = []
     for row in await _rows(session, "SELECT * FROM recurring_schedules ORDER BY id"):
-        name = (str(row.get("name") or "")).strip() or f"Recurring schedule {row['id']}"
+        name = _trimmed(row.get("name")) or f"Recurring schedule {row['id']}"
         what = f"Recurring schedule {name[:60]!r}"
         client_source = str(row.get("client_id"))
         if client_source not in client_ids:

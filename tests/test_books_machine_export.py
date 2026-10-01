@@ -49,7 +49,8 @@ async def seed(session: AsyncSession) -> None:
     good = Client(id=1, name="Charles", business_name="Babbage & Co", email="charles@example.test")
     nameless = Client(id=2, email="a@x.test, b@x.test", notes="n" * 6000, preferred_currency="us")
     gone = Client(id=3, name="Gone", deleted_at=datetime(2026, 9, 2, 8, 30))
-    session.add_all([good, nameless, gone])
+    marked = Client(id=4, name="\ufeff", tax_rate=Decimal("1e-100"))
+    session.add_all([good, nameless, gone, marked])
     await session.flush()
 
     session.add_all(
@@ -93,6 +94,12 @@ async def seed(session: AsyncSession) -> None:
             _invoice("/A", id=12, client_id=1),
             _invoice("BTC-1", id=13, client_id=1, currency_code="BTC"),
             _invoice("SETTLED", id=14, client_id=1, amount_paid=Decimal("20.00")),
+            _invoice(
+                "HUGE",
+                id=15,
+                client_id=1,
+                selected_payment_methods=json.dumps(["\U0001f600" * 51, None]),
+            ),
         ]
     )
     await session.flush()
@@ -106,10 +113,9 @@ async def seed(session: AsyncSession) -> None:
             invoice_id=13, description="Huge", quantity=1, unit_price=Decimal("1e13"), total=0
         )
     )
-    session.add(
-        InvoiceItem(
-            invoice_id=13, description="Huge", quantity=1, unit_price=Decimal("1e13"), total=0
-        )
+    session.add_all(
+        InvoiceItem(invoice_id=15, description="Big", unit_price=Decimal("999999999999"), total=0)
+        for _ in range(10)
     )
     session.add_all(
         InvoiceItem(
@@ -174,7 +180,7 @@ async def test_bundle_normalizes_what_books_machine_refuses(db_session: AsyncSes
 
     assert bundle["manifest"]["format"] == "invoice-machine-import"
     assert bundle["manifest"]["createdAt"].endswith("Z")
-    assert len(bundle["clients"]) == 3 and len(invoices) == 14
+    assert len(bundle["clients"]) == 4 and len(invoices) == 15
 
     profile = bundle["profile"]
     assert profile["businessEmail"] is None
@@ -236,6 +242,11 @@ async def test_bundle_normalizes_what_books_machine_refuses(db_session: AsyncSes
     btc = invoices["13"]["data"]
     assert btc["currencyCode"] == "USD" and btc["items"] == []
     assert "unrecognized currency 'BTC'" in warnings and "'Huge' with an unusable price" in warnings
+    marked = bundle["clients"][3]["data"]
+    assert marked["name"] == "Client 4" and marked["taxRate"] == "0"
+    huge = invoices["15"]["data"]
+    assert huge["items"] == [] and "too large to import" in warnings
+    assert huge["selectedPaymentMethods"] == ["\U0001f600" * 50]
     assert "Invoice SETTLED is marked sent but its payments cover the total" in warnings
     assert "Invoice EUR-1 has payments recorded in another currency" in warnings
     assert "Invoice EUR-1 in EUR has no recorded exchange rate" in warnings
