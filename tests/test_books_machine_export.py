@@ -100,6 +100,7 @@ async def seed(session: AsyncSession) -> None:
                 client_id=1,
                 selected_payment_methods=json.dumps(["\U0001f600" * 51, None]),
             ),
+            _invoice("UNTAXED", id=16, client_id=1, tax_enabled=0, tax_rate=Decimal("100")),
         ]
     )
     await session.flush()
@@ -165,6 +166,40 @@ async def seed(session: AsyncSession) -> None:
             last_invoice_id=8,
         )
     )
+    big_lines = [{"description": "Big", "quantity": 1, "unit_price": "999999999999"}] * 10
+    session.add_all(
+        [
+            RecurringSchedule(
+                id=2,
+                client_id=1,
+                name="Weekly",
+                frequency="weekly",
+                schedule_day=9,
+                quarter_month=7,
+                next_invoice_date=date(2026, 11, 1),
+                line_items=json.dumps(big_lines),
+            ),
+            RecurringSchedule(
+                id=3,
+                client_id=1,
+                name="Fine grained",
+                frequency="monthly",
+                next_invoice_date=date(2026, 11, 1),
+                line_items=json.dumps(
+                    [
+                        {
+                            "description": "Odd",
+                            "quantity": "1.0000000000004",
+                            "unit_price": "400000000000",
+                        }
+                    ]
+                ),
+            ),
+        ]
+    )
+    session.add(
+        InvoiceItem(invoice_id=16, description="Large", unit_price=Decimal("600000000000"), total=0)
+    )
     await session.commit()
     # SQLite keeps the scale the ORM would round away on read.
     await session.execute(text("UPDATE invoices SET tax_rate = 8.875 WHERE id = 1"))
@@ -180,7 +215,7 @@ async def test_bundle_normalizes_what_books_machine_refuses(db_session: AsyncSes
 
     assert bundle["manifest"]["format"] == "invoice-machine-import"
     assert bundle["manifest"]["createdAt"].endswith("Z")
-    assert len(bundle["clients"]) == 4 and len(invoices) == 15
+    assert len(bundle["clients"]) == 4 and len(invoices) == 16
 
     profile = bundle["profile"]
     assert profile["businessEmail"] is None
@@ -251,7 +286,13 @@ async def test_bundle_normalizes_what_books_machine_refuses(db_session: AsyncSes
     assert "Invoice EUR-1 has payments recorded in another currency" in warnings
     assert "Invoice EUR-1 in EUR has no recorded exchange rate" in warnings
 
-    [schedule] = bundle["recurringSchedules"]
+    assert len(invoices["16"]["data"]["items"]) == 1
+
+    schedule, weekly, fine = bundle["recurringSchedules"]
+    assert (weekly["data"]["scheduleDay"], weekly["data"]["quarterMonth"]) == (6, 3)
+    assert weekly["data"]["items"] == [] and "Recurring schedule 'Weekly' totals" in warnings
+    assert fine["data"]["items"][0]["quantity"] == "1"
+    assert fine["data"]["items"][0]["unitPrice"] == "400000000000.16"
     assert schedule["data"]["name"] == "Recurring schedule 1"
     assert schedule["lastInvoiceSourceId"] == "8"
     assert [item["description"] for item in schedule["data"]["items"]] == ["Retainer"]

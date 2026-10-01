@@ -89,7 +89,7 @@ def _fit(value: Any, limit: int, what: str, warnings: list[str]) -> str | None:
     return result
 
 
-def _decimal(value: Any) -> Decimal | None:
+def _decimal(value: Any, *, round_tiny: bool = True) -> Decimal | None:
     if value is None or isinstance(value, bool):
         return None
     try:
@@ -102,11 +102,9 @@ def _decimal(value: Any) -> Decimal | None:
     # Digits past 12 places carry no money; unrounded they can exceed Books Machine's
     # 100-character decimal strings (a stored 1e-100 prints as 102 characters).
     exponent = result.as_tuple().exponent
-    return (
-        result.quantize(Decimal("1e-12"))
-        if isinstance(exponent, int) and exponent < -12
-        else result
-    )
+    if round_tiny and isinstance(exponent, int) and exponent < -12:
+        return result.quantize(Decimal("1e-12"))
+    return result
 
 
 def _plain(value: Decimal) -> str:
@@ -150,6 +148,18 @@ def _int(value: Any, default: int) -> int:
         return int(value)
     except (TypeError, ValueError, OverflowError):
         return default
+
+
+def _clamped(value: Any, bounds: tuple[int, int], what: str, warnings: list[str]) -> int:
+    low, high = bounds
+    try:
+        number: int | None = int(value)
+    except (TypeError, ValueError, OverflowError):
+        number = None
+    result = low if number is None else min(max(number, low), high)
+    if value is not None and number != result:
+        warnings.append(f"{what} was {str(value)[:20]!r}; {result} was used.")
+    return result
 
 
 def _trimmed(value: Any) -> str | None:
@@ -252,7 +262,8 @@ def _items(
     items: list[dict[str, Any]] = []
     for row in rows:
         price = _decimal(row.get("unit_price"))
-        quantity = _decimal(row.get("quantity"))
+        # Unrounded, so a quantity off the 3-decimal grid is folded with a warning.
+        quantity = _decimal(row.get("quantity"), round_tiny=False)
         unit_type = row.get("unit_type") or "qty"
         description = str(row.get("description") or "")
         if unit_type not in ("qty", "hours"):
@@ -796,7 +807,7 @@ async def build_books_machine_bundle(session: AsyncSession) -> dict[str, Any]:
                 "exchangeRate": exchange_rate,
                 "items": _bounded_total(
                     _items(items_by_invoice.get(row["id"], []), what, warnings, stored_totals=True),
-                    tax_rate,
+                    tax_rate if row.get("tax_enabled") else "0",
                     what,
                     warnings,
                 ),
@@ -830,6 +841,13 @@ async def build_books_machine_bundle(session: AsyncSession) -> dict[str, Any]:
             if isinstance(raw_items, list)
             else []
         )
+        # An inherited tax setting is unknown here, so bound as if taxed at 100%.
+        if row.get("tax_enabled") is None:
+            bound_tax = "100"
+        elif row["tax_enabled"]:
+            bound_tax = _tax_rate(row.get("tax_rate"), what, []) or "0"
+        else:
+            bound_tax = "0"
         schedule_month = row.get("schedule_month")
         last_invoice = row.get("last_invoice_id")
         currency = (
@@ -848,16 +866,32 @@ async def build_books_machine_bundle(session: AsyncSession) -> dict[str, Any]:
                 "data": {
                     "name": _fit(name, 255, f"{what} name", warnings),
                     "frequency": frequency,
-                    "scheduleDay": _int(row.get("schedule_day"), 1),
-                    "scheduleMonth": _int(schedule_month, 1)
+                    "scheduleDay": _clamped(
+                        row.get("schedule_day"),
+                        (0, 6)
+                        if frequency == "weekly"
+                        else (1, 31)
+                        if frequency != "daily"
+                        else (0, 31),
+                        f"{what} schedule day",
+                        warnings,
+                    ),
+                    "scheduleMonth": _clamped(schedule_month, (1, 12), f"{what} month", warnings)
                     if schedule_month is not None
                     else None,
-                    "quarterMonth": _int(row.get("quarter_month"), 1),
+                    "quarterMonth": _clamped(
+                        row.get("quarter_month"), (1, 3), f"{what} quarter month", warnings
+                    ),
                     "currencyCode": currency,
                     "paymentTermsDays": _terms(row.get("payment_terms_days"), 30, what, warnings),
                     "notes": _fit(row.get("notes"), 5000, f"{what} notes", warnings),
                     "useDefaultNotes": _bool(row.get("use_default_notes"), True),
-                    "items": _items(line_items, what, warnings, stored_totals=False),
+                    "items": _bounded_total(
+                        _items(line_items, what, warnings, stored_totals=False),
+                        bound_tax,
+                        what,
+                        warnings,
+                    ),
                     "showPaymentInstructions": _bool(row.get("show_payment_instructions"), True),
                     "selectedPaymentMethods": _selected_methods(
                         row.get("selected_payment_methods"), what, warnings
