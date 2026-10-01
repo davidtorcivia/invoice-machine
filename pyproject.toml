@@ -47,7 +47,7 @@ dev = [
     "ruff>=0.16,<0.17",
     # Pinned exactly: pyright adds diagnostics between releases, so an
     # unpinned range turns CI red without a commit. Wraps the npm package.
-    "pyright==1.1.408",
+    "pyright==1.1.414",
     "mcp>=2.0.0,<3",
 ]
 
