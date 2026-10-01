@@ -3,7 +3,7 @@
   import Icon from '$lib/components/Icons.svelte';
   import SettingsBackupList from './SettingsBackupList.svelte';
   import ConfirmModal from '$lib/components/ConfirmModal.svelte';
-  import { backupsApi } from '$lib/api';
+  import { backupsApi, exportApi } from '$lib/api';
   import { toast } from '$lib/stores';
 
   interface Props {
@@ -230,6 +230,20 @@
     {/if}
   </div>
 
+  <div class="migration">
+    <div>
+      <p class="migration-title">Move to Books Machine</p>
+      <p class="form-hint">
+        Downloads every client, invoice, quote, payment, recurring schedule and your settings as a file
+        Books Machine imports. Passwords and API keys are not included.
+      </p>
+    </div>
+    <a class="btn btn-secondary btn-sm" href={exportApi.booksMachineUrl} download>
+      <Icon name="download" size="sm" />
+      Download export
+    </a>
+  </div>
+
   <SettingsBackupList
     {backups}
     loading={loadingBackups}
@@ -299,6 +313,26 @@
     height: 18px;
     cursor: pointer;
     accent-color: var(--color-primary);
+  }
+
+  .migration {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+    margin-top: var(--space-4);
+    padding-top: var(--space-4);
+    border-top: 1px solid var(--color-border-light);
+  }
+
+  .migration-title {
+    margin: 0;
+    font-weight: 500;
+  }
+
+  .migration .form-hint {
+    max-width: 60ch;
   }
 
   .s3-section {

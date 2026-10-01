@@ -385,6 +385,9 @@ export const exportApi = {
       include_deleted: params.include_deleted ? 'true' : undefined,
       document_type: params.document_type,
     })}`,
+
+  /** Download URL for the Books Machine import bundle. */
+  booksMachineUrl: `${API_BASE}/export/books-machine.json`,
 };
 
 // ===== Payment / reminder / FX settings =====

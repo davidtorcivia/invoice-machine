@@ -25,6 +25,7 @@ Everything runs on a single SQLite file and a single container. No SaaS account,
 - Client database with addresses, terms, and per-client defaults
 - Full-text search across invoices, clients, and line items
 - CSV export of invoices, line items, payments, and clients
+- One-file export of everything for import into Books Machine
 - Revenue analytics and client lifetime value
 - Automatic daily backups with optional S3 upload
 - MCP server for Claude, plus a separate bot API key for scripts
