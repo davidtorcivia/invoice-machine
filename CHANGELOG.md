@@ -6,6 +6,24 @@ Notable changes to Invoice Machine. Format based on
 
 ## [Unreleased]
 
+### Added
+
+- Books Machine export. Settings, Backup & Restore has a Download export link
+  (`GET /api/export/books-machine.json`) that writes every client, invoice,
+  quote, payment, recurring schedule, the business profile and the logo as a
+  Books Machine `invoice-machine-import` bundle. Trashed records are included.
+  Each invoice carries the client details printed on it, its paid date,
+  reminders already sent and its stored total, and "mark paid" placeholders
+  keep their role. Rows are read with raw SQL so decimals keep the scale
+  SQLite stored. Anything Books Machine would reject is adjusted and listed in
+  the bundle's warnings, which Books Machine shows before importing: invalid or
+  multiple emails are blanked, invalid or duplicate invoice numbers are
+  renamed, text over Books Machine's length limits is cut, invoices over 100
+  lines combine the rest into one line, quantities over 10000 become one unit
+  at the line total, payments on quotes are left out, and a cancelled invoice
+  with payments is exported as issued. Passwords, API keys and Stripe keys are
+  not exported.
+
 ### Changed
 
 - The database now enforces the NOT NULL constraints the models already

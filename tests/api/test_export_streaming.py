@@ -19,3 +19,12 @@ async def test_large_export_streams_completely(test_client):
     lines = resp.text.strip().splitlines()
     # header + 120 invoices
     assert len(lines) == 121, f"expected 121 lines, got {len(lines)}"
+
+
+@pytest.mark.asyncio
+async def test_export_route_downloads_bundle(test_client):
+    response = await test_client.get("/api/export/books-machine.json")
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "no-store"
+    assert "books-machine-import-" in response.headers["content-disposition"]
+    assert response.json()["manifest"]["format"] == "invoice-machine-import"

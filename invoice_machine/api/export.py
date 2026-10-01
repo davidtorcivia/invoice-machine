@@ -3,15 +3,31 @@
 from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from invoice_machine.database import get_session
 from invoice_machine.rate_limit import limiter
+from invoice_machine.service.books_machine import build_books_machine_bundle
 from invoice_machine.service.export import EXPORT_KINDS, export_csv
 from invoice_machine.utils import utc_now
 
 router = APIRouter(prefix="/api/export", tags=["export"])
+
+
+@router.get("/books-machine.json")
+@limiter.limit("5/minute")
+async def export_books_machine(request: Request, session: AsyncSession = Depends(get_session)):
+    """Download every record as a Books Machine import bundle."""
+    bundle = await build_books_machine_bundle(session)
+    filename = f"books-machine-import-{utc_now().date().isoformat()}.json"
+    return JSONResponse(
+        bundle,
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Cache-Control": "no-store",
+        },
+    )
 
 
 @router.get("/{kind}.csv")
