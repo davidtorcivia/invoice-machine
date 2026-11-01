@@ -15,7 +15,7 @@ RUN npm run build
 # uv.lock pins every transitive version; --frozen refuses to resolve anew, so
 # two builds of the same commit produce the same dependency tree.
 # ---------------------------------------------------------------------------
-FROM python:3.14-slim-bookworm AS builder
+FROM python:3.15-slim-bookworm AS builder
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     python3-dev \
@@ -39,7 +39,7 @@ RUN pip install --no-cache-dir uv==0.6.8 \
 # ---------------------------------------------------------------------------
 # Stage 3: slim runtime image (no compilers, no Node, no build cruft).
 # ---------------------------------------------------------------------------
-FROM python:3.14-slim-bookworm AS runtime
+FROM python:3.15-slim-bookworm AS runtime
 
 # Runtime-only libraries for WeasyPrint + gosu for privilege drop.
 RUN apt-get update && apt-get install -y --no-install-recommends \
